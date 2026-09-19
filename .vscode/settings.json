@@ -1,0 +1,18 @@
+{
+
+    // 关掉 C/C++ 扩展自带的格式化，避免和下面的 clang-format 扩展抢着干活
+    "C_Cpp.formatting": "disabled",
+
+    // 遥控器：告诉 xaver.clang-format 去调用哪个引擎、读哪份规则
+    "clang-format.executable": "/usr/bin/clang-format",
+    "clang-format.style": "file",
+
+    // 保存时自动格式化，并明确指定 C/C++ 由 clang-format 扩展负责
+    "editor.formatOnSave": true,
+    "[cpp]": {
+        "editor.defaultFormatter": "xaver.clang-format"
+    },
+    "[c]": {
+        "editor.defaultFormatter": "xaver.clang-format"
+    }
+}

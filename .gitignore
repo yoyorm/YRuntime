@@ -1,0 +1,55 @@
+# ===== 构建产物 =====
+build/
+build-*/
+out/
+cmake-build-*/
+CMakeUserPresets.json
+
+# ===== CMake 生成物（万一在源码目录里配置了）=====
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+compile_commands.json
+.cache/
+
+# ===== 编译中间物与二进制 =====
+*.o
+*.obj
+*.a
+*.so
+*.so.*
+*.d
+*.gch
+
+# ===== YRuntime 运行时产物 =====
+*.yrpak
+*.yrscnb
+/*.csv                     # FrameStats 导出；根目录限定，别用 *.csv（会误伤 notes/evidence）
+
+# ===== 调试 / 剖析产物 =====
+/core                      # ← 注意前导斜杠！只匹配根目录的 core dump，不会碰 engine/core/
+/core.*
+vgcore.*
+perf.data
+perf.data.old
+*.log
+
+# ===== 大文件素材（GIF 进 git，视频不进）=====
+*.mp4
+*.webm
+doc/media/*.cast
+
+# ===== 编辑器 =====
+.vscode/*
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*~
+
+# ===== Codex / agent 工作区标记（工具生成的空目录）=====
+.agents/
+.codex/

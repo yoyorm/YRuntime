@@ -1,0 +1,11 @@
+---
+BasedOnStyle: LLVM
+Language: Cpp
+ColumnLimit: 120
+Standard: c++20
+SortIncludes: CaseSensitive
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: false
+NamespaceIndentation: All
+PointerAlignment: Left
+FixNamespaceComments: true
