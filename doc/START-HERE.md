@@ -95,18 +95,31 @@
 </details>
 
 ### Day 2 · 最小可构建 + 第一个测试（~2h，**本周最难也最值钱的一天**）
-| 动作 | |
-|---|---|
-| 1 | 顶层 `CMakeLists.txt`：`cmake_minimum_required(3.24)` / `project(YRuntime LANGUAGES CXX)` / `add_subdirectory(engine/core)` / `add_subdirectory(tests)` |
-| 2 | `cmake/YrLibrary.cmake`：一个 `yr_add_library(NAME ns SOURCES ... DEPS ...)` 函数，内部统一 `cxx_std_20`、警告 flags、`target_include_directories(PUBLIC include)` |
-| 3 | `engine/core/CMakeLists.txt`：`yr_add_library(NAME yr_core NS yr::core SOURCES src/log.cpp)`（先放一个几乎空的 `.cpp`，让 target 存在） |
-| 4 | `tests/CMakeLists.txt` + `tests/core/CMakeLists.txt`：`find_package(Catch2 3 REQUIRED)` → `YrTests_core` 链接 `yr::core` 与 `Catch2::Catch2WithMain` → `catch_discover_tests` |
-| 5 | `tests/core/test_smoke.cpp`：一个 `TEST_CASE("smoke") { REQUIRE(1 + 1 == 2); }` |
-| 6 | `enable_testing()`，跑通：`cmake -B build/debug -G Ninja -DCMAKE_BUILD_TYPE=Debug && cmake --build build/debug && ctest --test-dir build/debug --output-on-failure` |
 
-**完成的证据**：ctest 输出 `100% tests passed, 0 tests failed out of 1`。
-**这一天你会卡在哪**（提前告诉你，别慌）：`find_package(Catch2)` 找不到 / `catch_discover_tests` 未定义（要 `include(Catch)`）/ `PUBLIC` vs `PRIVATE` 传错导致 include 不到。
-**卡住超过 30 分钟**：先查 [official CMake tutorial](https://cmake.org/cmake/help/latest/guide/tutorial/index.html) 的第 1~3 步，再把具体报错原文发我。
+> 本机已实测通过（2026-09-20）：Catch2 3.7.1 的 CMake 包在 `/usr/lib/cmake/Catch2/`，
+> 静态库 `/usr/lib/libCatch2{,Main}.a`，`find_package(Catch2 3 REQUIRED)` 可直接找到。
+> 实测耗时：configure 0.15s / 全量构建 1.2s / 改一个 .cpp 增量 0.18s。
+
+**计划修正**：原打算今天写 `cmake/YrLibrary.cmake`（`yr_add_library()` 封装函数），**推迟到 M1/M2**。
+理由与 ADR D6（先手写后宏化）同源——只有 1 个 target 时抽象没有意义，等到第 2、3 个 target 出现重复样板时再抽，
+你会**知道**该抽什么。今天 `cmake/` 目录保持空的。
+
+| # | 动作 | |
+|---|---|---|
+| 1 | 顶层 `CMakeLists.txt`：`project(VERSION 0.1.0)` + 两个 option + 输出目录 + `yr_build_flags` INTERFACE target（统一警告与 `cxx_std_20`）+ `add_subdirectory` |
+| 2 | `engine/core/CMakeLists.txt`：`add_library(yr_core src/version.cpp)` + `add_library(yr::core ALIAS yr_core)` + `target_include_directories(PUBLIC include)` + 两个 `target_compile_definitions` |
+| 3 | `engine/core/include/yr/core/version.h` + `src/version.cpp`：两个函数返回 CMake 注入的版本号与构建配置名 |
+| 4 | `tests/CMakeLists.txt`：`find_package(Catch2 3 REQUIRED)` + **`include(Catch)`**（少了这行 `catch_discover_tests` 未定义） |
+| 5 | `tests/core/CMakeLists.txt` + `test_smoke.cpp`：链接 `yr::core` 与 `Catch2::Catch2WithMain`，测 CMake→C++ 数据流 |
+| 6 | 跑通：`cmake -B build/debug -G Ninja -DCMAKE_BUILD_TYPE=Debug` → `cmake --build build/debug` → `ctest --test-dir build/debug --output-on-failure` |
+| 7 | **三个门禁亲眼验证**：① 造一个变量遮蔽看 `-Wshadow` 响 ② `-DYR_WARNINGS_AS_ERRORS=ON` 看它变成 error 且构建失败 ③ `-DYR_BUILD_TESTS=OFF` 看只构建库 |
+| 8 | 删掉 `engine/core/{src,include/yr/core}` 与 `tests/core` 里已经多余的 `.gitkeep`，commit |
+
+**完成的证据**：`ctest` 输出 `100% tests passed, 0 tests failed out of 1`；门禁 ② 的构建退出码非 0。
+**这一天你会卡在哪**（我预先踩过）：`include(Catch)` 漏写 → `catch_discover_tests` 未定义；
+`target_include_directories` 用了 `PRIVATE` → 测试里 `#include <yr/core/version.h>` 找不到；
+`enable_testing()` 放在 `add_subdirectory(tests)` 之后 → ctest 发现不到测试。
+**卡住超过 30 分钟**：先查 [official CMake tutorial](https://cmake.org/cmake/help/latest/guide/tutorial/index.html) 第 1~3 步，再把**报错原文**发我。
 
 ### Day 3 · presets + sanitizer（~1h）
 | 动作 | |

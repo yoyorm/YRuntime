@@ -1,5 +1,6 @@
 {
-
+    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+    "C_Cpp.intelliSenseEngine": "disabled",
     // 关掉 C/C++ 扩展自带的格式化，避免和下面的 clang-format 扩展抢着干活
     "C_Cpp.formatting": "disabled",
 
@@ -14,5 +15,9 @@
     },
     "[c]": {
         "editor.defaultFormatter": "xaver.clang-format"
-    }
+    },
+    "clangd.arguments": [
+    "--compile-commands-dir=${workspaceFolder}/build"
+]
+
 }
