@@ -1,43 +1,56 @@
-# YRuntime CI —— 每次 push 在一台干净的 Ubuntu 虚拟机上跑一遍构建与检查。
-#
-# 三个概念：workflow = 这个文件；job = 一台虚拟机上的一组步骤；step = 一条命令。
-# 任何 step 退出码非 0 → 整个 job 失败 → commit 上显示红叉。
-#
-# step 拆得细是为了在 UI 上直接看出"哪个阶段"挂了（配置/构建/测试/门禁）。
+# YRuntime CI
 
 name: CI
 
-on: push          # 单人仓库直接推 main，先不监听 pull_request（会重复跑）
+on: push
 
 jobs:
   build-test:
-    # 固定版本号而不是 ubuntu-latest：latest 会随 GitHub 升级而漂移，
-    # 某天突然变红你会分不清是代码问题还是环境问题。
-    # ubuntu-24.04 = noble，与本机 Linux Mint 22.3 同一个基座（ADR D12）。
-    runs-on: ubuntu-24.04
+    name: ${{ matrix.compiler.name }} · ${{ matrix.preset }}
+    runs-on: ubuntu-24.04        # 钉死版本，与本机 Mint 22.3 同基座（noble）
+
+    strategy:
+      # 默认 fail-fast: true 会在任一组合失败时**取消其余组合**，
+      # 你就看不到"是只有 clang 挂了还是全挂了"。诊断期一律关掉。
+      fail-fast: false
+      matrix:
+        compiler:
+          - { name: gcc,   cc: gcc-13,   cxx: g++-13,     apt: g++-13 }
+          - { name: clang, cc: clang-18, cxx: clang++-18,  apt: clang-18 }
+        preset: [debug, release, asan]
+
+    # 让 CMake 在 configure 时选中 matrix 指定的编译器
+    env:
+      CC: ${{ matrix.compiler.cc }}
+      CXX: ${{ matrix.compiler.cxx }}
 
     steps:
       - name: 检出代码
         uses: actions/checkout@v5
 
-      # ninja 是必需的；libcatch2-dev 在 Ubuntu 24.04 的 apt 源里**不存在**
-      # （2026-09-22 实测：CI 上 apt 退出码 100），所以单独一行并容错 ——
-      # 装不到也没关系，tests/CMakeLists.txt 会退回 FetchContent 拉源码。
+      # libcatch2-dev 在 Ubuntu 24.04 的 apt 源里不存在（2026-09-22 实测退出码 100），
+      # 所以容错：装不到就让 tests/CMakeLists.txt 走 FetchContent。
       - name: 安装依赖
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build
+          sudo apt-get install -y ninja-build ${{ matrix.compiler.apt }}
           sudo apt-get install -y libcatch2-dev \
             || echo "::warning::apt 无 libcatch2-dev，CMake 将用 FetchContent 拉取 Catch2 v3.7.1"
 
       - name: 配置
-        run: cmake --preset debug
+        run: cmake --preset ${{ matrix.preset }}
 
       - name: 构建
-        run: cmake --build --preset debug
+        run: cmake --build --preset ${{ matrix.preset }}
 
       - name: 测试
-        run: ctest --preset debug
+        run: ctest --preset ${{ matrix.preset }}
 
-      - name: 架构门禁（依赖方向 / 裸 new-delete / 图形 API 泄漏）
+  lint:
+    name: 架构门禁
+    runs-on: ubuntu-24.04
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v5
+      - name: 依赖方向 / 裸 new-delete / 图形 API 泄漏
         run: python3 tools/check_deps.py --verbose

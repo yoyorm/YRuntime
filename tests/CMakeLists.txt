@@ -8,10 +8,14 @@ if(NOT Catch2_FOUND)
     include(FetchContent)
     set(CATCH_INSTALL_DOCS OFF CACHE BOOL "" FORCE)
     set(CATCH_INSTALL_EXTRAS OFF CACHE BOOL "" FORCE)
+    # SYSTEM：把 Catch2 的头文件目录标记为"系统头"，编译器不对其内容报警告。
+    # 不加的话，clang + 我们的严格警告集（-Wold-style-cast 等）可能会被 Catch2 内部
+    # 代码刷出几十条我们无法修复的警告。系统包路径天然是 SYSTEM，FetchContent 不是。
     FetchContent_Declare(Catch2
         GIT_REPOSITORY https://github.com/catchorg/Catch2.git
         GIT_TAG v3.7.1
-        GIT_SHALLOW TRUE)
+        GIT_SHALLOW TRUE
+        SYSTEM)
     FetchContent_MakeAvailable(Catch2)
     # FetchContent 方式下 Catch.cmake 不在默认搜索路径里，显式补上
     list(APPEND CMAKE_MODULE_PATH "${catch2_SOURCE_DIR}/extras")
