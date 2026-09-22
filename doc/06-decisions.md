@@ -26,6 +26,7 @@
 | D13 | 测试用 Catch2（系统包），benchmark 独立且不进 CI | 暂定 | M0 |
 | D14 | 不使用异常做控制流；错误经返回值 + 日志上报 | 暂定 | 全程 |
 | D15 | Vulkan 后端由 Yo_Renderer 搬入并改名空间，而非 submodule 引用 | 暂定 | M10 |
+| D16 | Sanitizer 与 Debug 构建分离，而不是合并 | 暂定 | M0 |
 
 ---
 
@@ -268,6 +269,40 @@ benchmark 放 `benchmarks/` 独立 target，**手动运行**，结果写 `doc/no
 
 **风险控制**：搬迁与重构必须分开 commit（`refactor(vulkan): 搬运，无逻辑变化` → `feat(vulkan): 接入快照契约`）；
 每步之后跑 Yo_Renderer 原有的 `YoCoreTests` 等价物 + 画面冒烟。
+
+---
+
+---
+
+## D16 · Sanitizer 与 Debug 构建分离，而不是合并
+**状态**：暂定 · **里程碑**：M0（Day 3c 讨论后确定）
+
+**背景**：实现 `asan` preset 时提出的疑问——"debug 本来就是开发期用的，为什么不把 sanitizer 直接开在 debug 里？"
+这个方案确实有项目在用，所以值得正式记录取舍。根源是一个概念混淆：
+**Debug 构建（`-O0 -g`）的目的是"让调试器看得清"，sanitizer 的目的是"让隐藏错误显形"**——两件不同的事，只是都在开发期用。
+
+**决策**：保持分离。`debug` preset 不含 sanitizer；`asan` preset = Debug + `YR_ENABLE_SANITIZERS=ON`。
+工作流：写代码用 `debug` → **提交前**跑 `asan` → 测性能用 `release` → M7 起查竞争用 `tsan`。
+
+**理由**（按对本项目的实际影响排序）
+1. **benchmark 会失效**：ASan 的 redzone 与插桩开销约 2 倍且**不均匀**，会掩盖 `03-learning-map.md` E1~E16 想测量的 cache 行为与内存布局差异。M1 就要跑 E1，必须有干净的 Debug。
+2. **干扰 gdb**：ASan 拦截 `malloc/free`、安装自己的信号处理器、改变内存布局 → 单步会跳进 sanitizer 内部、watchpoint 异常、崩溃点定位需要额外配 `ASAN_OPTIONS=abort_on_error=1`。
+3. **拖慢迭代**：插桩增加编译时间，链接多链 `libasan`。项目变大后（M4 起）日常反馈回路明显变长。
+4. **第三方噪音**：LeakSanitizer 会报告修不了的泄漏（Catch2 内部、将来的 GLFW/Vulkan 驱动），只能 suppress；噪音过多会让人对真报告麻木，比没有 sanitizer 更糟。
+5. **TSan 与 ASan 互斥**：分离的 preset 天然容纳 M7 的 TSan；若 debug 默认开 ASan，反而要多做一个"关 ASan"的开关。
+6. **CI 矩阵需要两者**：`debug`（快，覆盖逻辑）与 `asan`（慢，覆盖内存）各是一个 job。
+
+**备选与否决理由**
+- *debug 默认开 ASan*：省去"忘记跑 asan"的风险，但代价是上面 1~6 全部发生，且 benchmark 无处可跑。
+- ***debug 只开 UBSan（开销约 1.2 倍，几乎不干扰 gdb，不做泄漏检查），ASan 单独 preset***：
+  **这是最值得考虑的折中**，日常就能抓到整数溢出/空指针解引用，同时避开 ASan 的全部代价。部分项目采用此方案。
+  暂不采用，理由见"什么情况下改回来"。
+
+**后果**：+ 日常迭代快、benchmark 可信、gdb 好用、CI 覆盖两类问题；
+− 存在"忘记跑 asan"的风险 → 两道兜底：`05-engineering.md` §10 提交前自检清单，以及 Day 5 的 CI（asan 是矩阵中一个 job，跑不掉）。
+
+**什么情况下改回来**：若**连续两次**出现"本地自检通过、提交后 CI 才发现内存错误"（说明自检清单在实践中失效），
+就改为备选方案 3（debug 并入 UBSan）。用事实触发，而不是用担心触发。
 
 ---
 

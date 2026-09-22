@@ -19,12 +19,22 @@
             "displayName": "Release（性能测试 / 录屏）",
             "inherits": "base",
             "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+        },
+        {
+            "name": "asan",
+            "displayName": "ASan + UBSan（提交前跑）",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "YR_ENABLE_SANITIZERS": "ON"
+            }
         }
     ],
 
     "buildPresets": [
         { "name": "debug",   "configurePreset": "debug" },
-        { "name": "release", "configurePreset": "release" }
+        { "name": "release", "configurePreset": "release" },
+        { "name": "asan", "configurePreset": "asan" }
     ],
 
     "testPresets": [
@@ -36,6 +46,11 @@
         {
             "name": "release",
             "configurePreset": "release",
+            "output": { "outputOnFailure": true }
+        },
+        {
+            "name": "asan",
+            "configurePreset": "asan",
             "output": { "outputOnFailure": true }
         }
     ]

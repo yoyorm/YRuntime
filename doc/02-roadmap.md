@@ -34,12 +34,12 @@
 **目标**：让"改一行代码 → 构建 → 测试 → 看到结果"的回路 < 30 秒，并让 CI 替你守住规矩。
 这个阶段不写任何引擎逻辑，但它决定了后面 8 个月的开发体验。
 
-- [ ] 仓库初始化：`.gitignore`（build/ out/ .cache/ *.yrpak）、`.editorconfig`、`.clang-format`（从 Yo_Renderer 拷并调整）、首次 commit
-- [ ] `CMakeLists.txt` + `cmake/YrLibrary.cmake`：封装 `yr_add_library(NAME ns DEPS...)`，统一 `cxx_std_20`、警告、include 路径
-- [ ] 警告基线：`-Wall -Wextra -Wpedantic -Wshadow -Wnon-virtual-dtor -Wold-style-cast`（`-Werror` 只在 CI preset 开）
-- [ ] `CMakePresets.json`：`debug` / `release` / `asan`（ASan+UBSan）/ `tsan` / `ci`（Ninja + `-Werror` + ccache）
-- [ ] Catch2 集成：优先 `find_package(Catch2 3)`（本机已装 3.7.1），失败则 FetchContent；`tests/core/test_main.cpp` 一个 hello 用例
-- [ ] `enable_testing()` + `ctest --output-on-failure`，`YrTests_core` target
+- [x] 仓库初始化：`.gitignore`（build/ out/ .cache/ *.yrpak）、`.editorconfig`、`.clang-format`（从 Yo_Renderer 拷并调整）、首次 commit
+- [x] `CMakeLists.txt` + `cmake/YrLibrary.cmake`：封装 `yr_add_library(NAME ns DEPS...)`，统一 `cxx_std_20`、警告、include 路径
+- [x] 警告基线：`-Wall -Wextra -Wpedantic -Wshadow -Wnon-virtual-dtor -Wold-style-cast`（`-Werror` 只在 CI preset 开）
+- [x] `CMakePresets.json`：`debug` / `release` / `asan`（ASan+UBSan）/ `tsan` / `ci`（Ninja + `-Werror` + ccache）
+- [x] Catch2 集成：优先 `find_package(Catch2 3)`（本机已装 3.7.1），失败则 FetchContent；`tests/core/test_main.cpp` 一个 hello 用例
+- [x] `enable_testing()` + `ctest --output-on-failure`，`YrTests_core` target
 - [ ] 吸收 yo_lib 第一批：`yo_assert.h` → `yr/core/assert.h`（宏改名 `YR_ASSERT*`，加 `[[unlikely]]`、可关闭、带表达式字符串）
 - [ ] 吸收 yo_lib 第二批：`logger/` → `yr/core/log.h`，**重构**：加来源 tag、帧号、线程 ID、level 过滤、`YR_LOG_INFO(...)` 宏（避免流式 API 的临时对象开销）、线程安全
 - [ ] `tools/check_deps.py`：include 反向依赖扫描 + 禁用符号（裸 new/delete）扫描，接进 CI

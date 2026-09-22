@@ -16,8 +16,6 @@
     "[c]": {
         "editor.defaultFormatter": "xaver.clang-format"
     },
-    "clangd.arguments": [
-    "--compile-commands-dir=${workspaceFolder}/build"
-]
+
 
 }
