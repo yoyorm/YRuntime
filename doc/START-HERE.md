@@ -62,6 +62,29 @@
 
 ---
 
+### 2.4 任务粒度规则（2026-09-20 新增，来自实际反馈）
+
+**规则：一个步骤只引入一个新概念。**
+
+自检方法：这一步做完，如果"学到的三件事"里有两件以上是**这一步才第一次接触**的 —— 说明这一步太大，拆。
+
+已按此规则重排的：
+
+| 原来（太大） | 拆成 |
+|---|---|
+| Day 3 = presets + sanitizer + CMake 函数 + ccache（4 个新概念） | 3a presets / 3b 体验 sanitizer / 3c 做成开关；ccache 移到 Day 5 |
+| Day 5 = CI 的 matrix + 多 job + format + lint | 5a 单 job 跑通 / 5b 加 matrix / 5c 加 format+lint |
+| Day 6 = assert 宏 + fmt 风格日志 + tag/level + 线程安全 | 6a assert / 6b 最小 logger / 6c tag+level / 6d 线程安全 |
+
+**拆分的顺序原则**：先用**最土的办法**体验一遍（手写、硬编码、命令行传参），理解了**再**抽象成配置/函数/宏。
+这和 ADR D6（先手写 `ClassInfo` 再封装成 `YR_CLASS` 宏）是同一个道理 —— 你会知道那个抽象在替你做什么，
+而不是在"调配置直到它工作"。
+
+**允许一次只做一半**：3a 做完就可以停，明天再做 3b。里程碑的周数是估算，不是 deadline。
+每一步都应该是**独立可提交**的（做完就能 commit + push，仓库始终是绿的）。
+
+---
+
 ## 3. 第一周：M0 逐日计划
 
 **M0 的唯一目标**：让"改一行 → 构建 → 测试 → 看到结果"这个回路跑起来，并让 CI 替你守规矩。
@@ -121,15 +144,31 @@
 `enable_testing()` 放在 `add_subdirectory(tests)` 之后 → ctest 发现不到测试。
 **卡住超过 30 分钟**：先查 [official CMake tutorial](https://cmake.org/cmake/help/latest/guide/tutorial/index.html) 第 1~3 步，再把**报错原文**发我。
 
-### Day 3 · presets + sanitizer（~1h）
-| 动作 | |
-|---|---|
-| 1 | 装 ccache：`sudo apt install ccache`（`05-engineering.md` §1 实测本机没有） |
-| 2 | 写 `CMakePresets.json`：`debug` / `release` / `asan` 三个 configure preset + 对应 build/test preset（`asan` = `-fsanitize=address,undefined -fno-sanitize-recover=all`） |
-| 3 | 验证：`cmake --preset debug && cmake --build --preset debug && ctest --preset debug` |
-| 4 | **故意制造一次 UB**（比如 `int* p = nullptr; *p = 1;` 放进测试），确认 asan preset 会抓到并失败，然后删掉 |
+### Day 3 · 拆成三步（3a / 3b / 3c），每步一个新概念
 
-**完成的证据**：三条 preset 命令全绿 + 你**亲眼看到** asan 报出一个真错误（这一步不能省，否则你不知道门禁是真是假）。
+> 2026-09-20 调整：原计划一天做完 presets + sanitizer + CMake 函数 + ccache，信息量过大（见 §2.4）。
+
+| 步 | **唯一**的新概念 | 时长 | 产出 |
+|---|---|---|---|
+| **3a** | CMakePresets = 命令快捷方式 | ~30min | `CMakePresets.json`（只有 debug / release）+ clangd 符号链接修好 |
+| **3b** | Sanitizer = 编译期插桩的"体检仪" | ~30min | 用**最土的办法**（临时硬编码 flag）亲眼看到 ASan 抓到堆越界、UBSan 抓到整数溢出，然后还原 |
+| **3c** | CMake `option()` = 可配置开关 | ~45min | `YR_ENABLE_SANITIZERS` 开关 + `asan` preset，把 3b 的土办法变成正式配置 |
+
+每一步都是**独立可提交**的：3a 做完就能 commit + push，不用等 3c。
+
+**三步全部做完后的验收**
+- `cmake --list-presets` 列出 debug / release / asan
+- 三个 preset 的 `ctest` 全绿
+- 你**亲眼看到过** ASan 的 `heap-buffer-overflow` 报告与 UBSan 的 `signed integer overflow` 报告
+  （3b 的产出，把输出复制进 `notes/evidence/M0/asan-ubsan-demo.txt`）
+- `ls -l compile_commands.json` 是指向 `build/debug/` 的符号链接，且被 `.gitignore` 忽略
+
+**一个简化决策（记进 ADR）**：sanitizer 开关第一版只做 `YR_ENABLE_SANITIZERS=ON/OFF`（固定 = address + undefined），
+**不做** `YR_SANITIZERS="address;undefined;thread"` 这种列表解析 + 互斥检查。
+理由：① TSan 要到 M7 才用（决策协议 R3：不痛就不做）；② 列表解析需要 `foreach` / `list(FIND)` / `FATAL_ERROR`
+三组新语法，而 `option()` + `if()` 只要两组。等 M7 真要 TSan 时再升级 —— 那时你已经写过 5 个 CMake 模块了。
+
+**ccache 移到 Day 5**：它是编译缓存，属于"提速"而不是"能力"。Day 5 做 CI 缓存时一起装，那时才知道它省了多少时间。
 
 ### Day 4 · 依赖检查脚本（~1.5h）
 | 动作 | |
@@ -141,7 +180,7 @@
 **完成的证据**：两次故意违规都被抓到（截图或输出存进 `notes/evidence/M0/`）。
 **这一天是我的活**：Python 脚本属于 `05-engineering.md` §9.1 允许 AI 生成的"样板"。**你可以直接让我写这个脚本**，但你要读懂它并能改允许矩阵。
 
-### Day 5 · CI（~1.5h）
+### Day 5 · CI（~1.5h，拆成 5a/5b/5c，见 §2.4）
 | 动作 | |
 |---|---|
 | 1 | 建 GitHub 仓库（**public**，理由见 `07-portfolio.md` §8 最后一条），`git remote add origin` |
@@ -152,7 +191,7 @@
 **完成的证据**：GitHub Actions 页面一片绿 + README 徽章可见。
 **注意**：CI 上 `find_package(Catch2)` 需要 `sudo apt install libcatch2-dev`（runner 不自带），这是最常见的第一次失败原因。
 
-### Day 6 · 吸收 yo_lib 第一批（~2h）—— 第一次"重构既有代码"练习
+### Day 6 · 吸收 yo_lib 第一批（~2h，拆成 6a/6b/6c/6d，见 §2.4）
 | 动作 | |
 |---|---|
 | 1 | `yo_assert.h` → `engine/core/include/yr/core/assert.h`：宏改名 `YR_ASSERT*`，加 `__builtin_trap()`（gdb 能直接停在断言处），加 `YR_BREAKPOINT()` |
