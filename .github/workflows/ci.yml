@@ -1,10 +1,9 @@
 # YRuntime CI —— 每次 push 在一台干净的 Ubuntu 虚拟机上跑一遍构建与检查。
 #
-# 三个概念（见 doc/START-HERE.md 的 Day 4b）：
-#   workflow = 这个文件；job = 一台虚拟机上的一组步骤；step = 一条命令。
-#   任何 step 退出码非 0 → 整个 job 失败 → commit 上显示红叉。
+# 三个概念：workflow = 这个文件；job = 一台虚拟机上的一组步骤；step = 一条命令。
+# 任何 step 退出码非 0 → 整个 job 失败 → commit 上显示红叉。
 #
-# 依赖：ninja-build（generator）、libcatch2-dev（测试框架，Ubuntu 24.04 提供 3.7.1）
+# step 拆得细是为了在 UI 上直接看出"哪个阶段"挂了（配置/构建/测试/门禁）。
 
 name: CI
 
@@ -13,17 +12,23 @@ on: push          # 单人仓库直接推 main，先不监听 pull_request（会
 jobs:
   build-test:
     # 固定版本号而不是 ubuntu-latest：latest 会随 GitHub 升级而漂移，
-    # 某天突然变红你会分不清是代码问题还是环境问题。24.04 与本机一致。
+    # 某天突然变红你会分不清是代码问题还是环境问题。
+    # ubuntu-24.04 = noble，与本机 Linux Mint 22.3 同一个基座（ADR D12）。
     runs-on: ubuntu-24.04
 
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
+      # ninja 是必需的；libcatch2-dev 在 Ubuntu 24.04 的 apt 源里**不存在**
+      # （2026-09-22 实测：CI 上 apt 退出码 100），所以单独一行并容错 ——
+      # 装不到也没关系，tests/CMakeLists.txt 会退回 FetchContent 拉源码。
       - name: 安装依赖
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libcatch2-dev
+          sudo apt-get install -y ninja-build
+          sudo apt-get install -y libcatch2-dev \
+            || echo "::warning::apt 无 libcatch2-dev，CMake 将用 FetchContent 拉取 Catch2 v3.7.1"
 
       - name: 配置
         run: cmake --preset debug

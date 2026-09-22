@@ -1,3 +1,22 @@
-find_package(Catch2 3 REQUIRED)
-include(Catch)
+# Catch2：优先用系统包（本机已装 3.7.1，configure 只要 0.15s）；
+# 找不到就用 FetchContent 拉源码（CI 的干净环境需要这条路 —— Ubuntu 24.04 的 apt
+# 源里没有 libcatch2-dev，见 ADR D13）。两条路最终都提供 Catch2::Catch2WithMain。
+find_package(Catch2 3 QUIET)
+
+if(NOT Catch2_FOUND)
+    message(STATUS "YRuntime: 未找到系统 Catch2，改用 FetchContent 拉取 v3.7.1（首次会慢一些）")
+    include(FetchContent)
+    set(CATCH_INSTALL_DOCS OFF CACHE BOOL "" FORCE)
+    set(CATCH_INSTALL_EXTRAS OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(Catch2
+        GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+        GIT_TAG v3.7.1
+        GIT_SHALLOW TRUE)
+    FetchContent_MakeAvailable(Catch2)
+    # FetchContent 方式下 Catch.cmake 不在默认搜索路径里，显式补上
+    list(APPEND CMAKE_MODULE_PATH "${catch2_SOURCE_DIR}/extras")
+endif()
+
+include(Catch)          # 提供 catch_discover_tests()，两种方式都需要
+
 add_subdirectory(core)

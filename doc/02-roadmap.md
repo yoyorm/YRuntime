@@ -45,7 +45,7 @@
 - [x] 顶层 `CMakeLists.txt`：3 个 option + 统一输出目录（`build/<preset>/{bin,lib}`）+ `CMAKE_EXPORT_COMPILE_COMMANDS` + `yr_build_flags` INTERFACE target（承载警告基线与 `cxx_std_20`）✅ 2026-09-20
 - [x] 警告基线：`-Wall -Wextra -Wpedantic -Wshadow -Wnon-virtual-dtor -Wold-style-cast -Wcast-align -Wunused -Woverloaded-virtual`；`-Werror` 由 `YR_WARNINGS_AS_ERRORS` 控制（只在 CI 开）✅ 2026-09-20
 - [x] `engine/core` target：`yr_core` + `yr::core` ALIAS + `include/yr/core/` 分层 include 约定 + `version.h/cpp`（把 CMake 的版本号与 `$<CONFIG>` 注入 C++）✅ 2026-09-20
-- [x] Catch2 集成：`find_package(Catch2 3 REQUIRED)`（系统包 3.7.1，`/usr/lib/cmake/Catch2/`）+ `include(Catch)` + `catch_discover_tests`；`tests/core/test_smoke.cpp` ✅ 2026-09-20
+- [x] Catch2 集成：`find_package(Catch2 3 QUIET)` + **FetchContent 回退**（本机走系统包 3.7.1，CI 走 FetchContent，因为 Ubuntu noble 的 apt 源没有 `libcatch2-dev`）+ `include(Catch)` + `catch_discover_tests`；`tests/core/test_smoke.cpp` ✅ 2026-09-20（回退路径 09-22 补）
 - [x] `CMakePresets.json`：`debug` / `release` / `asan` 三套（configure + build + test），共享 hidden `base`，`binaryDir = build/${presetName}`，`outputOnFailure: true` ✅ 2026-09-22
 - [x] Sanitizer 开关：`YR_ENABLE_SANITIZERS`（ASan + UBSan + `-fno-omit-frame-pointer` + `-fno-sanitize-recover=all`），与 debug 分离的理由见 **ADR D16** ✅ 2026-09-22
 - [x] clangd 接入：根目录 `compile_commands.json` → `build/debug/` 符号链接；禁用 C/C++ 扩展 IntelliSense 避免冲突 ✅ 2026-09-22

@@ -7,13 +7,18 @@
 
 ## 1. 本机工具链现状（实测 2026-09-19，2026-09-22 修订）
 
+> **本机是 Linux Mint 22.3 "Zena"**（`/etc/os-release`：`VERSION_CODENAME=zena`、`UBUNTU_CODENAME=noble`），
+> 基座是 Ubuntu 24.04。规划期误记为"Ubuntu 24.04"，已更正。
+> **这个区别在 Day 4b 造成了一次真实的 CI 失败**：本机装了 `libcatch2-dev`，但 Ubuntu noble 的 apt 源里没有这个包，
+> 所以 CI 的干净环境装不上 → 见下表 Catch2 行与 ADR D13 的复盘。
+
 | 工具 | 状态 | 版本 / 路径 | 备注 |
 |---|---|---|---|
 | GCC | ✅ | 13.3.0 | 主力编译器，支持 C++20 |
 | Clang | ✅ | 18.1.3 | CI 第二编译器；`clang -E` 看宏展开必备 |
 | CMake | ✅ | 3.28.3 | 满足 preset/`FetchContent` 全部需求 |
 | Ninja | ✅ | 1.11.1 | 默认 generator |
-| Catch2 | ✅ **已接入** | 3.7.1。CMake 包在 `/usr/lib/cmake/Catch2/`，库 `/usr/lib/libCatch2{,Main}.a` | `find_package(Catch2 3 REQUIRED)` + `include(Catch)` + `catch_discover_tests`。实测 configure 0.15s，无需 FetchContent（ADR D13） |
+| Catch2 | ✅ **已接入** | 本机 3.7.1（`/usr/lib/cmake/Catch2/`、`/usr/lib/libCatch2{,Main}.a`）。⚠️ **apt 源里没有**：`apt-cache policy libcatch2-dev` 只显示 `/var/lib/dpkg/status`，无任何仓库来源 | `tests/CMakeLists.txt` 用 `find_package(... QUIET)` + **FetchContent 回退**（v3.7.1，`GIT_SHALLOW`）。本机走系统包（configure 0.1s），CI 走 FetchContent（慢约 1~2 分钟，4c 用缓存缓解） |
 | GDB | ✅ | 15.1 | 主力调试器 |
 | LLDB | ✅ | 有 | 备用 |
 | perf | ✅ | 有 | CPU 采样与 cache 统计（`perf stat` / `perf record`） |

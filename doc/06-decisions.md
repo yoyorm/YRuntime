@@ -23,7 +23,7 @@
 | D10 | 场景结构修改收敛到帧阶段 9，其余阶段只改数据 | 暂定 | M4 |
 | D11 | 分层 = 分层 CMake target，依赖方向由构建系统与 CI 强制 | 暂定 | M0 |
 | D12 | Linux-first，平台层保留薄抽象但不移植 | 暂定 | 全程 |
-| D13 | 测试用 Catch2（系统包），benchmark 独立且不进 CI | 暂定 | M0 |
+| D13 | 测试用 Catch2（系统包优先 + FetchContent 回退），benchmark 独立且不进 CI | 暂定（09-22 复盘修订） | M0 |
 | D14 | 不使用异常做控制流；错误经返回值 + 日志上报 | 暂定 | 全程 |
 | D15 | Vulkan 后端由 Yo_Renderer 搬入并改名空间，而非 submodule 引用 | 暂定 | M10 |
 | D16 | Sanitizer 与 Debug 构建分离，而不是合并 | 暂定 | M0 |
@@ -220,7 +220,7 @@ COW 是优化，应该等 E6 实验测出拷贝成本确实成问题后再做（
 ## D12 · Linux-first，平台层保留薄抽象但不移植
 **状态**：暂定 · **里程碑**：全程
 
-**决策**：只在 Linux（本机 Ubuntu 24.04 / GCC 13 / Clang 18）开发与测试。平台相关代码集中在 `yr/platform/`（headless 实现 + M10 的 GLFW/Xlib 实现），但不做 Windows/macOS 移植（列入 S12）。
+**决策**：只在 Linux（本机 **Linux Mint 22.3 "Zena"**，基座 Ubuntu 24.04 noble / GCC 13 / Clang 18）开发与测试。平台相关代码集中在 `yr/platform/`（headless 实现 + M10 的 GLFW/Xlib 实现），但不做 Windows/macOS 移植（列入 S12）。
 
 **理由**：移植的学习价值远低于同等时间投入在 Runtime 核心上；且 Yo_Renderer 已标注"当前仅支持 Linux"。
 
@@ -228,17 +228,32 @@ COW 是优化，应该等 E6 实验测出拷贝成本确实成问题后再做（
 
 ---
 
-## D13 · 测试用 Catch2（系统包），benchmark 独立且不进 CI
+## D13 · 测试用 Catch2（系统包优先 + FetchContent 回退），benchmark 独立且不进 CI
 **状态**：暂定 · **里程碑**：M0
 
-**决策**：`find_package(Catch2 3)` 用系统 3.7.1（本机已装），失败才 FetchContent。
+**决策**：`find_package(Catch2 3 QUIET)` 优先用系统包（本机 3.7.1），**找不到则 FetchContent 回退**（pinned v3.7.1）。
 benchmark 放 `benchmarks/` 独立 target，**手动运行**，结果集中写 `benchmarks/README.md`。
 
-**理由**：系统包冷启动快、CI 无需网络；benchmark 在 CI 上噪声极大（共享 runner），跑出来的数字没有意义，且会拖慢反馈。
+**理由**：系统包冷启动快；benchmark 在 CI 上噪声极大（共享 runner），跑出来的数字没有意义，且会拖慢反馈。
 
 **备选**：*GoogleTest*（生态大但本机未装，且 Catch2 的 `SECTION` 更适合行为驱动的测试组织）；*doctest*（Godot 用它，编译更快，可作为将来对照实验）。
 
 **后果**：+ 快、可离线；− 与 Godot 的测试风格不同（读 Godot 测试时注意它是 doctest 的 `TEST_CASE`/`ERR_FAIL_*` 宏）。
+
+**复盘（2026-09-22，Day 4b）**：本决策隐含的前提"系统包到处都有"**在 CI 上不成立**。
+Ubuntu 24.04（noble）的 apt 源里**没有** `libcatch2-dev` —— 本机那个 3.7.1 是从别处装的
+（`apt-cache policy` 只显示 `/var/lib/dpkg/status`，无任何仓库来源，这就是证据）。
+CI 首次运行时 `apt-get install libcatch2-dev` 退出码 100，job 失败。
+
+修正（决策本身不变，Catch2 仍优于 GoogleTest）：
+1. `tests/CMakeLists.txt` 改为 `find_package(Catch2 3 QUIET)` + **FetchContent 回退**（pinned `v3.7.1`、`GIT_SHALLOW TRUE`），
+   并显式 `list(APPEND CMAKE_MODULE_PATH "${catch2_SOURCE_DIR}/extras")` 让 `include(Catch)` 在两条路径下都能工作。
+2. CI 的 apt 步骤把 `libcatch2-dev` 拆成单独一行并容错（装不到只发 warning）。
+3. 代价：CI 的 configure 阶段要多花约 1~2 分钟克隆并构建 Catch2 → Day 4c 用 Actions 缓存 + ccache 缓解。
+
+**教训（比这个 bug 本身值钱）**：原理由里写的"CI 无需网络"是想当然 —— 我并没有在干净环境里验证过。
+**"本地能构建"和"别人能构建"是两件事**，只有 CI 能告诉你后者。以后凡是写进 ADR 的理由，
+凡是涉及"某环境里有某个东西"的断言，都要么验证过、要么标注为假设。
 
 ---
 
