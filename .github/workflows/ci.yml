@@ -1,0 +1,38 @@
+# YRuntime CI —— 每次 push 在一台干净的 Ubuntu 虚拟机上跑一遍构建与检查。
+#
+# 三个概念（见 doc/START-HERE.md 的 Day 4b）：
+#   workflow = 这个文件；job = 一台虚拟机上的一组步骤；step = 一条命令。
+#   任何 step 退出码非 0 → 整个 job 失败 → commit 上显示红叉。
+#
+# 依赖：ninja-build（generator）、libcatch2-dev（测试框架，Ubuntu 24.04 提供 3.7.1）
+
+name: CI
+
+on: push          # 单人仓库直接推 main，先不监听 pull_request（会重复跑）
+
+jobs:
+  build-test:
+    # 固定版本号而不是 ubuntu-latest：latest 会随 GitHub 升级而漂移，
+    # 某天突然变红你会分不清是代码问题还是环境问题。24.04 与本机一致。
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libcatch2-dev
+
+      - name: 配置
+        run: cmake --preset debug
+
+      - name: 构建
+        run: cmake --build --preset debug
+
+      - name: 测试
+        run: ctest --preset debug
+
+      - name: 架构门禁（依赖方向 / 裸 new-delete / 图形 API 泄漏）
+        run: python3 tools/check_deps.py --verbose
