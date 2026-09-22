@@ -1,283 +1,120 @@
-# START HERE · 现在从哪里开始
+# START HERE · 现在做什么
 
-> 生成于 2026-09-19。**这是你每次不知道"接下来干什么"时唯一需要打开的文件。**
-> 它不重复其他文档的内容，只回答三件事：**怎么卸下心理负担、碰到决策怎么办、这周具体做什么。**
+> **不知道接下来干什么时只看这篇。** 它只回答三件事：现在在哪、下一步做什么、碰到决策怎么办。
+> 参考性内容在 `doc/` 的其他文档里，见 §5。
 
 ---
 
-## 0. 先卸下三个心理负担
+## 1. 当前状态
 
-| 你在担心的 | 实际情况 |
+| 里程碑 | 状态 |
 |---|---|
-| "文档太多，我记不住" | **不需要记住。** 见 §1：常驻只有 3 篇，其余是"按需查阅的参考书"，不是"要背的教材" |
-| "很多决策我判断不了做还是不做" | **不需要你现在判断。** 见 §2 决策协议：绝大多数决策有默认答案，剩下的遇到时问我，我给选项+代价，你只做"选一个" |
-| "我不理解全貌，不敢开始" | **M0 只跟 4 个文件有关**（`CMakeLists.txt`、`CMakePresets.json`、`.gitignore`、`.github/workflows/ci.yml`），跟反射/序列化/渲染一点关系都没有。全貌是做完 M4 之后自然浮现的 |
+| **M0 工程地基** | 🔨 进行中 —— Day 1~3c 已完成，剩 Day 4~7 |
+| M1 ~ M11 | ⬜ 未开始 |
 
-还有一条：**迷茫是正常的，而且是这个项目设计好的**。`02-roadmap.md` 里每个里程碑都写了"常见坑"，
-就是因为我预期你会踩。踩了不是失败，踩了并且记进 `notes/` 才是这个项目的产出。
-
----
-
-## 1. 文档分层使用法（不要试图全读）
-
-| 层级 | 文档 | 什么时候打开 |
-|---|---|---|
-| **常驻**（每次都看） | 本文 · `02-roadmap.md` 的**当前里程碑那一节** · `notes/weekly/本周.md` | 每次开工前 3 分钟 |
-| **开工前查**（每个模块一次） | `01-architecture.md` 的**对应 §4.x 小节** · `04-godot-study.md` 的**对应主题行** | 写设计笔记时 |
-| **需要时才读**（参考书） | `00-vision.md`（怀疑方向时）· `03-learning-map.md`（卡住/要补知识时）· `05-engineering.md`（要查规范时）· `06-decisions.md`（要做取舍时）· `07-portfolio.md`（里程碑收口时） | 有具体问题才翻 |
-
-> **规则**：任何一次开工，你实际需要的阅读量 ≈ 30 行。如果你发现自己在一口气读 500 行文档，
-> 停下来 —— 那是在用"准备"代替"动手"（`04-godot-study.md` §5 最后一条：读代替写是拖延）。
+进度**只在两处维护**：根 `README.md` 的里程碑表（对外）+ `02-roadmap.md` 的 checkbox（对内）。
+别的地方不要重复记录，否则一定会漂移。
 
 ---
 
-## 2. 决策协议（碰到再决定，且不用凭经验）
+## 2. 下一步：M0 剩余的 Day 4~7
 
-### 2.1 四条默认规则（按顺序套用，命中就停）
-
-| # | 规则 | 例子 |
-|---|---|---|
-| **R1** | **文档里已有倾向的，直接照做，不重新讨论。** `01-architecture.md` §11 的 Q1~Q6、`06-decisions.md` 的 D1~D15 就是为此写的 | Q1 数学库 → 自研最小版（D4 已定），不用再想 |
-| **R2** | **两个方案都行 → 选代码更少、概念更少的那个。** 学习项目的敌人是复杂度，不是"不够先进" | 异步加载：回调 vs `std::future` → 先回调 |
-| **R3** | **不确定要不要做 → 现在不做，写 `// TODO(M?)` 记下来，等它真的痛了再做。** 痛的表现是：你为了绕过它写了丑代码，或它让 bug 反复出现 | COW 字符串（D5）：先不做，等 E6 实验数据说话 |
-| **R4** | **只有"影响 ≥1 天工作量"或"改起来很贵"的选择，才值得停下来问我** | 换序列化格式 = 问我；某个函数叫什么名字 = 不要问 |
-
-### 2.2 问我的格式（这样我能给你有用的答案，而不是长篇大论）
-
-```
-问题：<一句话，具体到"我在写 X 时遇到 Y">
-我的倾向：<A 还是 B>
-我的理由：<哪怕理由是错的也写，这比问题本身更有价值>
-```
-我会回你：**2~3 个选项 + 推荐哪个 + 每个的代价 + "什么情况下你会后悔选它"**。你只需要选一个。
-
-### 2.3 决定之后（30 秒，不要跳过）
-
-- 影响架构/模块边界的 → 追加一条 ADR 到 `06-decisions.md`（用文末模板，**5 行就够**）
-- 只影响实现的 → 写进当前模块的 `notes/design/<模块>.md`
-- 都不影响 → 不用记
-
-> **为什么值得记**：3 个月后你会完全忘记自己为什么这么选，然后花两小时重新纠结一遍。
-> 而且"被推翻的决策记录"是面试里最有说服力的素材（`07-portfolio.md` §2 证据④）。
-
----
-
-### 2.4 任务粒度规则（2026-09-20 新增，来自实际反馈）
-
-**规则：一个步骤只引入一个新概念。**
-
-自检方法：这一步做完，如果"学到的三件事"里有两件以上是**这一步才第一次接触**的 —— 说明这一步太大，拆。
-
-已按此规则重排的：
-
-| 原来（太大） | 拆成 |
-|---|---|
-| Day 3 = presets + sanitizer + CMake 函数 + ccache（4 个新概念） | 3a presets / 3b 体验 sanitizer / 3c 做成开关；ccache 移到 Day 5 |
-| Day 5 = CI 的 matrix + 多 job + format + lint | 5a 单 job 跑通 / 5b 加 matrix / 5c 加 format+lint |
-| Day 6 = assert 宏 + fmt 风格日志 + tag/level + 线程安全 | 6a assert / 6b 最小 logger / 6c tag+level / 6d 线程安全 |
-
-**拆分的顺序原则**：先用**最土的办法**体验一遍（手写、硬编码、命令行传参），理解了**再**抽象成配置/函数/宏。
-这和 ADR D6（先手写 `ClassInfo` 再封装成 `YR_CLASS` 宏）是同一个道理 —— 你会知道那个抽象在替你做什么，
-而不是在"调配置直到它工作"。
-
-**允许一次只做一半**：3a 做完就可以停，明天再做 3b。里程碑的周数是估算，不是 deadline。
-每一步都应该是**独立可提交**的（做完就能 commit + push，仓库始终是绿的）。
-
----
-
-## 3. 第一周：M0 逐日计划
-
-**M0 的唯一目标**：让"改一行 → 构建 → 测试 → 看到结果"这个回路跑起来，并让 CI 替你守规矩。
-**不含任何引擎逻辑。** 完整验收标准见 `02-roadmap.md` 的 M0 一节，下面是把它拆成 7 天。
-
-> 每天的结构都是：**动作 → 完成的证据**。证据是关键 —— 没有证据就等于没做。
-> 时长是"专注时长"，不含查资料发呆；超了 50% 就停下来告诉我卡在哪。
-
-### Day 1 · 仓库成型（~1.5h）
-| 动作 | |
-|---|---|
-| 1 | 决定目录布局：**建议直接用 `engine/`，删掉空的 `src/`**（理由见下方「Day 1 的唯一决策」） |
-| 2 | 建目录骨架（空目录 + `.gitkeep`）：`engine/core/{include/yr/core,src}`、`tests/core`、`cmake/`、`apps/`、`tools/`、`benchmarks/`、`.github/workflows/` |
-| 3 | 写 `.gitignore`：`build*/`、`out/`、`.cache/`、`*.yrpak`、`compile_commands.json`、`*.o`、`*.a` |
-| 4 | 补全 `.clang-format`（按 `05-engineering.md` §12 给的 yaml 显式写出 7 项） |
-| 5 | 分 **3 个 commit**（不是一个）：`chore: 仓库初始化与分层骨架` → `docs: 项目规划文档` → `docs(notes): 2026-W38 周记`。理由：从第一天就练"一个 commit 一件事"（`05-engineering.md` §10） |
-| 6 | 建 `notes/weekly/2026-W38.md`（复制模板；周号用 `date +%V` 查，别手写），本周目标写 3 条 |
-
-**完成的证据**：`git log --oneline` 有 3 条；目录结构与 `01-architecture.md` §3 一致（本机没装 `tree`，用 `find . -path ./.git -prune -o -print | sort`）。
-**Day 1 最大的坑**：**git 不跟踪空目录** —— 你建的 6 个空目录在 `git status` 里是完全隐形的，commit 之后 clone 出来什么都没有。每个空目录要放一个 `.gitkeep`。
-
-<details><summary><b>Day 1 的唯一决策：src/ 还是 engine/？</b>（点开看理由，看完就照做，别再想）</summary>
-
-**建议 `engine/` + `apps/` + `tools/` + `tests/` 四分。** 三个理由：
-1. 顶层目录名本身就在说话：看到 `apps/` 就知道那是可执行 Demo，看到 `engine/` 就知道那是库。单一 `src/` 需要打开才知道里面是什么。
-2. 你会有 **11 个 CMake target**（`01-architecture.md` §2）。目录即 target，一一对应，新人（含未来的你）不用读 CMake 就能猜到结构。
-3. Yo_Renderer 就是单一 `src/` + `file(GLOB_RECURSE)`，结果分层无法强制，长出了 V1/V2 反向依赖（`core` include `render`）。这是你自己项目里的前车之鉴（ADR D11）。
-
-**代价**：几乎没有 —— 现在 `src/` 是空的，`rmdir src` 就完事。三个月后改就要动所有 include。
-**什么时候会后悔**：如果你决定整个项目只做 1~2 个 target，那 `src/` 更简单。但你的目标不是这样。
-</details>
-
-### Day 2 · 最小可构建 + 第一个测试（~2h，**本周最难也最值钱的一天**）
-
-> 本机已实测通过（2026-09-20）：Catch2 3.7.1 的 CMake 包在 `/usr/lib/cmake/Catch2/`，
-> 静态库 `/usr/lib/libCatch2{,Main}.a`，`find_package(Catch2 3 REQUIRED)` 可直接找到。
-> 实测耗时：configure 0.15s / 全量构建 1.2s / 改一个 .cpp 增量 0.18s。
-
-**计划修正**：原打算今天写 `cmake/YrLibrary.cmake`（`yr_add_library()` 封装函数），**推迟到 M1/M2**。
-理由与 ADR D6（先手写后宏化）同源——只有 1 个 target 时抽象没有意义，等到第 2、3 个 target 出现重复样板时再抽，
-你会**知道**该抽什么。今天 `cmake/` 目录保持空的。
-
-| # | 动作 | |
-|---|---|---|
-| 1 | 顶层 `CMakeLists.txt`：`project(VERSION 0.1.0)` + 两个 option + 输出目录 + `yr_build_flags` INTERFACE target（统一警告与 `cxx_std_20`）+ `add_subdirectory` |
-| 2 | `engine/core/CMakeLists.txt`：`add_library(yr_core src/version.cpp)` + `add_library(yr::core ALIAS yr_core)` + `target_include_directories(PUBLIC include)` + 两个 `target_compile_definitions` |
-| 3 | `engine/core/include/yr/core/version.h` + `src/version.cpp`：两个函数返回 CMake 注入的版本号与构建配置名 |
-| 4 | `tests/CMakeLists.txt`：`find_package(Catch2 3 REQUIRED)` + **`include(Catch)`**（少了这行 `catch_discover_tests` 未定义） |
-| 5 | `tests/core/CMakeLists.txt` + `test_smoke.cpp`：链接 `yr::core` 与 `Catch2::Catch2WithMain`，测 CMake→C++ 数据流 |
-| 6 | 跑通：`cmake -B build/debug -G Ninja -DCMAKE_BUILD_TYPE=Debug` → `cmake --build build/debug` → `ctest --test-dir build/debug --output-on-failure` |
-| 7 | **三个门禁亲眼验证**：① 造一个变量遮蔽看 `-Wshadow` 响 ② `-DYR_WARNINGS_AS_ERRORS=ON` 看它变成 error 且构建失败 ③ `-DYR_BUILD_TESTS=OFF` 看只构建库 |
-| 8 | 删掉 `engine/core/{src,include/yr/core}` 与 `tests/core` 里已经多余的 `.gitkeep`，commit |
-
-**完成的证据**：`ctest` 输出 `100% tests passed, 0 tests failed out of 1`；门禁 ② 的构建退出码非 0。
-**这一天你会卡在哪**（我预先踩过）：`include(Catch)` 漏写 → `catch_discover_tests` 未定义；
-`target_include_directories` 用了 `PRIVATE` → 测试里 `#include <yr/core/version.h>` 找不到；
-`enable_testing()` 放在 `add_subdirectory(tests)` 之后 → ctest 发现不到测试。
-**卡住超过 30 分钟**：先查 [official CMake tutorial](https://cmake.org/cmake/help/latest/guide/tutorial/index.html) 第 1~3 步，再把**报错原文**发我。
-
-### Day 3 · 拆成三步（3a / 3b / 3c），每步一个新概念
-
-> 2026-09-20 调整：原计划一天做完 presets + sanitizer + CMake 函数 + ccache，信息量过大（见 §2.4）。
-
-| 步 | **唯一**的新概念 | 时长 | 产出 |
+| 步 | 内容 | 分工 | 新概念（每步只有一个） |
 |---|---|---|---|
-| **3a** | CMakePresets = 命令快捷方式 | ~30min | `CMakePresets.json`（只有 debug / release）+ clangd 符号链接修好 |
-| **3b** | Sanitizer = 编译期插桩的"体检仪" | ~30min | 用**最土的办法**（临时硬编码 flag）亲眼看到 ASan 抓到堆越界、UBSan 抓到整数溢出，然后还原 |
-| **3c** | CMake `option()` = 可配置开关 | ~45min | `YR_ENABLE_SANITIZERS` 开关 + `asan` preset，把 3b 的土办法变成正式配置 |
+| **Day 4** | `tools/check_deps.py`（反向依赖 + 禁用符号扫描）+ CI 单 job 跑通 | AI 写样板，你读懂 + **验证它会失败** | CI 是什么、退出码即门禁 |
+| **Day 5** | CI 加 matrix（gcc/clang × debug/release/asan）+ format/lint job + 徽章 + 装 ccache | AI 写，你验证 | matrix、job 依赖 |
+| **Day 6** | 吸收 yo_lib：assert 宏 → 最小 logger → tag/level → 线程安全 | **你写**，AI 只 review | 宏工程、SBO 缓冲、线程安全 |
+| **Day 7** | 收口：核对 M0 验收标准、更新根 README、`git tag v0.M0` | 你 | — |
 
-每一步都是**独立可提交**的：3a 做完就能 commit + push，不用等 3c。
-
-**三步全部做完后的验收**
-- `cmake --list-presets` 列出 debug / release / asan
-- 三个 preset 的 `ctest` 全绿
-- 你**亲眼看到过** ASan 的 `heap-buffer-overflow` 报告与 UBSan 的 `signed integer overflow` 报告
-  （3b 的产出，把输出复制进 `notes/evidence/M0/asan-ubsan-demo.txt`）
-- `ls -l compile_commands.json` 是指向 `build/debug/` 的符号链接，且被 `.gitignore` 忽略
-
-**一个简化决策（记进 ADR）**：sanitizer 开关第一版只做 `YR_ENABLE_SANITIZERS=ON/OFF`（固定 = address + undefined），
-**不做** `YR_SANITIZERS="address;undefined;thread"` 这种列表解析 + 互斥检查。
-理由：① TSan 要到 M7 才用（决策协议 R3：不痛就不做）；② 列表解析需要 `foreach` / `list(FIND)` / `FATAL_ERROR`
-三组新语法，而 `option()` + `if()` 只要两组。等 M7 真要 TSan 时再升级 —— 那时你已经写过 5 个 CMake 模块了。
-
-**ccache 移到 Day 5**：它是编译缓存，属于"提速"而不是"能力"。Day 5 做 CI 缓存时一起装，那时才知道它省了多少时间。
-
-### Day 4 · 依赖检查脚本（~1.5h）
-| 动作 | |
-|---|---|
-| 1 | 写 `tools/check_deps.py`：扫 `engine/**/*.h|cpp` 的 `#include <yr/...>`，比对 `01-architecture.md` §2 的允许矩阵，违规退出码 1 |
-| 2 | 同一脚本加禁用符号检查：非白名单目录出现裸 `\bnew\b` / `\bdelete\b` → 报错 |
-| 3 | **故意违规一次**：在 `engine/core/` 里写 `#include <yr/scene/node.h>`，确认脚本报错；再写一个 `new`，确认报错。然后删掉 |
-
-**完成的证据**：两次故意违规都被抓到（截图或输出存进 `notes/evidence/M0/`）。
-**这一天是我的活**：Python 脚本属于 `05-engineering.md` §9.1 允许 AI 生成的"样板"。**你可以直接让我写这个脚本**，但你要读懂它并能改允许矩阵。
-
-### Day 5 · CI（~1.5h，拆成 5a/5b/5c，见 §2.4）
-| 动作 | |
-|---|---|
-| 1 | 建 GitHub 仓库（**public**，理由见 `07-portfolio.md` §8 最后一条），`git remote add origin` |
-| 2 | 写 `.github/workflows/ci.yml`：matrix(gcc-13, clang-18) × (debug, release, asan) → configure/build/ctest；再加 `format` job（`clang-format-18 --dry-run -Werror`）与 `lint` job（跑 `check_deps.py`） |
-| 3 | push，去 Actions 页面**看它失败**，修到绿 |
-| 4 | README 顶部加 CI 徽章 |
-
-**完成的证据**：GitHub Actions 页面一片绿 + README 徽章可见。
-**注意**：CI 上 `find_package(Catch2)` 需要 `sudo apt install libcatch2-dev`（runner 不自带），这是最常见的第一次失败原因。
-
-### Day 6 · 吸收 yo_lib 第一批（~2h，拆成 6a/6b/6c/6d，见 §2.4）
-| 动作 | |
-|---|---|
-| 1 | `yo_assert.h` → `engine/core/include/yr/core/assert.h`：宏改名 `YR_ASSERT*`，加 `__builtin_trap()`（gdb 能直接停在断言处），加 `YR_BREAKPOINT()` |
-| 2 | `logger/` → `yr/core/log.h` + `src/log.cpp`：按 `05-engineering.md` §5 改造 —— 加 tag / 帧号 / 线程 ID / 运行期 level 过滤，接口改成 `YR_LOG_INFO("tag", "fmt", args...)` |
-| 3 | **保留** yo_lib 里那个 `InlineBuffer` 的 SBO 优化（那是好设计，别丢） |
-| 4 | 写测试：level 过滤生效、tag 过滤生效、多线程并发写不交错（10 个线程各写 100 行，检查输出行数与完整性） |
-| 5 | commit：`feat(core): 吸收 yo_lib 的 assert 与 logger 并重构` |
-
-**完成的证据**：`ctest` 里有 ≥4 个 logger/assert 相关用例通过；asan preset 干净。
-**这是第一次真正体会"吸收而非复制"**：你会发现 yo_lib 的 logger 用了 `std::ostream` 流式接口，
-改成 fmt 风格宏之后**临时对象和构造开销都变了** —— 把这个观察写进 `notes/design/log.md`。
-
-### Day 7 · 收口（~1h）
-| 动作 | |
-|---|---|
-| 1 | 对照 `02-roadmap.md` M0 的验收标准逐条自检，把 checkbox 打勾并写日期 |
-| 2 | 把本周的证据（ctest 输出、故意违规的截图、CI 绿灯截图）放进 `notes/evidence/M0/` |
-| 3 | 更新根 `README.md`：M0 那一行状态改成 ✅，填上真实的"构建与运行"三条命令 |
-| 4 | 填完周记：实际投入时长、学到的三件事、遇到的坑 |
-| 5 | `git tag v0.M0` |
-| 6 | **写下 M1 的第一条动作**（不用做，只写），下周开工时直接开始 |
+Day 4/5 交给 AI 写样板，是为了把时间省给 Day 6 —— 那是你**第一次真正写 `engine/` 代码**。
 
 ---
 
-## 4. 第二周预告（现在不要做）
+## 3. 决策协议（碰到再决定，不用凭经验）
 
-M1 = `Handle<T>` / `SlotMap` / `StringId` / `Clock` / 最小数学库 + benchmark E1。
-**第一天动作**：复制设计笔记模板 → `notes/design/handle-slotmap.md`，填 §1~§7，
-其中 §7 要求你先读 `GodotDev/godot/core/templates/rid_owner.h`（40 分钟，时间盒）。
-细节等 Day 1 做完再看 `02-roadmap.md` 的 M1 一节。
+四条默认规则，按顺序套用，命中就停：
+
+| # | 规则 |
+|---|---|
+| **R1** | 文档里已有倾向的（`01-architecture.md` §11 的 Q1~Q6、`06-decisions.md` 的 ADR）**直接照做，不重新讨论** |
+| **R2** | 两个方案都行 → **选代码更少、概念更少的那个** |
+| **R3** | 不确定要不要做 → 现在不做，写 `// TODO(M?)`，等它真的痛了再做 |
+| **R4** | 只有"影响 ≥1 天工作量"或"改起来很贵"的选择，才值得停下来讨论 |
+
+**讨论完怎么落地**：绝大多数问题**在对话里解决掉就完了，不产生新文档**。
+只有满足下面任一条才写进 `06-decisions.md`：
+
+1. 改变了**模块边界或依赖方向**
+2. **改起来很贵**（例：D16「sanitizer 要不要并进 debug」、D9「序列化格式自研还是用 JSON」）
+
+反例：「这个函数叫什么」「用 vector 还是 deque」——两条都不满足，讨论完就忘，没问题。
+
+### 任务粒度规则
+
+**一个步骤只引入一个新概念。** 自检：这一步做完，如果新接触的东西超过一件，说明步骤太大，拆。
+
+**拆分顺序**：先用最土的办法体验一遍（手写、硬编码、命令行传参），理解了再抽象成配置/函数/宏。
+Day 3b→3c 就是这个模式：先硬编码 flag 亲眼看 ASan 抓 bug，再做成 `option()` 开关。
+这样你才知道那个抽象在替你做什么，而不是在"调配置直到它工作"。
+
+**允许一次只做一半**，但每一步都要**独立可提交**（做完就能 commit + push，仓库始终是绿的）。
 
 ---
 
-## 5. 每周固定节奏（周日晚 30 分钟 + 平日）
+## 4. 分工
 
+| AI 可以做 | AI 不做 |
+|---|---|
+| CMake / CI / Python 脚本等**构建样板** | `engine/` 下任何模块的**实现代码** |
+| 解释概念、讲清坑的原理、Godot 源码导读 | 替你做设计决策（只给选项 + 代价） |
+| review 你的头文件与实现、指出 bug 的**类型** | 替你写博客 |
+| 给测试用例清单（清单是规格，实现你写） | 在没必要时跑后台验证（浪费你的 token） |
+
+**卡住时的顺序**（不要第一步就问）：
+① 把问题写成一句话 → ② 20 行最小复现 → ③ `clang -E` / gdb / 加日志缩小范围 →
+④ 读 Godot 对应文件（`04-godot-study.md`）→ ⑤ 搜报错原文 → ⑥ 这时再问，并要求"只讲原理和方向"。
+
+---
+
+## 5. 其他文档什么时候看
+
+| 文档 | 什么时候打开 |
+|---|---|
+| `02-roadmap.md` 的**当前里程碑那一节** | 每次开工前 |
+| `01-architecture.md` 的对应 §4.x 小节 | 写某个模块的头文件之前 |
+| `04-godot-study.md` 的对应主题行 | 做某个模块时的对照阅读 |
+| `05-engineering.md` | 要查规范（命名 / 测试 / 提交 / CI）时 |
+| `00-vision.md` | 怀疑方向、或想砍功能时 |
+| `03-learning-map.md` | 卡住、需要补知识时 |
+| `06-decisions.md` | 要做取舍前，先查有没有已经定过的 |
+| `07-portfolio.md` | M8 之后再修订，现在不用看 |
+
+> **一次开工实际需要的阅读量 ≈ 30 行。** 如果你发现自己在一次读 500 行文档，停下来 ——
+> 那是在用"准备"代替"动手"。
+
+---
+
+## 6. 记录方式
+
+**这个项目不在仓库里写笔记。** 记录只有三种载体：
+
+| 载体 | 记什么 |
+|---|---|
+| **commit message** | 这次改动的**理由**（不是做了什么，diff 已经说明了） |
+| **`06-decisions.md` 的 ADR** | 只记架构级取舍（见 §3 的两个条件） |
+| **`02-roadmap.md` 的 checkbox + 日期** | 进度 |
+
+章节性的总结你自己另外整理，不放进仓库。
+
+代价是：**三个月后回来看，很多"为什么"只存在于 commit message 里。**
+所以 commit message 要认真写 —— 它是这个项目唯一的高频记录，也是 `07-portfolio.md` 里"证据链"的实际承载者。
+
+写法：
 ```
-周日 30min：
-  1. 复制周记模板 → notes/weekly/YYYY-Wxx.md
-  2. 打开 02-roadmap.md 当前里程碑，挑 ≤3 个 checkbox 抄进周记
-  3. 回看上周未完成项：是技术卡点还是估算错误？（这决定本周要不要减量）
+feat(core): 用 index+generation 句柄而非裸指针
 
-平日每次开工前 3min：
-  1. 看周记里今天的 checkbox
-  2. 若是新模块 → 先开设计笔记（05-engineering.md §9.2 的 10 步流程）
-  3. git status 确认工作区干净
-
-每次收工前 5min：
-  1. commit（一个 commit 一件事）
-  2. 在周记里写一行"今天做了什么 + 卡在哪"
+裸指针无法检测悬垂，shared_ptr 的控制块分离且会掩盖生命周期错误。
+generation 让 erase 后旧句柄自动失效，这是 ABA 的最低成本解法。
+详见 01-architecture.md §4.1。
 ```
-
-**允许"维持周"**（课业忙时只读 Godot + 写笔记，不写代码），但不允许连续两周（`02-roadmap.md` 节奏建议）。
-
----
-
-## 6. 现在，接下来的 30 分钟做这三件事
-
-- [ ] 读完本文 §1 和 §2（你已经在这了）
-- [ ] 读 `02-roadmap.md` 的 **M0 一节**（约 40 行，15 分钟）
-- [ ] 做 Day 1 的第 1~2 步（定布局 + 建空目录），然后 `git commit`
-
-做完这三件事，你就不再"迷茫从何开始"了 —— 因为你已经开始了。
-
----
-
-## 7. 分工：我可以做什么 / 我不做什么
-
-依据 `05-engineering.md` §9.1 的铁规则。
-
-### ✅ 你可以直接让我做（属于样板/教学，不影响"这是你独立做的作品"）
-- `CMakeLists.txt` / `cmake/*.cmake` / `CMakePresets.json` 的样板
-- `.github/workflows/ci.yml`、`tools/check_deps.py`、`tools/plot_stats.py` 等脚本
-- `.clang-format` / `.clang-tidy` / `.gitignore` 配置
-- 解释概念、讲清某个坑的原理、给 Godot 源码导读（带你读，而不是替你读）
-- **review 你的设计笔记和头文件**（这是我最该被使用的地方：你写完 §1~§7 发我，我挑毛病）
-- 给你的实现列测试用例清单（清单是规格，实现是你写）
-- 你的代码报错时，帮你定位**错误类型**与排查方向
-
-### ❌ 我不会做（除非你明确要求，且要求后我会提醒你这会削弱证据链）
-- `engine/` 下任何模块的**实现代码**（Variant / ClassDB / SceneTree / 序列化器 / JobSystem…）
-- 替你写 `notes/design/`、`notes/godot/` 的内容
-- 替你写博客
-
----
-
-## 8. 一句话总结
-
-**不要理解全貌才动手。动手到 M4，全貌会自己浮现。**
-现在去读 `02-roadmap.md` 的 M0，然后建目录、commit。
+第一行说"做了什么"，**正文说"为什么"**。

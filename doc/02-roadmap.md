@@ -1,7 +1,12 @@
 # 02 · 里程碑路线图（M0 ~ M11）
 
 > 生成于 2026-09-19。基于 `00-vision.md` 假设 A1（学期中 5~8h/周 + 假期冲刺）。
-> **使用方式**：每周从这里挑 ≤3 个 checkbox 写进周记；完成后打勾并写日期 `- [x] ... ✅ 2026-10-05`。
+> **使用方式**：每次开工从这里挑 ≤3 个 checkbox；完成后打勾并写日期 `- [x] ... ✅ 2026-10-05`。
+> **本文件是进度的唯一来源**（对外进度看根 `README.md` 的里程碑表）。
+>
+> **关于设计记录**（2026-09-22 定）：每个模块开工前，先在对话里把设计要点过一遍
+> （为什么存在 / 职责边界 / 所有权 / 失败模式 / Godot 对照），**仓库内不产出笔记文件**。
+> 只有满足 `START-HERE.md` §3 两个条件之一的取舍才写进 `06-decisions.md`；其余理由写进 commit message 正文。
 
 ## 里程碑总览
 
@@ -34,28 +39,49 @@
 **目标**：让"改一行代码 → 构建 → 测试 → 看到结果"的回路 < 30 秒，并让 CI 替你守住规矩。
 这个阶段不写任何引擎逻辑，但它决定了后面 8 个月的开发体验。
 
-- [x] 仓库初始化：`.gitignore`（build/ out/ .cache/ *.yrpak）、`.editorconfig`、`.clang-format`（从 Yo_Renderer 拷并调整）、首次 commit
-- [x] `CMakeLists.txt` + `cmake/YrLibrary.cmake`：封装 `yr_add_library(NAME ns DEPS...)`，统一 `cxx_std_20`、警告、include 路径
-- [x] 警告基线：`-Wall -Wextra -Wpedantic -Wshadow -Wnon-virtual-dtor -Wold-style-cast`（`-Werror` 只在 CI preset 开）
-- [x] `CMakePresets.json`：`debug` / `release` / `asan`（ASan+UBSan）/ `tsan` / `ci`（Ninja + `-Werror` + ccache）
-- [x] Catch2 集成：优先 `find_package(Catch2 3)`（本机已装 3.7.1），失败则 FetchContent；`tests/core/test_main.cpp` 一个 hello 用例
-- [x] `enable_testing()` + `ctest --output-on-failure`，`YrTests_core` target
-- [ ] 吸收 yo_lib 第一批：`yo_assert.h` → `yr/core/assert.h`（宏改名 `YR_ASSERT*`，加 `[[unlikely]]`、可关闭、带表达式字符串）
-- [ ] 吸收 yo_lib 第二批：`logger/` → `yr/core/log.h`，**重构**：加来源 tag、帧号、线程 ID、level 过滤、`YR_LOG_INFO(...)` 宏（避免流式 API 的临时对象开销）、线程安全
-- [ ] `tools/check_deps.py`：include 反向依赖扫描 + 禁用符号（裸 new/delete）扫描，接进 CI
-- [ ] `.github/workflows/ci.yml`：matrix(gcc-13, clang-18) × (debug, release, asan) → build + ctest + format check + check_deps
-- [ ] README.md 骨架（项目状态：规划中 / 里程碑进度表）
-- [ ] 在 `doc/notes/weekly/` 建立第一篇周记；把 `doc/` 提交进仓库
+### 已完成（Day 1 ~ 3c，2026-09-19 ~ 09-22）
 
-**验收标准**
-- `cmake --preset debug && cmake --build --preset debug && ctest --preset debug` 三条命令全绿，冷启动 < 60s、热构建 < 5s。
-- 故意在 `yr_core` 里 include 一个上层头文件 → `check_deps.py` 报错并让 CI 失败（**必须亲自验证一次**，否则规则是假的）。
-- 故意写一个 `new` → CI 失败。
-- GitHub Actions 徽章出现在 README。
+- [x] 仓库骨架：`engine/ apps/ tests/ tools/ cmake/ benchmarks/ .github/`、`.gitignore`、`.clang-format`（LLVM 基准 + `ColumnLimit: 120`）、首次 commit、推到 `github.com/yoyorm/YRuntime`（public，SSH）✅ 2026-09-19
+- [x] 顶层 `CMakeLists.txt`：3 个 option + 统一输出目录（`build/<preset>/{bin,lib}`）+ `CMAKE_EXPORT_COMPILE_COMMANDS` + `yr_build_flags` INTERFACE target（承载警告基线与 `cxx_std_20`）✅ 2026-09-20
+- [x] 警告基线：`-Wall -Wextra -Wpedantic -Wshadow -Wnon-virtual-dtor -Wold-style-cast -Wcast-align -Wunused -Woverloaded-virtual`；`-Werror` 由 `YR_WARNINGS_AS_ERRORS` 控制（只在 CI 开）✅ 2026-09-20
+- [x] `engine/core` target：`yr_core` + `yr::core` ALIAS + `include/yr/core/` 分层 include 约定 + `version.h/cpp`（把 CMake 的版本号与 `$<CONFIG>` 注入 C++）✅ 2026-09-20
+- [x] Catch2 集成：`find_package(Catch2 3 REQUIRED)`（系统包 3.7.1，`/usr/lib/cmake/Catch2/`）+ `include(Catch)` + `catch_discover_tests`；`tests/core/test_smoke.cpp` ✅ 2026-09-20
+- [x] `CMakePresets.json`：`debug` / `release` / `asan` 三套（configure + build + test），共享 hidden `base`，`binaryDir = build/${presetName}`，`outputOnFailure: true` ✅ 2026-09-22
+- [x] Sanitizer 开关：`YR_ENABLE_SANITIZERS`（ASan + UBSan + `-fno-omit-frame-pointer` + `-fno-sanitize-recover=all`），与 debug 分离的理由见 **ADR D16** ✅ 2026-09-22
+- [x] clangd 接入：根目录 `compile_commands.json` → `build/debug/` 符号链接；禁用 C/C++ 扩展 IntelliSense 避免冲突 ✅ 2026-09-22
+- [x] **门禁全部实测**：`-Wshadow` 会响 / `-DYR_WARNINGS_AS_ERRORS=ON` 构建失败退出码 1 / ASan 抓到 `heap-buffer-overflow`（含分配点与越界字节数）/ UBSan 抓到 `signed integer overflow` / debug preset 下同一份代码零报告 / `clang-format --dry-run -Werror` 合规 ✅ 2026-09-22
 
-**产出物**：可复用的 CMake 脚手架 + CI + 日志/断言。
-**学习点**：CMake target vs 变量、generator expression、`target_*` 的 PUBLIC/PRIVATE/INTERFACE 传播、preset、ODR、`-Wshadow` 抓到的第一类真 bug。
-**常见坑**：① `file(GLOB_RECURSE)`（yo_lib/Yo_Renderer 都在用）→ 新增文件不触发重新配置，**本项目禁用 GLOB，显式列源文件**（或至少 `CONFIGURE_DEPENDS` + 注释说明代价）；② Catch2 的 `main` 与自定义 `main`（需要 `CATCH_CONFIG_RUNTIME_STATIC_REGISTRY`? 不需要，用 `Catch2::Catch2WithMain`）；③ ASan + Catch2 的符号化需要 `llvm-symbolizer`/`asan_symbolize`。
+**与原计划的偏差**（记下来，免得三个月后困惑）
+| 计划里写的 | 实际 | 原因 |
+|---|---|---|
+| `cmake/YrLibrary.cmake`（`yr_add_library()` 封装） | **推迟到 M1/M2** | 只有 1 个 target 时抽象没有意义；等第 2、3 个 target 出现重复样板再抽（同 ADR D6 的思路） |
+| `tsan` / `ci` preset | **推迟**（tsan→M7，ci→Day 5） | 决策协议 R3：不痛就不做 |
+| ccache | **推迟到 Day 5** | 它是"提速"不是"能力"；做 CI 缓存时才知道省了多少 |
+| `.editorconfig` | 未建 | clang-format 已覆盖格式；需要时再加 |
+| `tests/core/test_main.cpp` | 实际叫 `test_smoke.cpp` | 用 `Catch2::Catch2WithMain`，不需要自定义 main（M2 注册反射类型时才需要换） |
+| sanitizer 做成 `cmake/YrSanitizers.cmake`（列表解析 + 互斥检查） | **5 行 `option()` 写在顶层** | TSan 到 M7 才用；避免引入 `foreach`/`list(FIND)`/`FATAL_ERROR` 三组新语法 |
+
+### 剩余（Day 4 ~ 7）
+
+- [ ] `tools/check_deps.py`：include 反向依赖扫描 + 禁用符号（裸 `new`/`delete`）扫描，**并故意违规验证它会失败**
+- [ ] `LICENSE`（MIT）—— 仓库已 public，缺 LICENSE 等于"保留所有权利"，别人无法合法引用
+- [ ] `.github/workflows/ci.yml`：先单 job（gcc + debug + ctest）跑通
+- [ ] CI 扩展：matrix(gcc-13, clang-18) × (debug, release, asan) + format job + lint job（跑 `check_deps.py`）
+- [ ] 装 ccache 并接进 CMake（`find_program` 探测，装了就用、没装不报错）
+- [ ] 根 `README.md` 加 CI 徽章，并把里程碑表 M0 改成 ✅
+- [ ] **吸收 yo_lib ①**：`yo_assert.h` → `engine/core/include/yr/core/assert.h`（宏改名 `YR_ASSERT*`、加 `__builtin_trap()` 便于 gdb 停在断言处、加 `YR_BREAKPOINT()`、release 行为可配）
+- [ ] **吸收 yo_lib ②**：`logger/` → `yr/core/log.h` + `src/log.cpp`。改成 fmt 风格宏 `YR_LOG_INFO("tag", "...", args)`（替代流式 API 的临时对象开销），加 tag / 帧号 / 线程 ID / 运行期 level 过滤 / 线程安全；**保留 yo_lib 的 `InlineBuffer` SBO 优化**
+- [ ] 补 `git tag v0.M0`
+
+### 验收标准
+
+- `cmake --preset debug && cmake --build --preset debug && ctest --preset debug` 三条命令全绿；冷启动 < 60s、热构建 < 5s（**实测：configure 0.15s / 全量 1.2s / 增量 0.18s** ✅）
+- 故意在 `yr_core` 里 include 一个上层头文件 → `check_deps.py` 报错并让 CI 失败（**必须亲自验证一次**，否则规则是假的）
+- 故意写一个 `new` → CI 失败
+- GitHub Actions 徽章出现在 README，且 matrix 全绿
+
+**学习点**：CMake target vs 变量、generator expression、`target_*` 的 PUBLIC/PRIVATE/INTERFACE 传播、preset 的三种类型、ODR、`-Wshadow` 抓到的第一类真 bug、sanitizer 的插桩原理与代价。
+**常见坑**：① `file(GLOB_RECURSE)` 新增文件不触发重新配置 → **本项目禁用 GLOB，显式列源文件**；② `include(Catch)` 漏写 → `catch_discover_tests` 未定义；③ `enable_testing()` 必须在 `add_subdirectory(tests)` 之前；④ sanitizer flag 编译与链接都要加，否则 `undefined reference to __asan_init`；⑤ `cmake --build --preset X` 不会自动 configure；⑥ GCC 的 `-Wshadow` 不抓"局部变量遮蔽函数名"，只抓变量遮蔽变量。
 **Godot 对照**：`SConstruct` + `methods.py` + `core/SCsub`（看它如何组织"每目录一个构建脚本"），对照你的 CMake 分层。
 **降级方案**：CI 只跑 gcc + debug；clang-tidy 推到 M1。
 
@@ -74,7 +100,6 @@
 - [ ] `yr/core/math.h`：最小 `Vec2/Vec3/Vec4/Mat4/Transform3D/Quaternion`（决策 Q1；先做 Vec3 + Mat4 + Transform3D，其余按需）
 - [ ] 测试：Handle 失效检测、generation 回绕、SlotMap 100 万次插删后无碎片、StringId 驻留一致性
 - [ ] **benchmark**：`benchmarks/bench_slot_map.cpp`（SlotMap vs `unordered_map` vs `vector+标记位`，测插入/查找/遍历三项）
-- [ ] 设计笔记 `notes/design/handle-slotmap.md`
 - [ ] 用 `perf stat` 记录 cache-miss 差异，写进 benchmark 报告
 
 **验收标准**
@@ -83,7 +108,7 @@
 - benchmark 报告：遍历 SlotMap 比 `unordered_map<uint32_t, T>` 快 ≥3x（若没有，分析原因并写下来——分析比数字重要）。
 - ASan preset 下全部测试干净。
 
-**产出物**：`doc/notes/benchmarks/m1-containers.md`（含数据表 + 结论）。
+**产出物**：`benchmarks/` 下的 benchmark 代码 + `benchmarks/README.md` 里的数据表与结论（方法必须可复现：硬件、编译选项、迭代次数、如何防止被优化掉）。
 **学习点**：位打包、稠密/稀疏数组、cache line、false sharing 初体验、`std::chrono`、benchmark 方法论（预热、多次取中位数、防编译器优化掉）。
 **常见坑**：① generation 溢出回绕导致 ABA（40 bit 够用，但要写测试证明你想过）；② `SlotMap::get` 返回 `T*` 后容器扩容导致指针失效（文档写明"指针只在本帧有效"）；③ StringId 的哈希冲突（用"hash 定位 + 字符串比较确认"，不要只信 hash）。
 **Godot 对照**：`core/templates/rid.h` + `rid_owner.h`（generation + slot）、`core/object/object_id.h`、`core/string/string_name.h`（StringName 的实现，含 512 个 slot 的 hash 表）。
@@ -102,10 +127,9 @@
 - [ ] `yr/object/property_info.h` + `class_info.h`：`PropertyInfo`（name/type/flags/default/hint）+ `ClassInfo`（属性表 + factory + get/set 适配 + 继承链）
 - [ ] `yr/object/class_db.h`：注册表 + `instantiate(StringId)` + `inheritors_of` + `freeze()`
 - [ ] **注册宏** `YR_CLASS` / `YR_PROPERTY`：先手写一个不用宏的版本（直接构造 `ClassInfo`），跑通后再封装成宏
+- [ ] 用 `clang -E` 展开一次 `YR_CLASS`，读懂生成的每一行（**这是唯一能真正看懂宏的办法**）
 - [ ] `tools/yr_inspect`：命令行反射查看器（`--all` / `--class Node` / `--tree`），支持输出 JSON
 - [ ] 测试：注册→实例化→按名字 get/set→未注册类报错→继承链属性可见→`freeze()` 后注册报错
-- [ ] 设计笔记 `notes/design/reflection.md` + `notes/design/variant.md`
-- [ ] 用 `clang -E` 展开宏，把展开结果贴进设计笔记（**这是唯一能真正看懂宏的办法**）
 
 **验收标准**
 - 新增一个类只需 3 行宏 + 成员声明，不需要改任何中心文件（**这是反射系统是否设计正确的硬指标**）。
@@ -114,7 +138,7 @@
 - `ObjectDB` 在测试结束时存活对象数为 0（泄漏检测）；ASan 干净。
 - 静态初始化顺序问题：显式 `register_core_classes()` 调用，`main` 之前不依赖任何注册（写一个测试证明）。
 
-**产出物**：`yr_inspect` 工具（可截图/录屏，是很好的展示物）+ 反射设计笔记。
+**产出物**：`yr_inspect` 工具（可截图/录屏，是很好的展示物）。宏展开的分析结论写进 `YR_CLASS` 的头文件注释。
 **学习点**：宏工程（`__VA_ARGS__` / `__VA_OPT__` / token pasting / 静态注册器技巧）、成员指针、类型擦除、lambda→函数指针、`if constexpr`、concepts、SIOF、侵入式引用计数。
 **常见坑**（这个模块的坑最多，逐个记录到笔记）：
 ① 宏里用 `decltype(member)` 推导失败 → 需要 `Type::*` 成员指针而非直接取地址；
@@ -136,10 +160,9 @@
 - [ ] `yr/event/message_queue.h`：`MessageQueue`（deferred call：`ObjectID` + `StringId` + `vector<Variant>`；flush 期间新增进下一帧）
 - [ ] 重入策略实现 + assert：发布深度上限、退订自己安全、flush 双缓冲
 - [ ] 线程约束：`EventBus::publish` 加主线程 assert；提供 `post_from_any_thread`（MPSC，帧首合并）
-- [ ] `Object::notification(uint32_t)` 与 EventBus 的关系写清楚（notification = 定向、类内继承链传播；event = 广播、跨模块），并在设计笔记里画表对比
+- [ ] 把 `Object::notification()` 与 EventBus 的分工想清楚（notification = 定向、沿继承链传播；event = 广播、跨模块），结论写进两者的头文件注释
 - [ ] 测试：§4.5 表格里那三条语义各一个用例；1000 事件/帧的压力测试；订阅者抛异常/退订其他订阅者的边界测试
 - [ ] 事件追踪：`YR_LOG_DEBUG` 打印每次 publish 的类型与订阅者数量（调试期极其有用）
-- [ ] 设计笔记 `notes/design/event-system.md`
 
 **验收标准**
 - §4.5 三条语义测试全绿（**这三条是模块的真正交付物**）。
@@ -147,7 +170,7 @@
 - 同一帧内事件派发顺序确定（同样输入两次运行日志逐字节相同）——这是"可复现"的基础，写进测试。
 - TSan preset 下 `post_from_any_thread` + 主线程 flush 无竞争报告。
 
-**产出物**：事件系统设计笔记 + 一个"确定性重放"测试。
+**产出物**：一个"确定性重放"测试（同输入两次运行日志逐字节相同）。
 **学习点**：`std::function` 的堆分配与小对象优化、变参模板、MPSC 队列、重入与迭代器失效、RAII 句柄。
 **常见坑**：① `std::function` 捕获大对象导致每次订阅都堆分配（测一下，决定是否用 `unique_function` + 移动）；② 事件类型用 `typeid` 做 key 的 RTTI 开销与跨 TU 一致性（yo_lib 用 `type_index`，可以保留但要理解代价；更好的是用 §4.5 的 `kTypeId` 静态常量）；③ flush 中 post 导致死循环。
 **Godot 对照**：`core/object/object.h` 的 signal（`connect`/`emit_signal`/`Callable`）、`core/object/message_queue.h/.cpp`（**精读**：双缓冲、flush 时机、`push_call`）、`core/object/callable_mp.h`（成员函数指针 → Callable 的擦除手法，与 M2 的属性适配同源）。
@@ -171,7 +194,6 @@
 - [ ] headless 平台层：`yr/platform/headless.h`（无窗口、输入从 stdin/脚本注入、可 `--frames N` 后自动退出）——**这让 CI 能跑集成测试**
 - [ ] `apps/tick_sandbox`：一个 demo，脚本化生成/销毁节点、打印树、跑 N 帧（**M4 的"可运行物"**）
 - [ ] 集成测试：跑 10000 帧 → 断言节点数、事件数、无泄漏、ObjectDB 清空
-- [ ] 设计笔记 `notes/design/scene-tree.md` + `notes/design/main-loop.md`
 
 **验收标准**
 - **生命周期顺序测试**：嵌套 3 层树，`_ready` 后序 / `_process` 前序 / `_exit_tree` 顺序，逐条断言。
@@ -180,7 +202,7 @@
 - 10000 帧 headless 运行：ASan+UBSan 干净、ObjectDB 归零、帧耗时标准差合理（打印 p50/p95/max）。
 - 固定步长：把 `real_delta` 人为抖动（模拟卡顿），physics 步数依然正确（写测试）。
 
-**产出物**：`apps/tick_sandbox` 录屏（终端动画）+ `FrameStats` CSV + 两篇设计笔记。
+**产出物**：`apps/tick_sandbox` 录屏（终端动画）+ `FrameStats` CSV。帧阶段顺序的定义写在 `01-architecture.md` §5，代码里的注释指向它。
 **学习点**：组合模式、树遍历与迭代器失效、脏标记、通知模式、固定步长积分、性能采样、RAII 与延迟销毁。
 **常见坑**：① `add_child` 时忘记设置 parent / 忘记派发 `kEnterTree` 到整棵子树；② `queue_free` 的 double free（父节点删了，子节点也在待删列表）；③ `get_node(path)` 每次都做字符串解析（缓存 `NodePath` 解析结果）；④ Transform 脏标记向上还是向下传播搞反；⑤ 暂停时 `SceneTreeTimer` 是否继续走（Godot 有 `process_always`/`process_in_physics` 标志，想清楚再实现）。
 **Godot 对照**：`scene/main/node.h` + `node.cpp`（`_propagate_ready`/`_propagate_enter_tree`/`_propagate_exit_tree`/`queue_free`）、`scene/main/scene_tree.h/.cpp`（`process`/`physics_process`/`flush_transform_notifications`）、`scene/main/scene_tree.h:57`（`SceneTreeTimer`）、`main/main.cpp`（`Main::iteration()` —— **一帧的权威顺序，M4 必读**）、`main/main.h`。
@@ -193,7 +215,7 @@
 **目标**：世界可以变成文件，文件可以变回世界，且**文件是人类可读可手写的**。
 
 - [ ] `yr/serialize/writer.h` / `reader.h`：`IWriter`/`IReader` 抽象（结构化 begin/end + 错误位置报告）
-- [ ] `TextWriter`/`TextReader`：自定义 `.yrscn`（格式自己设计，见 §4.9 样例）—— 先写格式规范文档 `notes/design/scene-format.md`，**再写代码**
+- [ ] `TextWriter`/`TextReader`：自定义 `.yrscn`。**先把格式写下来再写解析器**（在对话里过一遍：段结构、引用怎么表达、错误怎么报），格式定稿后写进 `yr/serialize/` 的头注释
 - [ ] `BinaryWriter`/`BinaryReader`：`.yrscnb`（magic + version + 长度前缀；处理对齐与字节序，写 `static_assert(sizeof(...))`）
 - [ ] `JsonWriter`：调试导出（用 nlohmann_json，M5 起才引入 third_party）
 - [ ] `VariantCodec`：Variant ↔ 文本/二进制（含 Vector3 等类型的字面量语法）
@@ -204,7 +226,6 @@
 - [ ] `tools/yr_scene_conv`：文本 ↔ 二进制互转 + `--validate`
 - [ ] 测试：round-trip（save→load→save，两次输出**逐字节相同**）、手写文件加载、未知属性容忍、破坏性变更迁移、循环引用、深层嵌套
 - [ ] 把 M4 的 `tick_sandbox` 场景改成从 `.yrscn` 加载
-- [ ] 设计笔记 `notes/design/serialization.md`
 
 **验收标准**
 - **确定性 round-trip**：`yr_scene_conv a.yrscn → a.yrscnb → b.yrscn`，`diff a.yrscn b.yrscn` 为空。（这条最难，也最能证明设计正确）
@@ -213,7 +234,7 @@
 - v0 文件经 migrator 后能被当前版本加载（测试）。
 - 序列化 1000 节点树的耗时与文件大小记录进 benchmark 报告。
 
-**产出物**：格式规范文档 + `yr_scene_conv` + round-trip 测试 + 设计笔记。**这是面试里最容易讲出深度的模块**（引用/版本/循环三大难题）。
+**产出物**：`yr_scene_conv` + round-trip 测试 + **格式规范**（写在 `yr/serialize/` 的头文件注释或 `assets/README.md` 里，不单独建文档）。**这是面试里最容易讲出深度的模块**（引用/版本/循环三大难题）。
 **学习点**：格式设计、visitor 模式、token 解析（手写 lexer/parser，不用 lex/yacc）、二进制布局与对齐、版本迁移策略、确定性输出（保序容器、浮点格式化）。
 **常见坑**：① 浮点数文本化精度丢失（用 `%.17g` 或直接存十六进制位模式）；② `Dict` 用 `unordered_map` 导致输出顺序不定 → §4.3 已规定用保序 vector；③ 节点 index 与父子关系混在一起导致解析要两遍（就是要两遍，别抗拒）；④ 字符串转义（`\n`、引号、UTF-8）；⑤ 文件路径平台分隔符。
 **Godot 对照**：`scene/resources/resource_format_text.cpp/.h`（`.tscn` 的完整读写实现，**M5 精读，对照你的格式设计**）、`core/io/resource_format_binary.cpp`（`.res` 二进制 + 版本兼容处理）、`scene/resources/packed_scene.h/.cpp`（`PackedScene::instantiate` 的 node data / connection / edit state 三张表）、`tests/core/io/test_scenes.cpp`（Godot 怎么测场景存读档）、`core/variant/variant_parser.h`。
@@ -236,7 +257,6 @@
 - [ ] 接到 `MainLoop` 阶段 4（`pump_assets`）与阶段 12（`collect_garbage`）
 - [ ] 把 M5 的 ExtResource 解析接到 AssetDatabase（场景加载 = 递归资源加载，**注意加载顺序与循环依赖检测**）
 - [ ] 测试：in-flight 合并（同一资源并发请求 10 次只加载一次）、失败路径（文件不存在/格式错误）、卸载后 handle 失效、慢 IO 下主循环帧时间不受影响
-- [ ] 设计笔记 `notes/design/asset-database.md`
 
 **验收标准**
 - 用 `ThrottledFileAccess`（单次读 50ms）连续请求 20 个资源：主循环帧时间 p95 < 5ms，20 个资源在 ~1s 内全部就绪（异步生效）。
@@ -245,7 +265,7 @@
 - 循环依赖（A 引用 B，B 引用 A）→ 检测到并报错，不死循环。
 - 所有测试用 `MemoryFileAccess`，**不碰真实磁盘**（可在 CI 跑）。
 
-**产出物**：`AssetStats` 输出（驻留数/命中率/加载字节）+ 设计笔记。
+**产出物**：`AssetStats` 输出（驻留数/命中率/加载字节）。
 **学习点**：异步状态机、future/promise vs 回调、引用计数与 GC 的边界、内容寻址、IO 抽象与依赖注入（测试友好设计）。
 **常见坑**：① 在工作线程构造 Object → 违反 §6 铁律（M7 要特别小心）；② GC 时机与 `Ref` 临时对象（一个表达式里的临时 `Ref` 会让 refcount 短暂 >1，导致该帧不卸载 —— 这是正常行为，别"修"它）；③ 加载失败后 in-flight 条目没清理 → 永久卡住；④ 场景递归加载的深度与栈溢出。
 **Godot 对照**：`core/io/resource.h`、`core/io/resource_loader.h/.cpp`（**精读 `ThreadLoadTask` 结构与 `load_threaded_request`/`load_threaded_get_status`，这是 M6+M7 的最佳参考**）、`core/io/resource_uid.h/.cpp`、`core/io/file_access.h` + `file_access_memory.h`（内存 FS）、`file_access_pack.h`（PCK，M11 用）、`tests/core/io/test_resource.cpp` + `test_resource_uid.cpp`。
@@ -266,9 +286,9 @@
 - [ ] `JobStats`：每线程独立 cacheline（`alignas(64)`）避免 false sharing；统计队列深度/等待/窃取次数
 - [ ] **确定性保证**：并行任务的**结果**必须与串行一致（浮点求和顺序！`parallel_for` 里禁止做非结合性归约，或提供确定性归约接口）——写测试证明
 - [ ] 线程安全审计：给所有"仅主线程"的 API 加 `YR_ASSERT(on_main_thread())`
+- [ ] **内存序决策写进 `yr/job/` 的头文件注释**：哪个 atomic 用哪个 order、为什么。这类信息离开代码就会失效，不适合放文档
 - [ ] benchmark：`benchmarks/bench_jobs.cpp`（1k/10k/100k 个任务的串行 vs 并行；不同 batch size 的曲线）
 - [ ] TSan preset 跑全部测试 + `tick_sandbox` 10000 帧
-- [ ] 设计笔记 `notes/design/job-system.md`（含内存序决策表：哪个 atomic 用哪个 order，为什么）
 
 **验收标准**
 - TSan 下全部测试 + 10000 帧集成测试**零报告**（这一条不过就不算完成）。
@@ -289,7 +309,7 @@
 
 **目标**：**证明 Runtime 真的能承载游戏**。这个 Demo 是本项目第一个可以拿去给别人看的东西，也是检验前 7 个里程碑的试金石——如果做起来处处别扭，说明 Runtime 设计有问题，**要回头改 Runtime，而不是在 Demo 里绕过去**。
 
-- [ ] 游戏设计文档 `doc/notes/design/text-adventure.md`：世界观、房间图、动词表（look/go/take/use/talk/inventory）、胜利条件、≥10 分钟内容量
+- [ ] 游戏设计先想清楚再动手：世界观、房间图、动词表（look/go/take/use/talk/inventory）、胜利条件、≥10 分钟内容量（写在 `apps/text_adventure/README.md` 里）
 - [ ] 数据驱动：房间/物品/对话全部放 `assets/`（`.yrscn` 场景 + `.json`/`.yrdlg` 文本），**代码里不写死内容**
 - [ ] `apps/text_adventure`：用 Node 组织世界（`World/Rooms/Room1/...`、`Player`、`Inventory`、`DialogueRunner`、`CommandParser`、`SaveGameManager`）
 - [ ] 命令解析：tokenizer + 动词/名词匹配 + 同义词表 + 错误提示（**用 EventBus 解耦**：`CommandParsed` → 各系统响应）
@@ -329,17 +349,17 @@
 - [ ] `yr_render_null`：`NullBackend`（统计 draw call / 三角形数 / 快照字节数，校验快照合法性）
 - [ ] 双缓冲：快照写入 buffer[i]，Backend 读 buffer[i^1]，frame index 单调递增
 - [ ] **快照重放**：`--dump-snapshot f.bin` 把快照写文件，`--replay-snapshot f.bin` 直接喂给 Backend（**验证契约完备性的杀手级测试**）
+- [ ] 把 `01-architecture.md` §7 的三个解耦层次逐条对应到代码：哪一行实现了**数据解耦**、哪一行是**生命周期解耦**、哪一行是**时间解耦**（写在 `yr/render/snapshot.h` 的头注释里）
 - [ ] CI 检查：`grep` 确保 `engine/`（除 `render/vulkan/`）零 `vulkan`/`GLFW` include
 - [ ] 测试：快照 dump→replay 逐字节一致；NullBackend 在 10000 帧集成测试里统计数字稳定
-- [ ] 设计笔记 `notes/design/render-decoupling.md`（含 §7 三个解耦层次的论述）
 
 **验收标准**
 - headless + NullBackend 跑 M8 的文字游戏 1000 帧，快照统计正常，CI 全绿。
 - 快照 dump/replay round-trip 一致。
 - `yr_render_iface` 的头文件**只 include `yr/core/*` 与 std**（CI 检查 include 列表）。
-- 能在设计笔记里回答："如果换一个 OpenGL 后端，需要改 Runtime 的哪一行代码？"（答案必须是 0 行）
+- 能回答："如果换一个 OpenGL 后端，需要改 Runtime 的哪一行代码？"（答案必须是 0 行）
 
-**产出物**：渲染解耦设计笔记（**面试高频，值得写成博客**）+ 快照重放 demo。
+**产出物**：快照重放 demo。**这个主题面试高频，值得写成博客**（见 `07-portfolio.md` §4）。
 **学习点**：数据契约设计、POD 与 ABI、双缓冲与 frame-in-flight、Server 模式、可重放性作为设计验证手段。
 **常见坑**：① 快照里偷偷放了 `Object*`（"就这一次"）→ 解耦崩塌，CI 必须挡住；② 矩阵行列主序/坐标系（Y-up vs Z-up）没写清 → M10 画面全错且极难查，**现在就把注释写死**；③ 资源上传请求的时序（Backend 还没加载完 mesh，DrawItem 已经引用它）→ 契约里要规定"未就绪的资源本帧跳过"。
 **Godot 对照**：`servers/rendering/rendering_server.h`（Server 命令接口）、`servers/server_wrap_mt_common.h`（**精读**：如何把一个 Server 自动包装成多线程版本）、`core/templates/command_queue_mt.h`。
@@ -362,9 +382,9 @@
 - [ ] 视锥剔除放进 `RenderExtractSystem`（可在 job 里并行，**用 M7**）
 - [ ] 修 Yo_Renderer 遗留问题：V5（光照布局三份副本 → 单一 `GpuLayouts.h`）、V6（`const void*` → 快照，天然解决）
 - [ ] 独立渲染线程（stretch，见下）
+- [ ] 搬迁时遇到的**耦合点逐条记进 commit message 正文**（这是唯一的高频记录载体，见 `START-HERE.md` §6）
 - [ ] validation layer 零 error；`--dump-snapshot` + `--replay-snapshot` 在真后端也能跑
 - [ ] 录屏 + 截图进 `doc/media/`，README 更新架构图
-- [ ] 设计笔记 `notes/design/vulkan-backend-integration.md`（重点写"搬迁时遇到的耦合点"）
 
 **验收标准**
 - `apps/render_demo` 运行：键盘移动一个 Node → 画面同步变化；validation layer 零 error；连续跑 10 分钟无崩溃无泄漏。
@@ -375,7 +395,7 @@
 
 **Stretch（做完上面才考虑）**：独立渲染线程（Runtime 主线程写快照，渲染线程消费，对照 `server_wrap_mt_common.h`）；ImGui 只读检视器（显示 SceneTree + FrameStats）；阴影/IBL 接回。
 
-**产出物**：**可视化 Demo + 录屏 + 集成设计笔记 + 更新后的架构图**。简历第二条。
+**产出物**：**可视化 Demo + 录屏 + 更新后的架构图**。简历第二条。
 **学习点**：图形 API 与引擎的边界、GPU 资源生命周期与延迟销毁、frame-in-flight、命令录制、（stretch）渲染线程同步。
 **常见坑**：① 想"顺便重构 Yo_Renderer"导致范围爆炸 → **先原样搬通，再重构**，两件事分开 commit；② Backend 想回调 Runtime 拿数据（"就一个 getter"）→ 破坏解耦，改成快照字段；③ 资源加载与帧循环竞争（上传时机）；④ GLFW/窗口事件与 Runtime 输入系统的职责划分；⑤ 旧代码的 `ObjectDB`/`Ref` 与 YRuntime 版本冲突（同名不同类型）→ 搬入时统一改名到 `yr::render::vk` 命名空间。
 **Godot 对照**：`servers/rendering/rendering_server_default.h`、`drivers/vulkan/`（Godot 的 Vulkan 驱动如何组织 RenderingDevice）、`servers/display/display_server_wrapper.h`。
@@ -395,7 +415,7 @@
 - [ ] clang-tidy：安装 + `.clang-tidy` 配置 + CI 接入（M0 遗留项）
 - [ ] 覆盖率：gcovr/lcov → CI 上传报告，README 徽章
 - [ ] 文档收尾：架构图更新（Mermaid）、每模块一页说明、`doc/README.md` 状态更新、README 重写（面向"第一次看到这个项目的人"）
-- [ ] `07-portfolio.md` 全部清单打勾：博客 ≥3 篇、录屏、benchmark 汇总、面试 30 题自测
+- [ ] `07-portfolio.md` 修订并打勾：博客 ≥3 篇、录屏、benchmark 汇总、面试题库自测
 - [ ] （可选）ImGui 只读检视器：SceneTree + 属性 + FrameStats
 - [ ] （可选）热重载：`.yrscn` 文件变更 → 自动重载场景（inotify），演示效果极好
 
@@ -403,7 +423,7 @@
 - `apps/text_adventure --pak game.yrpak` 完全从 pak 启动运行，`assets/` 目录不存在也能跑。
 - CI：build + ctest + format + clang-tidy + 覆盖率徽章全绿。
 - 一个完全陌生的开发者按 README 能在 15 分钟内构建并跑起两个 Demo（**找人实测一次**）。
-- `doc/` 完整：≥10 篇设计笔记、≥8 篇 Godot 对照笔记、架构图、benchmark 汇总。
+- `doc/` 与代码一致：架构图是最新的、`06-decisions.md` 收录了全部架构级取舍、`benchmarks/README.md` 有数据。
 
 **产出物**：完整可展示仓库 + 博客系列 + 工具。
 **Godot 对照**：`core/io/file_access_pack.h`（PCK 格式）、`editor/platform/`（导入管线）、`platform/web/`（打包思路）、`core/io/resource_format_binary.cpp`（cooked 格式）。
@@ -433,19 +453,19 @@
 ## 节奏建议
 
 **每周（5~8h）**
-- 1h：写周记 + 挑 ≤3 个 checkbox（**先规划再动手，这一步不能省**）
+- 10min：挑 ≤3 个 checkbox（**先规划再动手，这一步不能省**）
 - 3~5h：编码（先头文件 + 测试，再实现）
-- 1h：Godot 对照阅读（`04-godot-study.md` 对应主题）+ 写/补笔记
-- 0.5h：更新文档 checkbox 与 ADR
+- 1h：Godot 对照阅读（`04-godot-study.md` 对应主题）——结论在对话里过，有架构影响才写 ADR
+- 5min：更新 checkbox 与根 README 里程碑表
 
-**维持周**（课业忙时）：只做"读 Godot + 写笔记 + 更新文档"，不写代码。允许，但要在周记里标注，且**不允许连续两周**。
+**维持周**（课业忙时）：只读 Godot 源码 + 在对话里讨论设计，不写代码。允许，但**不允许连续两周**。
 
 **里程碑收口 checklist**（每个 M 结束时做）
-- [ ] 全部 checkbox 打勾或移入 Stretch，并写日期
-- [ ] 验收标准逐条自测通过，证据（测试输出/截图/benchmark）存进 `doc/notes/evidence/M?/`
+- [ ] 全部 checkbox 打勾或移入 Stretch，并写日期；**与实际做法不一致的条目要改写而不是硬勾**（M0 就出现过这种情况）
+- [ ] 验收标准逐条自测通过（测试输出就在 CI 记录里，不另存证据文件）
 - [ ] "可运行物"录屏或截图存进 `doc/media/`
-- [ ] 设计笔记的"我能解释吗"清单全部打勾
+- [ ] 对着架构图能脱稿讲清这个里程碑新增的模块：为什么存在、和谁协作、失败模式是什么
 - [ ] `00-vision.md` §4 成功判据里相关条目打勾
 - [ ] 新增/推翻的决策写进 `06-decisions.md`
-- [ ] `07-portfolio.md` 更新（这个里程碑能往简历/博客里写什么）
+- [ ] `07-portfolio.md` 更新（这个里程碑能往简历/博客里写什么）—— M8 之前可以跳过
 - [ ] git tag：`v0.M?`

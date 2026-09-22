@@ -28,6 +28,9 @@
 
 **每个模块都必须能回答"你为什么存在"。** 答不出来的模块就是该删的模块。
 
+> **2026-09-22 修订**：M0 实践（4 天完成 Day 1~3c）快于 §9 的估算，但 M0 属于"配置类"工作（有明确答案、报错清晰）。
+> **周期校准点定在 M2 完成时**——反射宏与序列化格式没有标准答案，那才是真实速度的试金石。届时用 M0+M1+M2 的实际数据重算 §9。
+
 ---
 
 ## 2. 三个前置假设（若与你实际情况不符，告诉我，我会调整全套计划）
@@ -99,10 +102,12 @@
 - [ ] GitHub Actions：push 触发 build + ctest + format check + clang-tidy，README 有徽章。
 
 ### 4.5 理解与表达（最重要，也最容易被跳过）
-- [ ] `doc/notes/design/` 下有 ≥10 篇设计笔记，每篇的"我能解释吗"清单全部打勾。
-- [ ] `doc/notes/godot/` 下有 ≥8 篇 Godot 对照笔记。
 - [ ] 能对着架构图脱稿讲 20 分钟：每层为什么存在、数据怎么流、哪里是单线程边界。
-- [ ] 能回答 `07-portfolio.md` §5 的 30 道面试题，且答案里包含**自己的取舍**而非背书。
+- [ ] 对着 `01-architecture.md` 的任意一个模块，能说出 Godot 里对应的是哪个文件、关键差异是什么。
+- [ ] 能回答 `07-portfolio.md` §5 的面试题，且答案里包含**自己的取舍**而非背书。
+- [ ] `06-decisions.md` 里至少有 2 条 ADR 被后续实践推翻并记录了原因（推翻记录比正确记录更有说服力）。
+- [ ] **`git log` 读下来是一部设计史而不是操作日志**：commit message 正文能回答"为什么这么改"。
+      这是取消仓库内笔记之后（ADR D17）唯一的高频记录载体，所以它的标准要提高。
 
 ---
 
@@ -150,7 +155,7 @@ M8 结束有可玩 Demo——即每 4~6 周必须有一个可运行、可录屏�
 graph LR
     YL["yo_lib<br/>logger · sparse_set<br/>eventsys · mtqueue · timer"] -->|"吸收 + 演进（A2）"| CORE["YRuntime<br/>engine/core + engine/foundation"]
     YR["Yo_Renderer<br/>8.4k LOC Vulkan"] -->|"M10 搬入 rhi + render"| VK["YRuntime<br/>yr_render_vulkan"]
-    GD["GodotDev/godot<br/>4.8-dev 源码"] -.->|"只读参照系"| ALL["所有模块的设计笔记"]
+    GD["GodotDev/godot<br/>4.8-dev 源码"] -.->|"只读参照系"| ALL["所有模块的设计取舍"]
     CORE --> RUN["YRuntime Runtime"]
     VK --> RUN
     RUN --> DEMO["apps/text_adventure<br/>apps/render_demo"]
@@ -170,12 +175,12 @@ graph LR
 
 | 风险 | 概率 | 影响 | 应对 |
 |---|---|---|---|
-| 前 4 个月没画面，动力衰减 | 高 | 项目废弃 | 每里程碑必须有可运行物 + 录屏；周记记录进度可见性 |
+| 前 4 个月没画面，动力衰减 | 高 | 项目废弃 | 每里程碑必须有可运行物 + 录屏；roadmap 的 checkbox 与根 README 里程碑表提供进度可见性 |
 | 反射/序列化泥潭（宏调不通、格式改了又改） | 高 | M2/M5 超期 2 倍 | 先做最小可用版本（只有 int/float/string/vec3 三种属性），跑通再扩展；宏控制在 3 个以内 |
 | JobSystem 引入难复现的 bug | 中 | 后期全线不稳定 | 严格后置到 M7；之前所有模块必须先在单线程跑通并测试；TSan preset 常开 |
 | 与 yo_lib/Yo_Renderer 代码纠缠 | 中 | 依赖混乱 | A2/A3 + 分层 CMake target + CI 反向依赖检查 |
-| 学期课业挤压 | 高 | 周期拉长 | 里程碑颗粒度 ≤2 周；周记记录实际投入；允许"维持周"（只读 Godot + 写笔记，不写代码） |
-| 过度依赖 AI 生成代码，导致无法解释 | 高 | 作品失去意义 | `05-engineering.md` §9 的"自己写"工作法 + 设计笔记的口述自测 + commit 粒度要求 |
+| 学期课业挤压 | 高 | 周期拉长 | 里程碑颗粒度 ≤2 周，每步独立可提交；允许"维持周"（只读 Godot + 在对话里讨论设计，不写代码），但不允许连续两周 |
+| 过度依赖 AI 生成代码，导致无法解释 | 高 | 作品失去意义 | `05-engineering.md` §9 的"自己写"工作法 + 每模块完成后脱稿讲解 + commit message 写"为什么"（ADR D17） |
 | 范围膨胀（想加编辑器/脚本/物理） | 高 | 永远做不完 | §3.2 非目标 + Stretch 清单制度 |
 
 ---

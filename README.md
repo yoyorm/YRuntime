@@ -5,19 +5,17 @@
 > 先跑通一个 headless 的文字冒险 Demo，再把自研 Vulkan 渲染器作为可替换 Backend 接入，
 > 形成 `游戏状态 → Runtime → Renderer → GPU` 的完整链路。全程以 Godot 4.x 源码为参照系。
 
-![status](https://img.shields.io/badge/status-planning-orange)
+![status](https://img.shields.io/badge/status-M0__in__progress-blue)
 ![cxx](https://img.shields.io/badge/C%2B%2B-20-00599C?logo=c%2B%2B&logoColor=white)
 ![platform](https://img.shields.io/badge/platform-Linux-lightgrey)
 
 ---
 
-## 当前状态：规划中（M0 未开始）
-
-本仓库目前只有 `doc/`。**代码将从 M0 开始，按里程碑逐步提交。**
+## 当前状态：M0 进行中
 
 | M | 里程碑 | 状态 | 可运行物 |
 |---|---|---|---|
-| M0 | 工程地基（CMake/CI/Catch2/日志） | ⬜ 未开始 | `ctest` 全绿 + CI 徽章 |
+| M0 | 工程地基（CMake/CI/Catch2/日志） | 🔨 进行中（Day 1~3c 完成，剩 CI + 吸收 yo_lib） | `ctest` 全绿 + CI 徽章 |
 | M1 | 句柄、容器、时间 | ⬜ | 容器 benchmark 报告 |
 | M2 | 反射与对象模型 | ⬜ | `yr_inspect` 反射查看器 |
 | M3 | 事件系统与延迟调用 | ⬜ | 事件确定性重放测试 |
@@ -63,8 +61,8 @@ graph TD
 
 | | |
 |---|---|
-| ⭐ [START HERE](doc/START-HERE.md) | **不知道从哪开始时看这篇**：决策协议 + 第一周逐日计划 |
-| 📌 [文档中心](doc/README.md) | 全部文档索引 |
+| ⭐ [START HERE](doc/START-HERE.md) | **不知道从哪开始时看这篇**：当前状态 + 下一步 + 决策协议 + 分工 |
+| 📌 [文档索引](doc/README.md) | 全部文档一览与维护规则 |
 | [00 · 定位与成功判据](doc/00-vision.md) | 这是什么项目、做完算成功的标准、明确不做什么 |
 | [01 · 目标架构](doc/01-architecture.md) | 分层、模块职责、核心概念、帧循环 14 阶段、线程模型 |
 | [02 · 里程碑路线图](doc/02-roadmap.md) | M0~M11 任务清单 + 验收标准 + 常见坑 |
@@ -76,16 +74,24 @@ graph TD
 
 ## 构建与运行
 
-> 🚧 M0 之后填写。目标形态（三条命令跑起来，15 分钟内可复现）：
->
-> ```bash
-> cmake --preset debug
-> cmake --build --preset debug
-> ctest --preset debug --output-on-failure
-> ```
+```bash
+cmake --list-presets          # debug / release / asan
+cmake --preset debug          # 配置（每个 preset 首次都要先 configure）
+cmake --build --preset debug  # 构建
+ctest --preset debug          # 测试
+```
 
-依赖：GCC 13+ 或 Clang 18+ · CMake 3.24+ · Ninja · Catch2 3（`libcatch2-dev`）· Linux。
-M10 额外需要：Vulkan SDK ≥1.4 · GLFW3。
+产物在 `build/<preset>/bin/`。给 IDE / clangd 用：`ln -sf build/debug/compile_commands.json .`
+
+| 依赖 | 说明 |
+|---|---|
+| GCC 13+ 或 Clang 18+ | C++20 |
+| CMake 3.25+ / Ninja | preset 格式 v6 需要 3.25 |
+| Catch2 3 | `sudo apt install libcatch2-dev`（本机 3.7.1） |
+| Linux | 见 ADR D12，不做跨平台移植 |
+| Vulkan SDK ≥1.4 · GLFW3 | **仅 M10 的 `yr_render_vulkan` 需要**，`YR_BUILD_VULKAN_BACKEND=OFF` 时不需要 |
+
+可选：`ccache`（装了自动启用）。
 
 ## 相关项目
 

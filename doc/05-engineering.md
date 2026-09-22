@@ -5,7 +5,7 @@
 
 ---
 
-## 1. 本机工具链现状（实测 2026-09-19）
+## 1. 本机工具链现状（实测 2026-09-19，2026-09-22 修订）
 
 | 工具 | 状态 | 版本 / 路径 | 备注 |
 |---|---|---|---|
@@ -13,25 +13,26 @@
 | Clang | ✅ | 18.1.3 | CI 第二编译器；`clang -E` 看宏展开必备 |
 | CMake | ✅ | 3.28.3 | 满足 preset/`FetchContent` 全部需求 |
 | Ninja | ✅ | 1.11.1 | 默认 generator |
-| Catch2 | ✅ | 3.7.1（`/usr/include/catch2`，`libcatch2-dev`） | **优先用系统包**，`find_package(Catch2 3)`；避免 FetchContent 拖慢冷启动 |
+| Catch2 | ✅ **已接入** | 3.7.1。CMake 包在 `/usr/lib/cmake/Catch2/`，库 `/usr/lib/libCatch2{,Main}.a` | `find_package(Catch2 3 REQUIRED)` + `include(Catch)` + `catch_discover_tests`。实测 configure 0.15s，无需 FetchContent（ADR D13） |
 | GDB | ✅ | 15.1 | 主力调试器 |
 | LLDB | ✅ | 有 | 备用 |
 | perf | ✅ | 有 | CPU 采样与 cache 统计（`perf stat` / `perf record`） |
 | clang-format | ✅ | 18 | 与 Yo_Renderer 保持一致的版本 |
 | ASan / UBSan | ✅ | GCC 实测可用 | `asan` preset |
 | GLFW3 | ✅ | `/usr/include/GLFW` | M10 用 |
-| Vulkan SDK | ✅ | `/home/yoyorm/SDK/Vulkan/1.4.357.1/x86_64` | **`VULKAN_SDK` 环境变量当前未设置**；系统另有 `libvulkan.so.1.4.313`。M10 前把 `export VULKAN_SDK=~/SDK/Vulkan/1.4.357.1/x86_64` 写进 `~/.bashrc`，并在 CMake 里做 fallback 查找 |
+| Vulkan SDK | ✅ | `/home/yoyorm/SDK/Vulkan/1.4.357.1/x86_64`；另有 GLFW3（`/usr/include/GLFW`）与系统 `libvulkan.so.1.4.313` | **`VULKAN_SDK` 环境变量未设置**（2026-09-22 复查仍未设）。M10 前把 `export VULKAN_SDK=~/SDK/Vulkan/1.4.357.1/x86_64` 写进 `~/.bashrc`，并在 CMake 里做 fallback 查找 |
 | Python | ✅ | 3.12.3 | `tools/check_deps.py` 等脚本用 |
 | **clang-tidy** | ❌ 未装 | — | `sudo apt install clang-tidy` —— M0 或 M1 装 |
 | **valgrind** | ❌ 未装 | — | `sudo apt install valgrind` —— 可选，ASan 已覆盖大部分场景；M6/M7 查内存时序问题时可能想要 |
-| **ccache** | ❌ 未装 | — | `sudo apt install ccache` —— **强烈建议 M0 就装**，CI 与本地重建都受益 |
+| **ccache** | ❌ 未装 | — | `sudo apt install ccache` —— 安排在 **Day 5**（做 CI 缓存时才知道它省了多少）。CMake 侧用 `find_program` 探测，装了就用、没装不报错 |
+| clangd | ✅ **已接入** | apt 安装 | 根目录 `compile_commands.json` → `build/debug/` 符号链接；`.vscode/settings.json` 里已禁用 C/C++ 扩展的 IntelliSense 避免冲突 |
 | doxygen / graphviz | ❌ 未装 | — | 可选（M11 生成调用图/依赖图） |
 | Tracy | ❌ 未装 | — | M11 可选，用 git submodule |
 | gcovr / lcov | ❓ 待查 | — | M11 覆盖率用：`pip install gcovr`（需要 pip，当前 `python3-pip` 未检测到，`sudo apt install python3-pip gcovr`） |
 
 **硬件**：12 线程 CPU / 31GB RAM / 磁盘剩余 240GB。
 → 对 M7 的意义：`JobSystem` 默认 `worker_count = 11`，benchmark 时记录这个值；
-→ 对构建的意义：`-j12`，全量构建预计 < 2 分钟（项目规模控制在几万行内）。
+→ 对构建的意义：`-j12`。**实测 M0 规模：configure 0.15s / 全量 1.2s / 改一个 .cpp 增量 0.18s**（还没到需要 ccache 的量级）。
 
 ---
 
@@ -196,12 +197,14 @@ YR_LOG_INFO / YR_LOG_WARN / YR_LOG_ERROR / YR_LOG_FATAL
 | 快速看热点 | `perf` | `perf record -g ./build/release/bin/yr_app --frames 1000 && perf report` |
 | cache / 分支统计 | `perf stat` | `perf stat -e cache-misses,cache-references,instructions,branches ./...` |
 | 帧内阶段耗时 | 内建 `FrameStats` | `--stats-csv out.csv` + Python 绘图（M4 起） |
-| 微基准 | Catch2 `BENCHMARK` 或独立 `benchmarks/` | 结果写进 `doc/notes/benchmarks/` |
+| 微基准 | Catch2 `BENCHMARK` 或独立 `benchmarks/` | 结果写进 `benchmarks/README.md` |
 | 连续剖析（可选） | Tracy（M11） | submodule + `YR_PROFILE_SCOPE("...")` 宏（关闭时零开销） |
 
 **benchmark 纪律**（否则数据无意义）：
 ① release 构建；② 预热 ≥3 次；③ 至少 5 次取中位数并记录方差；④ 用 `benchmark::DoNotOptimize` 或输出结果防止被优化掉；
 ⑤ 报告里写清 CPU/编译器/flags/数据规模；⑥ **数据要能推翻自己的假设才有价值**，只记录"符合预期"的数据是浪费。
+
+**结果记在哪**：benchmark 代码放 `benchmarks/`，数据表与结论放 `benchmarks/README.md`（不单独建文档）。
 
 ---
 
@@ -212,26 +215,29 @@ YRuntime 的目标是**能作为能力证明的作品**（`00-vision.md` §4.5�
 所以必须建立一条清晰的"这是我自己设计并实现的"证据链。
 
 ### 9.1 铁规则
-1. **AI（包括我）不写 `engine/` 下的实现代码。** 允许 AI 做的事：
+1. **AI 不写 `engine/` 下的实现代码**（构建样板除外：CMake / CI / Python 脚本）。允许 AI 做的事：
    - 解释概念、指出你代码里的 bug 类型、review 设计草案、提供 Godot 对照路径、生成 CMake/CI/脚本样板、出测试用例清单。
    - **不允许**：让 AI 生成 `Variant`/`ClassDB`/`SceneTree`/序列化器的实现然后粘进去。
-2. **先设计笔记 → 先头文件 → 先测试 → 再实现。** 顺序颠倒 = 你在"试出来"而不是"设计出来"。
+2. **先把设计说出口 → 先头文件 → 先测试 → 再实现。** 顺序颠倒 = 你在"试出来"而不是"设计出来"。
+   "说出口"不需要落文件（ADR D17）：在对话里讲一遍、讲不通的地方就是没想清的地方。
 3. **一个 commit 一件事。** 搬运与改逻辑永不混在同一个 commit（Yo_Renderer `modularization-plan.md` §1 的经验，继续用）。
-4. **每周至少一次"脱稿讲解"**：对着 `notes/design/*.md` 的"我能解释吗"清单自问自答，答不出的回去补。
+4. **每个模块完成后做一次"脱稿讲解"**：讲清这个模块为什么存在、和谁协作、失败模式是什么。讲不出的回去补——可以在对话里讲给 AI 听，让它挑毛病。
 
 ### 9.2 每个模块的标准流程（照做即可）
 ```
 1. 读 01-architecture.md 对应小节 + 04-godot-study.md 指定文件（≤60min）
-2. 填 notes/design/<module>.md 的 1~7 节（为什么存在 / 职责 / 接口草案 / 所有权 / 失败模式 / 线程 / Godot 对照）
+2. 在对话里过一遍设计要点：为什么存在 / 职责边界 / 所有权 / 失败模式 / 线程约束 / Godot 怎么做
+   —— 不落文件。说不清的就是还没想清的，回到第 1 步
 3. 写头文件（只有声明 + 每个 public 方法一句"契约注释"：前置条件/后置条件/失败行为）
 4. 写测试（此时全部 fail —— 这是规格）
 5. 实现，直到测试全绿（debug preset）
 6. asan preset 跑一遍 → release preset 跑一遍
 7. 重构（命名、去重、简化）+ 再跑测试
-8. 填 notes/design/<module>.md 的 8~9 节（复盘 + 我能解释吗）
-9. 更新 02-roadmap.md checkbox + 06-decisions.md（若有新决策）
-10. commit：feat(<layer>): <一句话>
+8. 更新 02-roadmap.md checkbox；架构级取舍才写 06-decisions.md
+9. commit：标题说"做了什么"，**正文说"为什么"**（这是本项目唯一的高频记录，见 START-HERE §6）
 ```
+> 第 2 步是**关键**，也是最容易被跳过的一步。它的替代品不是"写笔记"，而是"说出来" ——
+> 说给自己听或说给 AI 听都行，但必须说出口。说不出口 = 没想清。
 
 ### 9.3 卡住了怎么办（按顺序尝试，不要第一步就问 AI）
 1. 把问题写成一句话（写不出来 = 还没定位问题）。
@@ -240,7 +246,8 @@ YRuntime 的目标是**能作为能力证明的作品**（`00-vision.md` §4.5�
 4. 读 Godot 对应文件（`04-godot-study.md`）——大多数问题成熟引擎都遇到过。
 5. 搜具体错误信息（编译器报错原文、VUID、断言文本）。
 6. **此时**再向 AI 提问，且要求"只解释原理和给方向，不给完整实现"。
-7. 把整个排查过程写进 `notes/`（这些排查记录是博客与面试的最佳素材）。
+7. 排查过程**不需要记录**，除非：① 同一个坑踩了第二次 → 写进 `02-roadmap.md` 对应里程碑的"常见坑"；
+   ② 它推翻了某个设计 → 写 ADR。反复出现的坑才是知识，一次性的坑不是。
 
 ---
 
@@ -280,31 +287,16 @@ Vulkan 后端 target 用 CMake option `YR_BUILD_VULKAN_BACKEND=OFF` 默认关闭
 
 ## 12. 代码风格细则
 
-**你已经建好了 `.clang-format`（`BasedOnStyle: LLVM`）与 `.vscode/settings.json`（xaver.clang-format + formatOnSave）**，
-这套配置直接沿用即可。LLVM 基准意味着 **2 空格缩进、命名空间内部缩进、指针左对齐（`int* p`）**。
-需要知道并接受的三个后果：
+**`.clang-format` 已落地**（`BasedOnStyle: LLVM` + 显式固定 `ColumnLimit: 120` / `Standard: c++20` /
+`SortIncludes: CaseSensitive` / `NamespaceIndentation: All` / `PointerAlignment: Left` 等）。
+`.vscode/settings.json` 用 `xaver.clang-format` + `formatOnSave`，并禁用了 C/C++ 扩展的 IntelliSense（改由 clangd 提供）。
 
-| 项 | LLVM 基准的值 | 影响 | 建议 |
-|---|---|---|---|
-| `IndentWidth` | 2 | 与 yo_lib / Yo_Renderer 现有的 4 空格不一致；搬入代码时会被整体重排 | **接受**（新项目新风格，一次到位）。若想跟旧项目一致，加 `IndentWidth: 4` + `AccessModifierOffset: -4` + `ContinuationIndentWidth: 4` |
-| `NamespaceIndentation` | `All` | `namespace yr::core { ... }` 内容会缩进（与 yo_lib 风格一致） | 接受，保持默认 |
-| `ColumnLimit` | 80 | 80 列对现代宽屏偏窄，模板代码会折行得很碎 | 建议改成 `ColumnLimit: 120`（Yo_Renderer 也是宽列） |
+需要知道的两个后果：
+- LLVM 基准是 **2 空格缩进 + 命名空间内缩进**，与 yo_lib / Yo_Renderer 的 4 空格不同 → 吸收旧代码时会被整体重排，这是预期的。
+- **clang-format 只管 C/C++**。`CMakeLists.txt`、`.json`、`.yml`、`.md` 都是格式化盲区（M0 就踩过：`target_link_libraries` 的缩进丢了没人管）。
+  CMake 文件量大了以后再考虑 `cmake-format`（决策协议 R3：不痛就不做）。
 
-建议在 `.clang-format` 里**显式写出来**（而不是依赖 LLVM 默认值）的几项，这样将来换基准不会静默改变风格：
-```yaml
----
-BasedOnStyle: LLVM
-Language: Cpp
-ColumnLimit: 120
-Standard: c++20
-SortIncludes: CaseSensitive
-AllowShortFunctionsOnASingleLine: Inline
-AllowShortIfStatementsOnASingleLine: false
-NamespaceIndentation: All
-PointerAlignment: Left
-FixNamespaceComments: true
-```
-配套：CI 里用 `clang-format-18 --dry-run -Werror $(git ls-files '*.h' '*.cpp')` 做格式门禁（M0 的 `format` job）。
+CI 门禁用 `clang-format-18 --dry-run -Werror $(git ls-files '*.h' '*.cpp')`（Day 5 的 `format` job）。
 
 补充约定（clang-format 管不到的）：
 | 项 | 约定 |
@@ -339,17 +331,21 @@ build/<preset>/assets/   # 构建时拷贝（或 yr_pack 产物 .yrpak）
 
 ## 14. 文档规范
 
-| 文档 | 更新时机 | 负责人检查项 |
+**原则：文档要有限、可读。不为新东西造新文档**（2026-09-22 定，见 `START-HERE.md` §6）。
+
+| 文档 | 更新时机 | 检查项 |
 |---|---|---|
-| `doc/notes/weekly/*.md` | 每周 | 目标 ≤3 条；实际投入有数字 |
-| `doc/notes/design/*.md` | 每模块 | §9"我能解释吗"全打勾 |
-| `doc/notes/godot/*.md` | 每次源码阅读 | 三段式结论齐全 + 有行动项 |
-| `doc/notes/benchmarks/*.md` | 每个实验（E1~E16） | 方法可复现 + 有结论 + 有"对设计的影响" |
-| `doc/01-architecture.md` | 分层/契约变化时 | 图与代码一致 |
-| `doc/02-roadmap.md` | 每完成一项 | checkbox + 日期 |
-| `doc/06-decisions.md` | 每个重要取舍 | 新 ADR 追加，不改旧的 |
-| `doc/07-portfolio.md` | 每里程碑收口 | 新增可用素材 |
-| `README.md`（根） | 每里程碑收口 | 状态表、构建说明、截图/GIF 是最新的 |
+| `doc/START-HERE.md` | 当前进度变化时 | §1 状态表、§2 下一步是最新的 |
+| `doc/02-roadmap.md` | 每完成一项 | checkbox + 日期；**与实际做法不一致的条目要改写，不要硬勾** |
+| `doc/06-decisions.md` | 架构级取舍 | 新 ADR 追加，不改旧的（被推翻的标 `已推翻`） |
+| `doc/01-architecture.md` | 分层 / 契约变化时 | Mermaid 图与代码一致 |
+| `doc/05-engineering.md` §1 | 装了新工具时 | 工具表现状与本机一致 |
+| `README.md`（根） | 每里程碑收口 | 里程碑表、构建命令、截图/GIF 是最新的 |
+| `benchmarks/README.md` | 每个实验（E1~E16） | 方法可复现 + 有结论 + 有"对设计的影响" |
+| `doc/07-portfolio.md` | **冻结**，M8 后修订 | — |
+
+**不产出**：周记、设计笔记、Godot 对照笔记、evidence 文件。
+这些信息分别由 **commit message 正文**（高频理由）、**ADR**（架构取舍）、**代码注释**（离开代码就会失效的细节，如内存序、帧阶段顺序、快照字段单位）承载。
 
 **根 README 的最小结构**（M0 建骨架，M8/M10 补内容）：
 项目一句话 → 状态与里程碑进度表 → 架构图 → 两个 Demo 的 GIF → 构建与运行（三条命令）→

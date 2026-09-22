@@ -457,7 +457,7 @@ class IFileAccess { /* 抽象文件 IO：磁盘实现 + 内存实现（测试用
 class PakFileAccess : public IFileAccess { /* 从 .yrpak 读，M11 */ };
 ```
 
-**异步加载的关键约束（血泪点，务必写进设计笔记）**：
+**异步加载的关键约束（血泪点，务必写进 `AssetDatabase` 的头文件注释）**：
 1. IO 与解码可以在工作线程；**任何触碰 SceneTree / ObjectDB / ClassDB 的操作必须回主线程**。
    做法：工作线程产出"已解码的原始数据 + 构造闭包"，`pump()` 在主线程执行闭包完成对象构造。
 2. 同一资源的并发请求必须**合并**（in-flight map），否则 N 个请求 = N 份内存。
