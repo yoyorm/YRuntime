@@ -3,6 +3,18 @@
 #include <yr/core/assert.h>
 
 using namespace yr::core;
+#if YR_ENABLE_ASSERTS
+
+namespace {
+  yr::core::AssertInfo g_last{};
+  int g_count = 0;
+
+  yr::core::AssertAction recordingHandler(const yr::core::AssertInfo& info) noexcept {
+    g_last = info;
+    ++g_count;
+    return yr::core::AssertAction::kContinue; // 关键：不停，测试才能继续
+  }
+} // namespace
 
 TEST_CASE("assert: 条件成立时无副作用", "[core][assert]") {
   YR_ASSERT(true);
@@ -24,17 +36,6 @@ TEST_CASE("assert: 可以安全用在 if-else 里", "[core][assert]") {
     elseRan = true;
   REQUIRE(elseRan);
 }
-
-namespace {
-  yr::core::AssertInfo g_last{};
-  int g_count = 0;
-
-  yr::core::AssertAction recordingHandler(const yr::core::AssertInfo& info) noexcept {
-    g_last = info;
-    ++g_count;
-    return yr::core::AssertAction::kContinue; // 关键：不停，测试才能继续
-  }
-} // namespace
 
 TEST_CASE("assert: 失败时报告正确的位置信息", "[core][assert]") {
   yr::core::setAssertHandler(recordingHandler);
@@ -59,3 +60,13 @@ TEST_CASE("assert: handler 返回 kContinue 时程序继续执行", "[core][asse
   CHECK(reached);
   yr::core::setAssertHandler(nullptr);
 }
+
+#else
+// ── 断言关闭时：反向验证"确实被抹掉了" ──
+TEST_CASE("assert: release 下条件完全不被求值", "[core][assert]") {
+  int n = 0;
+  YR_ASSERT(++n == 1);
+  REQUIRE(n == 0); // 证明 ++n 从未执行
+}
+
+#endif
