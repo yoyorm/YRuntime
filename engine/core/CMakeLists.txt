@@ -1,4 +1,6 @@
-add_library(yr_core src/version.cpp)
+add_library(yr_core 
+    src/version.cpp
+    src/assert.cpp)
 add_library(yr::core ALIAS yr_core)
 
 target_include_directories(yr_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

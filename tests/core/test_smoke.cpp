@@ -1,8 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
-
-#include <yr/core/version.h>
-
 #include <cstring>
+#include <yr/core/version.h>
 
 TEST_CASE("smoke: 构建系统把 CMake 的数据正确注入到了 C++", "[build][smoke]") {
   SECTION("版本号来自 project(VERSION)") {

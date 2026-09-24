@@ -1,4 +1,5 @@
-add_executable(YrTests_core test_smoke.cpp)
+add_executable(YrTests_core test_smoke.cpp
+    test_assert.cpp)
 
 target_link_libraries(YrTests_core PRIVATE 
 yr::core 
