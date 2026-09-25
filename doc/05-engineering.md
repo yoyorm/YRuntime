@@ -314,7 +314,7 @@ CI 门禁用 `clang-format-18 --dry-run -Werror $(git ls-files '*.h' '*.cpp')`�
 | 函数行数 | ≤ 60 行；超了先想"是不是职责多了"，再想"怎么拆" |
 | 注释语言 | 中文可以（与既有项目一致），但 **public API 的契约注释用中英皆可、必须写清前置/后置条件** |
 | TODO | 必须带负责人与里程碑：`// TODO(M5): 支持 SubResource 循环引用` |
-| 禁止 | 裸 `new/delete`、`reinterpret_cast`（除序列化 POD 且有注释）、`using namespace` 在头文件、全局可变状态（白名单：`ClassDB`/`ObjectDB`/`Engine`，均有 ADR）、`std::endl`（用 `'\n'`，除非要 flush） |
+| 禁止 | 裸 `new/delete`、`reinterpret_cast`（除序列化 POD 且有注释）、`using namespace` 在头文件、全局可变状态（白名单：`ClassDB` / `ObjectDB` / `Engine` / **断言 handler**（`assert.cpp` 的 `g_handler`，理由：断言系统必须在任何其他系统之前可用，不能依赖注入；非线程安全，M7 处理），均有 ADR 或注释说明）、`std::endl`（用 `'\n'`，除非要 flush） |
 
 ---
 

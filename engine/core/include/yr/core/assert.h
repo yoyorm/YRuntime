@@ -7,6 +7,7 @@ namespace yr::core {
     int line;
     const char* func;
     const char* expr; // 表达式的文本
+    const char* message;
   };
 
   enum class AssertAction : short { kAbort, kContinue };
@@ -33,8 +34,6 @@ namespace yr::core {
 #endif
 #endif
 
-// ... YR_ENABLE_ASSERTS 的默认值定义 ...
-
 #if YR_ENABLE_ASSERTS
 
 #define YR_ASSERT(cond)                                                                                                \
@@ -42,15 +41,25 @@ namespace yr::core {
     if ((cond)) {                                                                                                      \
       break;                                                                                                           \
     } else {                                                                                                           \
-      yr::core::AssertInfo info{};                                                                                     \
-      info.file = __FILE__;                                                                                            \
-      info.line = __LINE__;                                                                                            \
-      info.func = __func__;                                                                                            \
-      info.expr = #cond;                                                                                               \
-      yr::core::reportAssert(info);                                                                                    \
+      ::yr::core::reportAssert({__FILE__, __LINE__, __func__, #cond, nullptr});                                        \
     }                                                                                                                  \
   } while (false)
 
+#define YR_ASSERT_MSG(cond, msg)                                                                                       \
+  do {                                                                                                                 \
+    if ((cond)) {                                                                                                      \
+      break;                                                                                                           \
+    } else {                                                                                                           \
+      ::yr::core::reportAssert({__FILE__, __LINE__, __func__, #cond, (msg)});                                          \
+    }                                                                                                                  \
+  } while (false)
+
+#define YR_VERIFY(cond) YR_ASSERT(cond)
+
 #else
 #define YR_ASSERT(cond) ((void)0)
+#define YR_ASSERT_MSG(cond, message) ((void)0)
+#define YR_VERIFY(cond) ((void)!(cond)) // 只求值，不报告
 #endif
+
+#define YR_BREAKPOINT() __builtin_trap()
