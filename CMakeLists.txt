@@ -6,6 +6,10 @@ project(YRuntime VERSION 0.1.0 LANGUAGES CXX)
 option(YR_BUILD_TESTS "Build unit tests" ON)
 option(YR_WARNINGS_AS_ERRORS "Treat warnings as errors (CI only)" OFF)
 option(YR_ENABLE_SANITIZERS "Enable AddressSanitizer + UndefinedBehaviorSanitizer" OFF)
+option(YR_ENABLE_ASSERTS "Enable runtime assertions" ON)
+option(YR_ENABLE_LOG "Enable logging" ON)
+option(YR_ENABLE_DEBUG_LOG "Compile in DEBUG-level logging (stripped in release)" ON)
+
 # 输出目录统一
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")

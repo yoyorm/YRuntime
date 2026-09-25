@@ -1,6 +1,5 @@
 {
     "version": 3,
-
     "configurePresets": [
         {
             "name": "base",
@@ -12,13 +11,23 @@
             "name": "debug",
             "displayName": "Debug（日常开发）",
             "inherits": "base",
-            "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "YR_ENABLE_ASSERTS": "ON",
+                "YR_ENABLE_LOG": "ON",
+                "YR_ENABLE_DEBUG_LOG": "ON"
+            }
         },
         {
             "name": "release",
             "displayName": "Release（性能测试 / 录屏）",
             "inherits": "base",
-            "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "YR_ENABLE_ASSERTS": "OFF",
+                "YR_ENABLE_LOG": "ON",
+                "YR_ENABLE_DEBUG_LOG": "OFF"
+            }
         },
         {
             "name": "asan",
@@ -26,32 +35,48 @@
             "inherits": "base",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
-                "YR_ENABLE_SANITIZERS": "ON"
+                "YR_ENABLE_SANITIZERS": "ON",
+                "YR_ENABLE_ASSERTS": "ON",
+                "YR_ENABLE_LOG": "ON",
+                "YR_ENABLE_DEBUG_LOG": "ON"
             }
         }
     ],
-
     "buildPresets": [
-        { "name": "debug",   "configurePreset": "debug" },
-        { "name": "release", "configurePreset": "release" },
-        { "name": "asan", "configurePreset": "asan" }
+        {
+            "name": "debug",
+            "configurePreset": "debug"
+        },
+        {
+            "name": "release",
+            "configurePreset": "release"
+        },
+        {
+            "name": "asan",
+            "configurePreset": "asan"
+        }
     ],
-
     "testPresets": [
         {
             "name": "debug",
             "configurePreset": "debug",
-            "output": { "outputOnFailure": true }
+            "output": {
+                "outputOnFailure": true
+            }
         },
         {
             "name": "release",
             "configurePreset": "release",
-            "output": { "outputOnFailure": true }
+            "output": {
+                "outputOnFailure": true
+            }
         },
         {
             "name": "asan",
             "configurePreset": "asan",
-            "output": { "outputOnFailure": true }
+            "output": {
+                "outputOnFailure": true
+            }
         }
     ]
 }
