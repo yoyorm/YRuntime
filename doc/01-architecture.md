@@ -745,7 +745,7 @@ sequenceDiagram
 
 | 阶段 | 实际存在的 target | 形状 |
 |---|---|---|
-| M0 | `yr_core`(空壳) + `tests/core` | CMake/preset/CI/日志跑通，一个 hello 测试 |
+| M0 | `yr_core`(空壳) + `tests/core` | CMake/preset/CI 跑通；assert + log 就位；smoke/assert/log 共 23 个测试 |
 | M1 | `yr_core` | Handle/SlotMap/SparseSet/StringId/Time |
 | M2 | + `yr_object` | Object/ClassDB/Variant/Ref + `tools/yr_inspect` |
 | M3 | + `yr_event` | EventBus/MessageQueue |

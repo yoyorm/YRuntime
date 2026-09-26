@@ -15,7 +15,7 @@
 
 | M | 里程碑 | 状态 | 可运行物 |
 |---|---|---|---|
-| M0 | 工程地基（CMake/CI/Catch2/日志） | 🔨 进行中（Day 1~3c 完成，剩 CI + 吸收 yo_lib） | `ctest` 全绿 + CI 徽章 |
+| M0 | 工程地基（CMake/CI/Catch2/assert/log） | 🔨 进行中（构建 / CI / assert / log 已就绪，剩 LICENSE 与收口） | `ctest` 全绿 + CI 徽章 |
 | M1 | 句柄、容器、时间 | ⬜ | 容器 benchmark 报告 |
 | M2 | 反射与对象模型 | ⬜ | `yr_inspect` 反射查看器 |
 | M3 | 事件系统与延迟调用 | ⬜ | 事件确定性重放测试 |
@@ -82,6 +82,9 @@ ctest --preset debug          # 测试
 ```
 
 产物在 `build/<preset>/bin/`。给 IDE / clangd 用：`ln -sf build/debug/compile_commands.json .`
+
+日志与断言已在 `yr::core` 就绪：`YR_LOG_*`（tag + 运行期 level 过滤，DEBUG 级在 release 编译期剔除）、
+`YR_ASSERT*` / `YR_VERIFY`（可注入 handler，便于测试失败路径）。
 
 | 依赖 | 说明 |
 |---|---|

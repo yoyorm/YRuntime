@@ -39,7 +39,7 @@
 **目标**：让"改一行代码 → 构建 → 测试 → 看到结果"的回路 < 30 秒，并让 CI 替你守住规矩。
 这个阶段不写任何引擎逻辑，但它决定了后面 8 个月的开发体验。
 
-### 已完成（Day 1 ~ 3c，2026-09-19 ~ 09-22）
+### 已完成（Day 1 ~ 6，2026-09-19 ~ 09-26）
 
 - [x] 仓库骨架：`engine/ apps/ tests/ tools/ cmake/ benchmarks/ .github/`、`.gitignore`、`.clang-format`（LLVM 基准 + `ColumnLimit: 120`）、首次 commit、推到 `github.com/yoyorm/YRuntime`（public，SSH）✅ 2026-09-19
 - [x] 顶层 `CMakeLists.txt`：3 个 option + 统一输出目录（`build/<preset>/{bin,lib}`）+ `CMAKE_EXPORT_COMPILE_COMMANDS` + `yr_build_flags` INTERFACE target（承载警告基线与 `cxx_std_20`）✅ 2026-09-20
@@ -51,6 +51,11 @@
 - [x] clangd 接入：根目录 `compile_commands.json` → `build/debug/` 符号链接；禁用 C/C++ 扩展 IntelliSense 避免冲突 ✅ 2026-09-22
 - [x] **门禁全部实测**：`-Wshadow` 会响 / `-DYR_WARNINGS_AS_ERRORS=ON` 构建失败退出码 1 / ASan 抓到 `heap-buffer-overflow`（含分配点与越界字节数）/ UBSan 抓到 `signed integer overflow` / debug preset 下同一份代码零报告 / `clang-format --dry-run -Werror` 合规 ✅ 2026-09-22
 
+- [x] `tools/check_deps.py`：include 反向依赖 + 禁用符号（裸 `new`/`delete`）+ 图形 API 泄漏扫描；已接进 CI lint job ✅ 2026-09-24
+- [x] `.github/workflows/ci.yml`：`build-test` matrix（gcc-13 × clang-18）×（debug/release/asan）+ `lint` job（clang-format 18 + `check_deps.py`）；`fail-fast: false` ✅ 2026-09-24
+- [x] **吸收 yo_lib ①**：`yr/core/assert.h` + `src/assert.cpp`。`YR_ASSERT` / `YR_ASSERT_MSG` / `YR_VERIFY` / `YR_BREAKPOINT`；可注入 `AssertHandler` 使失败路径可测；重入哨兵；`YR_ENABLE_ASSERTS` 由 CMake 统一下发 ✅ 2026-09-25
+- [x] **吸收 yo_lib ②**：`yr/core/log.h` + `src/log.cpp`。`YR_LOG_DEBUG/INFO/WARN/ERROR/FATAL`（tag + 调用点信息）；编译期剔除 + 运行期 level 过滤；可注入 `LogHandler`；`YR_ENABLE_LOG` / `YR_ENABLE_DEBUG_LOG` 由 CMake 统一下发 ✅ 2026-09-26
+
 **与原计划的偏差**（记下来，免得三个月后困惑）
 | 计划里写的 | 实际 | 原因 |
 |---|---|---|
@@ -60,24 +65,24 @@
 | `.editorconfig` | 未建 | clang-format 已覆盖格式；需要时再加 |
 | `tests/core/test_main.cpp` | 实际叫 `test_smoke.cpp` | 用 `Catch2::Catch2WithMain`，不需要自定义 main（M2 注册反射类型时才需要换） |
 | sanitizer 做成 `cmake/YrSanitizers.cmake`（列表解析 + 互斥检查） | **5 行 `option()` 写在顶层** | TSan 到 M7 才用；避免引入 `foreach`/`list(FIND)`/`FATAL_ERROR` 三组新语法 |
+| log 的 fmt 风格格式化 | **推迟**（架构已就位） | 格式化是叶子功能，不改接口形状；先确认 `std::format` 可用性再定方案，别手写解析器 |
 
-### 剩余（Day 4 ~ 7）
+### 剩余（Day 7 收口）
 
-- [ ] `tools/check_deps.py`：include 反向依赖扫描 + 禁用符号（裸 `new`/`delete`）扫描，**并故意违规验证它会失败**
 - [ ] `LICENSE`（MIT）—— 仓库已 public，缺 LICENSE 等于"保留所有权利"，别人无法合法引用
-- [ ] `.github/workflows/ci.yml`：先单 job（gcc + debug + ctest）跑通
-- [ ] CI 扩展：matrix(gcc-13, clang-18) × (debug, release, asan) + format job + lint job（跑 `check_deps.py`）
 - [ ] 装 ccache 并接进 CMake（`find_program` 探测，装了就用、没装不报错）
-- [ ] 根 `README.md` 加 CI 徽章，并把里程碑表 M0 改成 ✅
-- [ ] **吸收 yo_lib ①**：`yo_assert.h` → `engine/core/include/yr/core/assert.h`（宏改名 `YR_ASSERT*`、加 `__builtin_trap()` 便于 gdb 停在断言处、加 `YR_BREAKPOINT()`、release 行为可配）
-- [ ] **吸收 yo_lib ②**：`logger/` → `yr/core/log.h` + `src/log.cpp`。改成 fmt 风格宏 `YR_LOG_INFO("tag", "...", args)`（替代流式 API 的临时对象开销），加 tag / 帧号 / 线程 ID / 运行期 level 过滤 / 线程安全；**保留 yo_lib 的 `InlineBuffer` SBO 优化**
+- [ ] 根 `README.md` 加 CI 徽章（workflow 已跑），里程碑表 M0 → ✅ 留到 M0 全部收口时再改
+- [ ] log 补完（推迟，非阻塞）：
+  - fmt 风格**格式化引擎**（`{}` 占位符）。当前宏只传格式串本身，`__VA_ARGS__` 不求值；`test_log.cpp` 的 `[wip]` 用例守着这条
+  - 输出补 时间戳 / 帧号 / 线程 ID（`05-engineering.md` §5）
+  - 线程安全（单 mutex + 行缓冲）与 `InlineBuffer` SBO 优化 → 与 M7 一起做
 - [ ] 补 `git tag v0.M0`
 
 ### 验收标准
 
 - `cmake --preset debug && cmake --build --preset debug && ctest --preset debug` 三条命令全绿；冷启动 < 60s、热构建 < 5s（**实测：configure 0.15s / 全量 1.2s / 增量 0.18s** ✅）
-- 故意在 `yr_core` 里 include 一个上层头文件 → `check_deps.py` 报错并让 CI 失败（**必须亲自验证一次**，否则规则是假的）
-- 故意写一个 `new` → CI 失败
+- 故意在 `yr_core` 里 include 一个上层头文件 → `check_deps.py` 报错并让 CI 失败 ✅ 2026-09-24（已实测）
+- 故意写一个 `new` → CI 失败 ✅ 2026-09-24（已实测）
 - GitHub Actions 徽章出现在 README，且 matrix 全绿
 
 **学习点**：CMake target vs 变量、generator expression、`target_*` 的 PUBLIC/PRIVATE/INTERFACE 传播、preset 的三种类型、ODR、`-Wshadow` 抓到的第一类真 bug、sanitizer 的插桩原理与代价。

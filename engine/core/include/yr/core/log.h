@@ -29,7 +29,8 @@ namespace yr::core {
     std::string_view message; // 不拥有数据，仅在 reportLog 返回前有效
   };
 
-  // 处理 LogInfo 信息的 handler
+  // 处理 LogInfo 信息;
+  // handler 会在日志锁内执行；handler 内不得再调用任何日志 API。
   using LogHandler = void (*)(const LogInfo&) noexcept;
 
   // 默认 handler：打印到 stderr
@@ -60,28 +61,28 @@ namespace yr::core {
 #if YR_ENABLE_LOG
 
 // TODO：fmt 风格格式化未实现，暂时只传格式串本身（不转发 __VA_ARGS__）
-#define YR_LOG_INFO(tag, fmt, ...)                                                                                     \
+#define YR_LOG_INFO(tag, fmt)                                                                                          \
   ::yr::core::reportLog(::yr::core::LogLevel::kInfo, (tag), __FILE__, __LINE__, __func__, (fmt))
-#define YR_LOG_WARN(tag, fmt, ...)                                                                                     \
+#define YR_LOG_WARN(tag, fmt)                                                                                          \
   ::yr::core::reportLog(::yr::core::LogLevel::kWarn, (tag), __FILE__, __LINE__, __func__, (fmt))
-#define YR_LOG_ERROR(tag, fmt, ...)                                                                                    \
+#define YR_LOG_ERROR(tag, fmt)                                                                                         \
   ::yr::core::reportLog(::yr::core::LogLevel::kError, (tag), __FILE__, __LINE__, __func__, (fmt))
-#define YR_LOG_FATAL(tag, fmt, ...)                                                                                    \
+#define YR_LOG_FATAL(tag, fmt)                                                                                         \
   ::yr::core::reportLog(::yr::core::LogLevel::kFatal, (tag), __FILE__, __LINE__, __func__, (fmt))
 
 #if YR_ENABLE_DEBUG_LOG
-#define YR_LOG_DEBUG(tag, fmt, ...)                                                                                    \
+#define YR_LOG_DEBUG(tag, fmt)                                                                                         \
   ::yr::core::reportLog(::yr::core::LogLevel::kDebug, (tag), __FILE__, __LINE__, __func__, (fmt))
 #else
-#define YR_LOG_DEBUG(tag, fmt, ...) ((void)0) // release：整条消失
+#define YR_LOG_DEBUG(tag, fmt) ((void)0) // release：整条消失
 #endif
 
 #else // YR_ENABLE_LOG == 0：全部编译期消失
 
-#define YR_LOG_DEBUG(tag, fmt, ...) ((void)0)
-#define YR_LOG_INFO(tag, fmt, ...) ((void)0)
-#define YR_LOG_WARN(tag, fmt, ...) ((void)0)
-#define YR_LOG_ERROR(tag, fmt, ...) ((void)0)
-#define YR_LOG_FATAL(tag, fmt, ...) ((void)0)
+#define YR_LOG_DEBUG(tag, fmt) ((void)0)
+#define YR_LOG_INFO(tag, fmt) ((void)0)
+#define YR_LOG_WARN(tag, fmt) ((void)0)
+#define YR_LOG_ERROR(tag, fmt) ((void)0)
+#define YR_LOG_FATAL(tag, fmt) ((void)0)
 
 #endif

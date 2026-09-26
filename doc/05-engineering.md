@@ -54,16 +54,35 @@
 | 每个 target 都要能被单独构建 | `cmake --build --preset debug --target YrTests_scene` |
 | 输出目录统一 `build/<preset>/bin` | 与 Yo_Renderer 的习惯一致 |
 
-### 2.2 CMakePresets（M0 建）
-| preset | 用途 | 关键 flag |
+### 2.2 CMakePresets
+
+已建（`debug` / `release` / `asan`，见 `CMakePresets.json`）：
+
+| preset | 用途 | 关键开关 |
 |---|---|---|
-| `debug` | 日常开发 | `-O0 -g3 -fno-omit-frame-pointer`，`YR_ENABLE_ASSERTS=ON` |
-| `release` | 性能测试 / 录屏 | `-O3 -DNDEBUG`，断言保留但降级为日志（见 §6） |
-| `asan` | 内存/UB 检查 | `-fsanitize=address,undefined -fno-sanitize-recover=all` |
-| `tsan` | 数据竞争（M7 起） | `-fsanitize=thread`（**不能与 asan 同用**） |
-| `ci` | GitHub Actions | `release` + `-Werror` + ccache |
+| `debug` | 日常开发 | `CMAKE_BUILD_TYPE=Debug`；`YR_ENABLE_ASSERTS=ON`、`YR_ENABLE_DEBUG_LOG=ON` |
+| `release` | 性能测试 / 录屏 | `CMAKE_BUILD_TYPE=Release`（带 `-O3 -DNDEBUG`）；`YR_ENABLE_ASSERTS=OFF`、`YR_ENABLE_DEBUG_LOG=OFF`、`YR_ENABLE_LOG=ON` |
+| `asan` | 内存/UB 检查 | Debug + `YR_ENABLE_SANITIZERS=ON`（`-fsanitize=address,undefined -fno-sanitize-recover=all`） |
+
+推迟：
+
+| preset | 何时 | 关键 flag |
+|---|---|---|
+| `tsan` | M7 | `-fsanitize=thread`（**不能与 asan 同用**） |
+| `ci` | 不单独建 | CI 用 `release` + 命令行 `-DYR_WARNINGS_AS_ERRORS=ON`，避免 preset 数量翻倍 |
 
 每个 preset 都要能用 `ctest --preset <name>` 跑测试。
+
+**三个开关的语义**（都由 CMake `option()` 定义 + `target_compile_definitions(yr_core PUBLIC ...)` 下发，见 §2.1）：
+
+| 开关 | debug | release | 含义 |
+|---|---|---|---|
+| `YR_ENABLE_ASSERTS` | 1 | 0 | 断言是否生效（0 时条件**不求值**） |
+| `YR_ENABLE_LOG` | 1 | **1** | 日志总开关（release 下也保留——headless 项目没有画面可看） |
+| `YR_ENABLE_DEBUG_LOG` | 1 | 0 | DEBUG 级是否编译进来（0 时该宏整条消失） |
+
+> **注意**：release 目前是"断言完全关闭"，**不是**旧文档写的"保留检查但降级为日志"。
+> 后者需要 handler 配合实现（架构已就绪），推迟到后续迭代；`02-roadmap.md` 里记着。
 
 ### 2.3 编译选项基线
 ```
@@ -139,35 +158,67 @@ TEST_CASE("Node: queue_free during own kProcess is deferred to phase 9", "[scene
 
 ## 5. 日志规范
 
-吸收 yo_lib `logger/` 后重构为：
 ```cpp
-YR_LOG_DEBUG("scene", "node {} entered tree at depth {}", name, depth);   // tag + fmt 风格
+YR_LOG_DEBUG("scene", "node entered tree");   // tag + 消息
 YR_LOG_INFO / YR_LOG_WARN / YR_LOG_ERROR / YR_LOG_FATAL
 ```
-| 要求 | 说明 |
-|---|---|
-| 编译期 level 剔除 | `YR_LOG_DEBUG` 在 release 下展开为空（避免格式化开销与参数求值） |
-| 运行期 level 过滤 | `--log-level debug`、`--log-filter scene,asset` |
-| 输出内容 | 时间戳 / 帧号 / 线程 ID / level / tag / 消息（帧号与线程 ID 是 yo_lib 现在缺的，调试多线程必备） |
-| 线程安全 | 单 mutex + 行缓冲；`InlineBuffer`（yo_lib 已有的 SBO 优化）保留 |
-| 输出目标 | stderr（默认）+ 可选文件（`--log-file`）；CI 里全量收集 |
-| **禁止** | 用日志代替返回值上报错误；在热路径（每帧每节点）打 INFO 以上日志 |
 
-**日志是本项目最重要的调试工具**（headless 项目没有画面可看）。M0 就要做好，不要拖。
+已在 `yr/core/log.h` + `src/log.cpp` 实现：
+
+| 能力 | 说明 |
+|---|---|
+| 编译期 level 剔除 | `YR_LOG_DEBUG` 在 release 下展开为 `((void)0)`，**参数不求值** |
+| 运行期 level 过滤 | `setMinLogLevel()`；默认阈值由构建配置决定（见下） |
+| 调用点信息 | 宏注入 `file` / `line` / `func`，后端组装为 `LogInfo` |
+| 可注入 handler | `setLogHandler()`（`nullptr` 恢复默认 sink）；使日志可被单测断言 |
+| 开关 | `YR_ENABLE_LOG`（总）、`YR_ENABLE_DEBUG_LOG`（DEBUG 级），CMake 下发 |
+
+**默认阈值**：`defaultMinLogLevel()` 在 debug/asan 下是 `kDebug`、release 下是 `kInfo`。
+理由：DEBUG 级既然编译进来了，默认就该看得见——否则 `YR_LOG_DEBUG` 编译期放行、运行期被挡，等于没用。
+
+**待补**（推迟，见 `02-roadmap.md`）
+- fmt 风格格式化（`{}` 占位符）。**当前宏只传格式串本身，`__VA_ARGS__` 不求值**——因此参数里的副作用不会发生。
+- 输出补 时间戳 / 帧号 / 线程 ID。
+- 线程安全（单 mutex + 行缓冲）+ `InlineBuffer` SBO 优化，与 M7 一起做。
+- `--log-level` / `--log-filter` / `--log-file` 命令行开关。
+
+**禁止**：用日志代替返回值上报错误；在热路径（每帧每节点）打 INFO 以上日志。
+
+**日志是本项目最重要的调试工具**（headless 项目没有画面可看）。
 
 ---
 
 ## 6. 断言与错误处理
 
+已在 `yr/core/assert.h` + `src/assert.cpp` 实现：
+
+| 宏 | 语义 |
+|---|---|
+| `YR_ASSERT(cond)` | 条件不成立 → 报告并 `__builtin_trap()`（便于 gdb 停在现场） |
+| `YR_ASSERT_MSG(cond, msg)` | 同上，附带自定义消息 |
+| `YR_VERIFY(cond)` | **断言关闭时仍求值** `cond`，但不报告——用于 `file.close()` 这类必须发生的副作用 |
+| `YR_BREAKPOINT()` | 无条件 `__builtin_trap()`，给测试/调试手工下断点 |
+
+| 开关 | 效果 |
+|---|---|
+| `YR_ENABLE_ASSERTS=1` | 断言生效；失败走 handler |
+| `YR_ENABLE_ASSERTS=0` | `YR_ASSERT` 展开为 `((void)0)`，**条件不求值**；`YR_VERIFY` 仍求值 |
+
+`setAssertHandler()` 可替换"报告什么 / 要不要停"（`nullptr` 恢复默认）。
+这不是为测试而造的抽象——它让"release 下降级为日志"成为可能，而测试只是第一个消费者。
+handler 目前非线程安全，约定在启动线程前设置（M7 修）。
+
+**使用规则**
+
 | 情况 | 手段 |
 |---|---|
-| 不变量被破坏（程序 bug） | `YR_ASSERT(cond)` / `YR_ASSERT_MSG(cond, "...")`：debug 下打印表达式+文件行号并 `abort`（便于 gdb 直接定位），release 下**保留检查但只打 ERROR 日志 + 返回**（可配置） |
+| 不变量被破坏（程序 bug） | `YR_ASSERT(cond)` / `YR_ASSERT_MSG(cond, "...")` |
 | 可恢复的外部错误（文件不存在、格式错、类未注册） | 返回 `std::optional` / `Expected<T, Error>` / bool + 日志；**不用异常** |
 | 启动期 / 工具中的错误 | 可用异常（`yr::FatalError`），顶层 catch 后打印并退出 |
 | 只读契约（"这个 API 只能主线程调"） | `YR_ASSERT(on_main_thread())` |
 | 编译期约束 | `static_assert` + concepts（比运行期检查便宜得多，优先用） |
 
-**规则**：断言消息必须能让人**不看代码就知道错在哪**。`YR_ASSERT(p)` 是失败的断言；
+**消息质量**：断言消息必须能让人**不看代码就知道错在哪**。`YR_ASSERT(p)` 是失败的断言；
 `YR_ASSERT_MSG(p, "AssetDatabase::pump() must run on main thread (called from job '{}')", job_name)` 才是合格的。
 
 ---

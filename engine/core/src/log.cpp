@@ -1,9 +1,11 @@
 #include <yr/core/log.h>
 
 #include <cstdio>
+#include <mutex>
 
 namespace yr::core {
   namespace {
+    std::mutex log_mutex;
     LogHandler g_handler = nullptr;
     LogLevel g_min_level = defaultMinLogLevel();
 
@@ -31,21 +33,24 @@ namespace yr::core {
     std::fwrite(info.message.data(), 1, info.message.size(), stderr);
     std::fputc('\n', stderr);
   }
-
   void setLogHandler(LogHandler handler) noexcept {
+    std::lock_guard lock{log_mutex};
     g_handler = handler;
   }
 
   LogLevel minLogLevel() noexcept {
+    std::lock_guard lock{log_mutex};
     return g_min_level;
   }
 
   void setMinLogLevel(LogLevel level) noexcept {
+    std::lock_guard lock{log_mutex};
     g_min_level = level;
   }
 
   void reportLog(LogLevel level, const char* tag, const char* file, int line, const char* func,
                  std::string_view message) noexcept {
+    std::lock_guard lock{log_mutex};
     if (level < g_min_level) {
       return;
     }

@@ -9,7 +9,7 @@
 
 | 里程碑 | 状态 |
 |---|---|
-| **M0 工程地基** | 🔨 进行中 —— Day 1~3c 已完成，剩 Day 4~7 |
+| **M0 工程地基** | 🔨 进行中 —— Day 1~6 已完成（构建 / CI / assert / log），剩 Day 7 收口 |
 | M1 ~ M11 | ⬜ 未开始 |
 
 进度**只在两处维护**：根 `README.md` 的里程碑表（对外）+ `02-roadmap.md` 的 checkbox（对内）。
@@ -17,16 +17,19 @@
 
 ---
 
-## 2. 下一步：M0 剩余的 Day 4~7
+## 2. 下一步：M0 收口（Day 7）
 
-| 步 | 内容 | 分工 | 新概念（每步只有一个） |
-|---|---|---|---|
-| **Day 4** | `tools/check_deps.py`（反向依赖 + 禁用符号扫描）+ CI 单 job 跑通 | AI 写样板，你读懂 + **验证它会失败** | CI 是什么、退出码即门禁 |
-| **Day 5** | CI 加 matrix（gcc/clang × debug/release/asan）+ format/lint job + 徽章 + 装 ccache | AI 写，你验证 | matrix、job 依赖 |
-| **Day 6** | 吸收 yo_lib：assert 宏 → 最小 logger → tag/level → 线程安全 | **你写**，AI 只 review | 宏工程、SBO 缓冲、线程安全 |
-| **Day 7** | 收口：核对 M0 验收标准、更新根 README、`git tag v0.M0` | 你 | — |
+已完成：构建骨架、CI（matrix + lint）、`check_deps.py`、assert、log。细节见 `02-roadmap.md` 的"已完成"段。
 
-Day 4/5 交给 AI 写样板，是为了把时间省给 Day 6 —— 那是你**第一次真正写 `engine/` 代码**。
+| 步 | 内容 | 分工 |
+|---|---|---|
+| **Day 7** | `LICENSE`（MIT）→ 加 CI 徽章 → 核对验收标准 → `git tag v0.M0` | 你 |
+
+**非阻塞待办**（不急，别打断主线）：
+- log 的 fmt 格式化、时间戳/帧号/线程 ID、线程安全 → 见 `02-roadmap.md`
+- ccache、`.editorconfig`
+
+收口之后进 M1：句柄、容器、时间。
 
 ---
 

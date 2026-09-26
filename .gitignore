@@ -53,3 +53,4 @@ doc/media/*.cast
 # ===== Codex / agent 工作区标记（工具生成的空目录）=====
 .agents/
 .codex/
+_exclude/
