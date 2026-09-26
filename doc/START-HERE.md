@@ -30,7 +30,7 @@
 
 | 顺序 | 内容 | 分工 |
 |---|---|---|
-| **1** | 补 `SlotMap` 的 generation 回绕测试与大规模插删 churn 测试 | 你写，AI review |
+| **1** | 补 `SlotMap` 的大规模插删 churn 测试 | 你写，AI review |
 | **2** | E1：`SlotMap` vs `unordered_map` vs `vector+freelist` benchmark | 你写实现；AI 可写 benchmark/CMake 样板；数据写入 `benchmarks/README.md` |
 | **3** | `StringId` 字符串驻留 | 你写，AI review |
 | **4** | `Time` / `ObjectID` 基础类型 | 你写，AI review |
@@ -46,7 +46,7 @@ benchmark 数据和结论统一写到 `benchmarks/README.md`；不要新建额�
 
 ## 3. 决策协议（碰到再决定，不用凭经验）
 
-四条默认规则，按顺序套用，命中就停：
+按顺序套用，命中就停：
 
 | # | 规则 |
 |---|---|
@@ -54,6 +54,8 @@ benchmark 数据和结论统一写到 `benchmarks/README.md`；不要新建额�
 | **R2** | 两个方案都行 → **选代码更少、概念更少的那个** |
 | **R3** | 不确定要不要做 → 现在不做，写 `// TODO(M?)`，等它真的痛了再做 |
 | **R4** | 只有"影响 ≥1 天工作量"或"改起来很贵"的选择，才值得停下来讨论 |
+| **R5** | 理论极值 / 可预测的边界（例：generation 回绕）→ 理解并接受即可，不写测试、不做注入机制 |
+| **R6** | 纯粹的工程完备性（覆盖率门禁、tidy 全绿、make it "工业级"）→ 与学习价值无关就不做。**这是学习项目，理解 > 完成 > 展示** |
 
 **讨论完怎么落地**：绝大多数问题**在对话里解决掉就完了，不产生新文档**。
 只有满足下面任一条才写进 `06-decisions.md`：
@@ -122,7 +124,7 @@ Day 3b→3c 就是这个模式：先硬编码 flag 亲眼看 ASan 抓 bug，再�
 章节性的总结你自己另外整理，不放进仓库。
 
 代价是：**三个月后回来看，很多"为什么"只存在于 commit message 里。**
-所以 commit message 要认真写 —— 它是这个项目唯一的高频记录，也是 `07-portfolio.md` 里"证据链"的实际承载者。
+所以 commit message 要认真写 —— 它是这个项目唯一的高频记录。**写它是为了三个月后的你自己**能看懂当时为什么这么定，不是为了给别人看 `07-portfolio.md` §2。
 
 写法：
 ```

@@ -19,7 +19,7 @@
 |---|---|---|---|
 | M0 | 工程地基（CMake/CI/Catch2/assert/log） | ✅ | `ctest` 全绿 + CI |
 | M1 | 句柄、容器、时间 | 🔨 | Handle/SlotMap ✅；benchmark/StringId/Time 待做 |
-| M1 当前门禁 | — | — | generation 回绕测试 + 100 万次 churn 未完成 |
+| M1 当前门禁 | — | — | 100 万次 churn 测试未完成 |
 | M2 | 反射与对象模型 | ⬜ | `yr_inspect` 反射查看器 |
 | M3 | 事件系统与延迟调用 | ⬜ | 事件确定性重放测试 |
 | M4 | 场景树与主循环 | ⬜ | headless 世界 tick 10000 帧 |
@@ -73,8 +73,8 @@ graph TD
 | [03 · 学习地图](doc/03-learning-map.md) | 知识点 → 里程碑映射、书单、16 个待做实验 |
 | [04 · Godot 源码研究](doc/04-godot-study.md) | 按主题组织的源码索引与对照问题 |
 | [05 · 工程规范](doc/05-engineering.md) | 构建/测试/日志/调试/剖析/Git/CI/代码风格 |
-| [06 · 架构决策记录](doc/06-decisions.md) | 15 条 ADR：决策、备选、代价、推翻条件 |
-| [07 · 作品展示策略](doc/07-portfolio.md) | 证据链、展示物、博客规划、40 道面试题 |
+| [06 · 架构决策记录](doc/06-decisions.md) | 19 条 ADR：决策、备选、代价、推翻条件 |
+| [07 · 作品展示策略](doc/07-portfolio.md) | 理解自检、展示物、博客规划、40 道面试题 |
 
 ## 构建与运行
 

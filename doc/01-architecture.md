@@ -174,7 +174,7 @@ template <typename T> class SlotMap {             // 稠密数组 + 空闲链，
 ```
 
 **所有权**：`SlotMap` 独占其元素。`Handle` 不延长生命周期（弱引用语义）。需要延长生命周期时用 `Ref<T>`（§4.4）。
-**失败模式**：① 用失效句柄访问 → `get()` 返回 nullptr / `operator[]` Debug assert；② index 复用导致 ABA → generation 位数足够 + 单测覆盖回绕；③ `Handle<void>` 与 `Handle<T>` 混用 → 模板参数强制类型，转换需显式 `Handle<T>::from_void()`。
+**失败模式**：① 用失效句柄访问 → `get()` 返回 nullptr / `operator[]` Debug assert；② index 复用导致 ABA → generation 位数足够（40 bit 回绕不可达，接受不测，见 START-HERE R5）；③ `Handle<void>` 与 `Handle<T>` 混用 → 模板参数强制类型，转换需显式 `Handle<T>::from_void()`。
 **Godot 对照**：`core/templates/rid.h`（`RID`）、`core/templates/rid_owner.h`（`RID_Owner`，就是 slot map + generation）、`core/object/object_id.h`。
 **学习点**：位域打包、稠密/稀疏数组、cache 局部性（写 benchmark 对比 `std::unordered_map`，见 `03-learning-map.md` §4）。
 

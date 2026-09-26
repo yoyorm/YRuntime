@@ -27,13 +27,13 @@
 | GLFW3 | ✅ | `/usr/include/GLFW` | M10 用 |
 | Vulkan SDK | ✅ | `/home/yoyorm/SDK/Vulkan/1.4.357.1/x86_64`；另有 GLFW3（`/usr/include/GLFW`）与系统 `libvulkan.so.1.4.313` | **`VULKAN_SDK` 环境变量未设置**（2026-09-22 复查仍未设）。M10 前把 `export VULKAN_SDK=~/SDK/Vulkan/1.4.357.1/x86_64` 写进 `~/.bashrc`，并在 CMake 里做 fallback 查找 |
 | Python | ✅ | 3.12.3 | `tools/check_deps.py` 等脚本用 |
-| **clang-tidy** | ❌ 未装 | — | `sudo apt install clang-tidy` —— M0 或 M1 装 |
+| **clang-tidy** | ❌ 未装 | — | **可选**：`sudo apt install clang-tidy`。被推了三次（M0→M1→M11），说明学习价值低 → 不痛就不装（R6） |
 | **valgrind** | ❌ 未装 | — | `sudo apt install valgrind` —— 可选，ASan 已覆盖大部分场景；M6/M7 查内存时序问题时可能想要 |
 | **ccache** | ❌ 未装 | — | `sudo apt install ccache` —— 安排在 **Day 5**（做 CI 缓存时才知道它省了多少）。CMake 侧用 `find_program` 探测，装了就用、没装不报错 |
 | clangd | ✅ **已接入** | apt 安装 | 根目录 `compile_commands.json` → `build/debug/` 符号链接；`.vscode/settings.json` 里已禁用 C/C++ 扩展的 IntelliSense 避免冲突 |
 | doxygen / graphviz | ❌ 未装 | — | 可选（M11 生成调用图/依赖图） |
 | Tracy | ❌ 未装 | — | M11 可选，用 git submodule |
-| gcovr / lcov | ❓ 待查 | — | M11 覆盖率用：`pip install gcovr`（需要 pip，当前 `python3-pip` 未检测到，`sudo apt install python3-pip gcovr`） |
+| gcovr / lcov | ❓ 待查 | — | **可选**，M11 想看覆盖率时再装：`sudo apt install python3-pip gcovr`。只统计，不做门禁 |
 
 **硬件**：12 线程 CPU / 31GB RAM / 磁盘剩余 240GB。
 → 对 M7 的意义：`JobSystem` 默认 `worker_count = 11`，benchmark 时记录这个值；
@@ -266,9 +266,11 @@ handler 目前非线程安全，约定在启动线程前设置（M7 修）。
 
 ## 9. ★ 自己写代码的工作法（本项目最重要的一节）
 
-Yo_Renderer 的 README 写着"该项目使用 AI 辅助开发：仅为个人学习记录"。
-YRuntime 的目标是**能作为能力证明的作品**（`00-vision.md` §4.5、`07-portfolio.md`），
-所以必须建立一条清晰的"这是我自己设计并实现的"证据链。
+> **2026-09-26 重定位**：本节原先以"建立一条'这是我自己设计并实现的'证据链"为理由，
+> 这会把学习项目变成表演项目——你会开始为"看起来像独立完成"而做事，而不是为"弄懂"而做事。
+> **真正的理由更简单：AI 代写的代码你讲不清，讲不清就等于没学。**
+> 所以下面这些规则的存在意义是**保证你真的理解**，而不是**向别人证明**。
+> 它们同时也是最省事的选择：自己写一遍，比审查 AI 生成的东西再改成自己的更快，而且记得住。
 
 ### 9.1 铁规则
 1. **AI 不写 `engine/` 下的实现代码**（构建样板除外：CMake / CI / Python 脚本）。允许 AI 做的事：
@@ -277,7 +279,7 @@ YRuntime 的目标是**能作为能力证明的作品**（`00-vision.md` §4.5�
 2. **先把设计说出口 → 先头文件 → 先测试 → 再实现。** 顺序颠倒 = 你在"试出来"而不是"设计出来"。
    "说出口"不需要落文件（ADR D17）：在对话里讲一遍、讲不通的地方就是没想清的地方。
 3. **一个 commit 一件事。** 搬运与改逻辑永不混在同一个 commit（Yo_Renderer `modularization-plan.md` §1 的经验，继续用）。
-4. **每个模块完成后做一次"脱稿讲解"**：讲清这个模块为什么存在、和谁协作、失败模式是什么。讲不出的回去补——可以在对话里讲给 AI 听，让它挑毛病。
+4. **每个模块完成后做一次"脱稿讲解"**：讲清这个模块为什么存在、和谁协作、失败模式是什么。讲不出的回去补——可以在对话里讲给 AI 听，让它挑毛病。**这是本节所有规则里唯一不可省的一条**，其余三条都是为了让这一步做得到。
 
 ### 9.2 每个模块的标准流程（照做即可）
 ```
@@ -332,8 +334,8 @@ YRuntime 的目标是**能作为能力证明的作品**（`00-vision.md` §4.5�
 | `build-test` | matrix: {gcc-13, clang-18} × {debug, release, asan} → configure/build/ctest | push + PR |
 | `tsan` | 单独 job（M7 起启用） | push + PR |
 | `format` | `clang-format-18 --dry-run -Werror` 全仓库 | push + PR |
-| `lint` | `tools/check_deps.py`（反向依赖 + 禁用符号）+ clang-tidy（M1 起） | push + PR |
-| `coverage` | gcovr → 上传 + 徽章（M11） | push to master |
+| `lint` | `tools/check_deps.py`（反向依赖 + 禁用符号）；clang-tidy 可选 | push + PR |
+| `coverage` | gcovr → 上传 + 徽章（M11，**可选**：只统计、不做门禁） | push to master |
 | `demo` | 构建 `apps/text_adventure` 并跑 headless 自动通关（M8 起） | push + PR |
 
 要求：**CI 必须能在无 GPU、无窗口、无网络的 runner 上全绿**（这就是 headless-first 的红利）。
@@ -398,7 +400,7 @@ build/<preset>/assets/   # 构建时拷贝（或 yr_pack 产物 .yrpak）
 | `doc/05-engineering.md` §1 | 装了新工具时 | 工具表现状与本机一致 |
 | `README.md`（根） | 每里程碑收口 | 里程碑表、构建命令、截图/GIF 是最新的 |
 | `benchmarks/README.md` | 每个实验（E1~E16） | 方法可复现 + 有结论 + 有"对设计的影响" |
-| `doc/07-portfolio.md` | **冻结**，M8 后修订 | — |
+| `doc/07-portfolio.md` | 里程碑收口时看；M8 后大修 | §2 自检问题是否仍答得出、§3 展示物打勾 |
 
 **不产出**：周记、设计笔记、Godot 对照笔记、evidence 文件。
 这些信息分别由 **commit message 正文**（高频理由）、**ADR**（架构取舍）、**代码注释**（离开代码就会失效的细节，如内存序、帧阶段顺序、快照字段单位）承载。

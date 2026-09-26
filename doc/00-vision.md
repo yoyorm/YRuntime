@@ -52,7 +52,7 @@
 1. **P0 — 一个真实运行、可持续 tick 的 headless Runtime**：对象生命周期、场景树、主循环、时间、事件、资源、序列化、任务调度，全部自己实现并跑通。
 2. **P0 — 一个用该 Runtime 做出的、可玩的非图形 Demo**（文字冒险），证明 Runtime 真的能承载游戏逻辑，而不是一堆单测通过的类。
 3. **P1 — 工程化闭环**：CMake 分层、Catch2 测试、Sanitizer、CI、日志、性能统计、资源打包工具。
-4. **P1 — Godot 源码对照能力**：至少 8 篇对照笔记，能说清"Godot 怎么做 / 我怎么做 / 为什么不同"。
+4. **P1 — Godot 源码对照能力**：对着架构图任意模块，能说清"Godot 怎么做 / 我怎么做 / 为什么不同"（口头即可，不产出笔记——D17）。
 5. **P2 — Vulkan Backend 接入**：`RenderSnapshot → RendererBackend → GPU`，跑通一个由 Runtime 驱动的可视化 Demo。
 6. **P2 — 作品可展示**：架构图、README、录屏、benchmark 数据、博客、可复述的设计决策。
 
@@ -87,7 +87,7 @@
 
 ### 4.2 架构与代码质量
 - [ ] 分层依赖单向，由 **CMake target + CI 脚本**强制（而不是靠自觉）：`grep` 不出任何反向 include。
-- [ ] `engine/` 每一层都有独立的 Catch2 测试 target，`ctest` 全绿；核心模块（Handle/ClassDB/SceneTree/Serializer/AssetDB/JobSystem）行覆盖率 ≥70%。
+- [ ] `engine/` 每一层都有独立的 Catch2 测试 target，`ctest` 全绿；关键语义（失效检测 / 生命周期顺序 / round-trip / 并发确定性）都有测试锁定。
 - [ ] TSan preset 下 JobSystem 与异步资源加载无数据竞争报告。
 - [ ] 没有任何裸 `new`/`delete`（CI grep 检查）；没有全局可变状态（`Engine` 单例除外，且有 ADR 说明）。
 
@@ -99,15 +99,15 @@
 ### 4.4 工具链
 - [ ] `tools/yr_pack`：把 `assets/` 打成单个 `.yrpak`（manifest + blob），Runtime 能从 pak 加载。
 - [ ] `tools/yr_scene_conv`：文本场景 ↔ 二进制场景互转，round-trip 一致。
-- [ ] GitHub Actions：push 触发 build + ctest + format check + clang-tidy，README 有徽章。
+- [ ] GitHub Actions：push 触发 build + ctest + format check + 架构门禁，README 有徽章。（clang-tidy 可选，见 `05-engineering.md` §1）
 
 ### 4.5 理解与表达（最重要，也最容易被跳过）
 - [ ] 能对着架构图脱稿讲 20 分钟：每层为什么存在、数据怎么流、哪里是单线程边界。
 - [ ] 对着 `01-architecture.md` 的任意一个模块，能说出 Godot 里对应的是哪个文件、关键差异是什么。
 - [ ] 能回答 `07-portfolio.md` §5 的面试题，且答案里包含**自己的取舍**而非背书。
-- [ ] `06-decisions.md` 里至少有 2 条 ADR 被后续实践推翻并记录了原因（推翻记录比正确记录更有说服力）。
-- [ ] **`git log` 读下来是一部设计史而不是操作日志**：commit message 正文能回答"为什么这么改"。
-      这是取消仓库内笔记之后（ADR D17）唯一的高频记录载体，所以它的标准要提高。
+- [ ] 能说出**至少一个**自己后来推翻的设计，以及当时为什么会那么想（有被推翻的 ADR 最好，口头讲清也算——不设数量指标）。
+- [ ] **`git log` 读下来能看出设计怎么演进的**：commit message 正文里能找到"为什么这么改"。
+      这是取消仓库内笔记之后（ADR D17）唯一的高频记录载体——写它是为了**三个月后的自己**能看懂，不是为了给别人看。
 
 ---
 

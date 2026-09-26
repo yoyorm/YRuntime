@@ -19,7 +19,7 @@
 | [`03-learning-map.md`](03-learning-map.md) | 知识点 → 里程碑映射、书单、16 个实验 | 参考，卡住时看 |
 | [`04-godot-study.md`](04-godot-study.md) | Godot 4.8 源码索引（本机路径已验证）+ 对照问题 | 参考，对照阅读时看 |
 | [`05-engineering.md`](05-engineering.md) | 构建 / 测试 / 日志 / 调试 / 剖析 / Git / CI / 代码规范 | 参考，查规范时看 |
-| [`07-portfolio.md`](07-portfolio.md) | 作品展示策略、面试题库 | 冻结，M8 后修订 |
+| [`07-portfolio.md`](07-portfolio.md) | 理解自检、展示物清单、面试题库 | 参考，里程碑收口时看 |
 | `media/` | 截图、GIF、录屏 | — |
 
 ## 维护规则

@@ -90,7 +90,7 @@
 **学习点**：CMake target vs 变量、generator expression、`target_*` 的 PUBLIC/PRIVATE/INTERFACE 传播、preset 的三种类型、ODR、`-Wshadow` 抓到的第一类真 bug、sanitizer 的插桩原理与代价。
 **常见坑**：① `file(GLOB_RECURSE)` 新增文件不触发重新配置 → **本项目禁用 GLOB，显式列源文件**；② `include(Catch)` 漏写 → `catch_discover_tests` 未定义；③ `enable_testing()` 必须在 `add_subdirectory(tests)` 之前；④ sanitizer flag 编译与链接都要加，否则 `undefined reference to __asan_init`；⑤ `cmake --build --preset X` 不会自动 configure；⑥ GCC 的 `-Wshadow` 不抓"局部变量遮蔽函数名"，只抓变量遮蔽变量。
 **Godot 对照**：`SConstruct` + `methods.py` + `core/SCsub`（看它如何组织"每目录一个构建脚本"），对照你的 CMake 分层。
-**降级方案**：CI 只跑 gcc + debug；clang-tidy 推到 M1。
+**降级方案**：CI 只跑 gcc + debug；clang-tidy 可选，不阻塞 M0 完成。
 
 ---
 
@@ -100,15 +100,17 @@
 
 - [x] `yr/core/handle.h`：`Handle<T>`（index+generation 打包、值语义、可哈希、`[[nodiscard]]`）✅ 2026-09-26
 - [x] `yr/core/slot_map.h`：`SlotMap<T>`（稠密数组 + 空闲链 + generation）✅ 2026-09-26
-- [ ] `yr/core/sparse_set.h`：吸收 yo_lib `yo_sparse_set.h`，**重构**：去掉 `std::vector<int>` 的 -1 哨兵改用 `uint32_t npos`、加 `remove_unstable`/`remove_stable` 两种语义、加迭代器
+- [ ] `yr/core/sparse_set.h`：吸收 yo_lib `yo_sparse_set.h`，**重构**：`int` -1 哨兵 → `uint32_t npos`、`remove_unstable`/`remove_stable` 两种语义、加迭代器
+      ⏸ **已暂缓到 M4**：等 Transform SoA 有真实消费者再做。现在做就是造一个没人用的容器（R3）
 - [ ] `yr/core/string_id.h`：`StringId` 字符串驻留（hash → index，`intern()` / `to_string()`，进程级表 + 启动后只读优化）
 - [ ] `yr/core/time.h`：`Duration`/`TimePoint`（`std::chrono` 别名）+ `Clock`（对照 §4.7）
 - [ ] `yr/core/object_id.h`：`ObjectID`（全局唯一 64-bit）——只定义类型与 `ObjectDB` 接口，实现留到 M2
 - [ ] `yr/core/math.h`：最小 `Vec2/Vec3/Vec4/Mat4/Transform3D/Quaternion`（决策 Q1；先做 Vec3 + Mat4 + Transform3D，其余按需）
+      ⏸ **已暂缓到 M4**：等 Transform 层级真正需要时再做（R3）
 - [x] 测试：Handle 失效检测、SlotMap erase 后旧 handle 失效、slot 复用 ABA、`clear()` 后旧 handle 不复活 ✅ 2026-09-26
-- [ ] 测试：generation 回绕（需要为测试注入可操作 generation 的机制）、SlotMap 100 万次插删 churn、StringId 驻留一致性
+- [ ] 测试：SlotMap 100 万次插删 churn、StringId 驻留一致性
 - [ ] **benchmark**：`benchmarks/bench_slot_map.cpp`（SlotMap vs `unordered_map` vs `vector+标记位`，测插入/查找/遍历三项）
-- [ ] 用 `perf stat` 记录 cache-miss 差异，写进 benchmark 报告
+- [ ] 用 `perf stat` 记录 cache-miss 差异，写进 `benchmarks/README.md`
 
 **验收标准**
 - `Handle<T>` 与 `Handle<U>` 不能隐式互转（编译期测试 `static_assert(!std::is_convertible_v<...>)`）。✅
@@ -118,9 +120,9 @@
 
 **产出物**：`benchmarks/` 下的 benchmark 代码 + `benchmarks/README.md` 里的数据表与结论（方法必须可复现：硬件、编译选项、迭代次数、如何防止被优化掉）。
 **学习点**：位打包、稠密/稀疏数组、cache line、false sharing 初体验、`std::chrono`、benchmark 方法论（预热、多次取中位数、防编译器优化掉）。
-**常见坑**：① generation 溢出回绕导致 ABA（40 bit 够用，但要写测试证明你想过）；② `SlotMap::get` 返回 `T*` 后容器扩容导致指针失效（文档写明"指针只在本帧有效"）；③ StringId 的哈希冲突（用"hash 定位 + 字符串比较确认"，不要只信 hash）。
+**常见坑**：① generation 溢出回绕导致 ABA（40 bit 下需 2^40 次同 slot 复用，实际不可达；已知并接受，不写注入机制、不测——见 START-HERE R5）；② `SlotMap::get` 返回 `T*` 后容器扩容导致指针失效（文档写明"指针只在本帧有效"）；③ StringId 的哈希冲突（用"hash 定位 + 字符串比较确认"，不要只信 hash）。
 **Godot 对照**：`core/templates/rid.h` + `rid_owner.h`（generation + slot）、`core/object/object_id.h`、`core/string/string_name.h`（StringName 的实现，含 512 个 slot 的 hash 表）。
-**降级方案**：`SparseSet` 推到 M4（Transform SoA 需要时再写）；数学库只做 `Vec3/Mat4`。
+**降级方案**：`SparseSet` 与数学库已直接推到 M4（见上方 ⏸ 标记），本里程碑不再包含它们。
 
 ### M1 当前执行拆分（2026-09-26 更新）
 
@@ -129,11 +131,11 @@
 | 子阶段 | 内容 | 状态 |
 |---|---|---|
 | M1a | `Handle<T>` + `SlotMap<T>` + ABA / clear / reserve 测试 | ✅ |
-| M1b | generation 回绕测试 + 100 万次 churn 测试 | ⬜ 下一步 |
+| M1b | 100 万次 churn 测试 | ⬜ 下一步 |
 | M1c | E1 benchmark（SlotMap / unordered_map / vector+freelist） | ⬜ |
 | M1d | `StringId` | ⬜ |
 | M1e | `Time` / `ObjectID` | ⬜ |
-| 暂缓 | `SparseSet`、数学库 | 等真实消费者 |
+| 暂缓 | `SparseSet`、数学库 | 等真实消费者 → 已在 M4 清单里登记（见 M4 顶部） |
 
 ---
 
@@ -161,7 +163,7 @@
 
 **产出物**：`yr_inspect` 工具（可截图/录屏，是很好的展示物）。宏展开的分析结论写进 `YR_CLASS` 的头文件注释。
 **学习点**：宏工程（`__VA_ARGS__` / `__VA_OPT__` / token pasting / 静态注册器技巧）、成员指针、类型擦除、lambda→函数指针、`if constexpr`、concepts、SIOF、侵入式引用计数。
-**常见坑**（这个模块的坑最多，逐个记录到笔记）：
+**常见坑**（这个模块的坑最多。踩到了就在 commit message 正文里写一句，或讲给 AI 听）：
 ① 宏里用 `decltype(member)` 推导失败 → 需要 `Type::*` 成员指针而非直接取地址；
 ② 静态注册器在动态库里被链接器丢弃（`--whole-archive` 问题）→ 本项目全静态库，但要知道这个坑；
 ③ `ClassInfo` 里的 lambda 捕获导致不能转函数指针 → 用无捕获 lambda 或 `void*` 成员偏移；
@@ -203,6 +205,8 @@
 
 **目标**：**第一次有一个"活着的世界"**。这个里程碑结束时，你应该能在终端看到一个世界 tick 一万帧，节点在创建、更新、销毁。
 
+- [ ] **（从 M1 推来）** `yr/core/math.h`：只做 Transform 需要的部分（`Vec3` + `Mat4` + TRS 合成 + 求逆）；不要一次写全（D4）
+- [ ] **（从 M1 推来，可选）** `yr/core/sparse_set.h`：**只在 S3（ECS 数据层）真要做时才写**。Transform 用普通 SoA 数组就够，不必先造 SparseSet
 - [ ] `yr/scene/node_path.h`：`NodePath`（`"Root/Level/Player"` 解析、相对路径 `../`）
 - [ ] `yr/scene/node.h/.cpp`：`Node`（父子关系、`add_child`/`remove_child`、`queue_free`、`is_inside_tree`、`get_node(path)`、名字唯一性）
 - [ ] 生命周期通知：`kEnterTree` / `kReady`（后序）/ `kProcess`（前序）/ `kPhysicsProcess` / `kExitTree`，顺序写进文档并用测试锁定
@@ -433,22 +437,22 @@
 - [ ] 资源导入管线雏形：`assets_src/`（源）→ `yr_pack` 转换/压缩 → `assets/`（cooked），写清"为什么需要 cook"
 - [ ] 性能：接入 `perf` 工作流文档 + 可选 Tracy（submodule）；FrameStats 导出 CSV + 一个 Python 绘图脚本
 - [ ] 调试文档：`.gdbinit`、常用断点配方、core dump 分析、ASan 报告解读、Catch2 `--break`
-- [ ] clang-tidy：安装 + `.clang-tidy` 配置 + CI 接入（M0 遗留项）
-- [ ] 覆盖率：gcovr/lcov → CI 上传报告，README 徽章
-- [ ] 文档收尾：架构图更新（Mermaid）、每模块一页说明、`doc/README.md` 状态更新、README 重写（面向"第一次看到这个项目的人"）
-- [ ] `07-portfolio.md` 修订并打勾：博客 ≥3 篇、录屏、benchmark 汇总、面试题库自测
+- [ ] （可选）clang-tidy：装 + `.clang-tidy` + CI 接入。**优先级最低**——它被 M0→M1→M11 连推三次，说明对你的学习价值最低；不痛就不做（R3）
+- [ ] （可选）覆盖率：gcovr/lcov → 本地报告或 CI 徽章。**只统计，不做门禁**（学习项目里覆盖率是给别人看的数字，不是质量指标）
+- [ ] 文档收尾：架构图更新（Mermaid）、`doc/README.md` 状态更新、README 重写（面向"第一次看到这个项目的人"）。**不在 doc/ 写"每模块一页说明"**——那些内容属于头文件注释（D17 文档要有限）
+- [ ] `07-portfolio.md` 收口：展示物清单打勾、§5 面试题库自问自答一遍（**不设博客篇数指标**——想写就写，见 §4）
 - [ ] （可选）ImGui 只读检视器：SceneTree + 属性 + FrameStats
 - [ ] （可选）热重载：`.yrscn` 文件变更 → 自动重载场景（inotify），演示效果极好
 
 **验收标准**
 - `apps/text_adventure --pak game.yrpak` 完全从 pak 启动运行，`assets/` 目录不存在也能跑。
-- CI：build + ctest + format + clang-tidy + 覆盖率徽章全绿。
+- CI：build + ctest + format + 架构门禁全绿。（clang-tidy / 覆盖率若做了就加上，没做不阻塞）
 - 一个完全陌生的开发者按 README 能在 15 分钟内构建并跑起两个 Demo（**找人实测一次**）。
 - `doc/` 与代码一致：架构图是最新的、`06-decisions.md` 收录了全部架构级取舍、`benchmarks/README.md` 有数据。
 
-**产出物**：完整可展示仓库 + 博客系列 + 工具。
+**产出物**：完整可展示仓库 + 工具（+ 你想写的博客）。
 **Godot 对照**：`core/io/file_access_pack.h`（PCK 格式）、`editor/platform/`（导入管线）、`platform/web/`（打包思路）、`core/io/resource_format_binary.cpp`（cooked 格式）。
-**降级方案**：Tracy、ImGui 检视器、热重载全部可砍；覆盖率只统计不做门禁。
+**降级方案**：Tracy、ImGui 检视器、热重载、clang-tidy、覆盖率全部可砍——M11 是收尾里程碑，不是必做清单。
 
 ---
 
