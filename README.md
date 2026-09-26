@@ -5,19 +5,21 @@
 > 先跑通一个 headless 的文字冒险 Demo，再把自研 Vulkan 渲染器作为可替换 Backend 接入，
 > 形成 `游戏状态 → Runtime → Renderer → GPU` 的完整链路。全程以 Godot 4.x 源码为参照系。
 
-![status](https://img.shields.io/badge/status-M0__in__progress-blue)
+![status](https://img.shields.io/badge/status-M1__in__progress-blue)
+![CI](https://github.com/yoyorm/YRuntime/actions/workflows/ci.yml/badge.svg)
 ![cxx](https://img.shields.io/badge/C%2B%2B-20-00599C?logo=c%2B%2B&logoColor=white)
 ![platform](https://img.shields.io/badge/platform-Linux-lightgrey)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 
 ---
 
-## 当前状态：M0 进行中
+## 当前状态：M1 进行中
 
 | M | 里程碑 | 状态 | 可运行物 |
 |---|---|---|---|
-| M0 | 工程地基（CMake/CI/Catch2/assert/log） | ✅ | `ctest` 全绿|
-| M1 | 句柄、容器、时间 | ⬜ | 容器 benchmark 报告 |
+| M0 | 工程地基（CMake/CI/Catch2/assert/log） | ✅ | `ctest` 全绿 + CI |
+| M1 | 句柄、容器、时间 | 🔨 | Handle/SlotMap ✅；benchmark/StringId/Time 待做 |
+| M1 当前门禁 | — | — | generation 回绕测试 + 100 万次 churn 未完成 |
 | M2 | 反射与对象模型 | ⬜ | `yr_inspect` 反射查看器 |
 | M3 | 事件系统与延迟调用 | ⬜ | 事件确定性重放测试 |
 | M4 | 场景树与主循环 | ⬜ | headless 世界 tick 10000 帧 |
@@ -63,6 +65,7 @@ graph TD
 | | |
 |---|---|
 |  [START HERE](doc/START-HERE.md) | 当前状态 + 下一步 + 决策协议 + 分工 |
+| [AI 交接文档](HANDOFF.md) | 面向后续 AI 的项目概况、约束、当前上下文与下一步 |
 | [文档索引](doc/README.md) | 全部文档一览与维护规则 |
 | [00 · 定位与成功判据](doc/00-vision.md) | 这是什么项目、做完算成功的标准、明确不做什么 |
 | [01 · 目标架构](doc/01-architecture.md) | 分层、模块职责、核心概念、帧循环 14 阶段、线程模型 |
@@ -84,8 +87,8 @@ ctest --preset debug          # 测试
 
 产物在 `build/<preset>/bin/`。给 IDE / clangd 用：`ln -sf build/debug/compile_commands.json .`
 
-日志与断言已在 `yr::core` 就绪：`YR_LOG_*`（tag + 运行期 level 过滤，DEBUG 级在 release 编译期剔除）、
-`YR_ASSERT*` / `YR_VERIFY`（可注入 handler，便于测试失败路径）。
+`yr::core` 已包含 `version`、`assert`、`log`、`Handle<T>`、`SlotMap<T>`。
+`YR_LOG_*` 支持 tag + 运行期 level 过滤，DEBUG 级在 release 编译期剔除；`YR_ASSERT*` / `YR_VERIFY` 支持可注入 handler。
 
 | 依赖 | 说明 |
 |---|---|

@@ -9,27 +9,38 @@
 
 | 里程碑 | 状态 |
 |---|---|
-| **M0 工程地基** | 🔨 进行中 —— Day 1~6 已完成（构建 / CI / assert / log），剩 Day 7 收口 |
-| M1 ~ M11 | ⬜ 未开始 |
+| **M0 工程地基** | ✅ 已完成（`v0.M0`：CMake / CI / Catch2 / assert / log） |
+| **M1 句柄、容器、时间** | 🔨 进行中 —— `Handle<T>`、`SlotMap<T>` 已完成；测试 52/52 通过 |
+| M2 ~ M11 | ⬜ 未开始 |
 
 进度**只在两处维护**：根 `README.md` 的里程碑表（对外）+ `02-roadmap.md` 的 checkbox（对内）。
 别的地方不要重复记录，否则一定会漂移。
 
 ---
 
-## 2. 下一步：M0 收口（Day 7）
+## 2. 下一步：继续 M1
 
-已完成：构建骨架、CI（matrix + lint）、`check_deps.py`、assert、log。细节见 `02-roadmap.md` 的"已完成"段。
+已完成：
 
-| 步 | 内容 | 分工 |
+- `Handle<T>`：类型安全的 index + generation 句柄、哈希、invalid 语义
+- `SlotMap<T>`：稠密数组 + 稀疏索引 + 空闲链 + generation
+- 测试：52/52 通过；ASan preset 本地验证通过；clang-format 合规
+
+接下来按这个顺序推进，仍然一次只做一件事：
+
+| 顺序 | 内容 | 分工 |
 |---|---|---|
-| **Day 7** | `LICENSE`（MIT）→ 加 CI 徽章 → 核对验收标准 → `git tag v0.M0` | 你 |
+| **1** | 补 `SlotMap` 的 generation 回绕测试与大规模插删 churn 测试 | 你写，AI review |
+| **2** | E1：`SlotMap` vs `unordered_map` vs `vector+freelist` benchmark | 你写实现；AI 可写 benchmark/CMake 样板；数据写入 `benchmarks/README.md` |
+| **3** | `StringId` 字符串驻留 | 你写，AI review |
+| **4** | `Time` / `ObjectID` 基础类型 | 你写，AI review |
+| **暂缓** | `SparseSet`、数学库 | 等有真实消费者再做（R3） |
+
+benchmark 数据和结论统一写到 `benchmarks/README.md`；不要新建额外笔记文件。
 
 **非阻塞待办**（不急，别打断主线）：
-- log 的 fmt 格式化、时间戳/帧号/线程 ID、线程安全 → 见 `02-roadmap.md`
+- log 的 fmt 格式化、时间戳 / 帧号 / 线程 ID、SBO 优化 → 见 `02-roadmap.md`
 - ccache、`.editorconfig`
-
-收口之后进 M1：句柄、容器、时间。
 
 ---
 
@@ -91,6 +102,7 @@ Day 3b→3c 就是这个模式：先硬编码 flag 亲眼看 ASan 抓 bug，再�
 | `03-learning-map.md` | 卡住、需要补知识时 |
 | `06-decisions.md` | 要做取舍前，先查有没有已经定过的 |
 | `07-portfolio.md` | M8 之后再修订，现在不用看 |
+| `HANDOFF.md`（根目录） | 交给新的 AI 会话时先读：项目概况、约束、当前上下文、下一步 |
 
 > **一次开工实际需要的阅读量 ≈ 30 行。** 如果你发现自己在一次读 500 行文档，停下来 ——
 > 那是在用"准备"代替"动手"。

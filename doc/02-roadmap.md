@@ -67,16 +67,18 @@
 | sanitizer 做成 `cmake/YrSanitizers.cmake`（列表解析 + 互斥检查） | **5 行 `option()` 写在顶层** | TSan 到 M7 才用；避免引入 `foreach`/`list(FIND)`/`FATAL_ERROR` 三组新语法 |
 | log 的 fmt 风格格式化 | **推迟**（架构已就位） | 格式化是叶子功能，不改接口形状；先确认 `std::format` 可用性再定方案，别手写解析器 |
 
-### 剩余（Day 7 收口）
+### Day 7 收口（已完成，2026-09-26）
 
-- [ ] `LICENSE`（MIT）—— 仓库已 public，缺 LICENSE 等于"保留所有权利"，别人无法合法引用
-- [ ] 装 ccache 并接进 CMake（`find_program` 探测，装了就用、没装不报错）
-- [ ] 根 `README.md` 加 CI 徽章（workflow 已跑），里程碑表 M0 → ✅ 留到 M0 全部收口时再改
-- [ ] log 补完（推迟，非阻塞）：
-  - fmt 风格**格式化引擎**（`{}` 占位符）。当前宏只传格式串本身，`__VA_ARGS__` 不求值；`test_log.cpp` 的 `[wip]` 用例守着这条
-  - 输出补 时间戳 / 帧号 / 线程 ID（`05-engineering.md` §5）
-  - 线程安全（单 mutex + 行缓冲）与 `InlineBuffer` SBO 优化 → 与 M7 一起做
-- [ ] 补 `git tag v0.M0`
+- [x] `LICENSE`（MIT）✅ 2026-09-26
+- [x] 根 `README.md` 加 CI 徽章，里程碑表 M0 → ✅ ✅ 2026-09-26
+- [x] `git tag v0.M0` ✅ 2026-09-26
+- [x] log 线程安全（单 mutex 保护 handler / level / reportLog）✅ 2026-09-26
+
+**继续推迟，非阻塞**：
+- [ ] log 的 fmt 风格格式化（`{}` 占位符）。当前宏只接收 tag + fmt；`test_log.cpp` 的 `[wip]` 用例守着这条
+- [ ] 输出补时间戳 / 帧号 / 线程 ID（`05-engineering.md` §5）
+- [ ] `InlineBuffer` SBO 优化（有稳定消费者后再做）
+- [ ] 装 ccache 并接进 CMake（等 CI 时间成为痛点再做）
 
 ### 验收标准
 
@@ -96,28 +98,42 @@
 
 **目标**：把"引用一个可能已死的对象"这件事一次性解决，并建立第一个性能测量习惯。
 
-- [ ] `yr/core/handle.h`：`Handle<T>`（index+generation 打包、值语义、可哈希、`[[nodiscard]]`）
-- [ ] `yr/core/slot_map.h`：`SlotMap<T>`（稠密数组 + 空闲链 + generation）
+- [x] `yr/core/handle.h`：`Handle<T>`（index+generation 打包、值语义、可哈希、`[[nodiscard]]`）✅ 2026-09-26
+- [x] `yr/core/slot_map.h`：`SlotMap<T>`（稠密数组 + 空闲链 + generation）✅ 2026-09-26
 - [ ] `yr/core/sparse_set.h`：吸收 yo_lib `yo_sparse_set.h`，**重构**：去掉 `std::vector<int>` 的 -1 哨兵改用 `uint32_t npos`、加 `remove_unstable`/`remove_stable` 两种语义、加迭代器
 - [ ] `yr/core/string_id.h`：`StringId` 字符串驻留（hash → index，`intern()` / `to_string()`，进程级表 + 启动后只读优化）
 - [ ] `yr/core/time.h`：`Duration`/`TimePoint`（`std::chrono` 别名）+ `Clock`（对照 §4.7）
 - [ ] `yr/core/object_id.h`：`ObjectID`（全局唯一 64-bit）——只定义类型与 `ObjectDB` 接口，实现留到 M2
 - [ ] `yr/core/math.h`：最小 `Vec2/Vec3/Vec4/Mat4/Transform3D/Quaternion`（决策 Q1；先做 Vec3 + Mat4 + Transform3D，其余按需）
-- [ ] 测试：Handle 失效检测、generation 回绕、SlotMap 100 万次插删后无碎片、StringId 驻留一致性
+- [x] 测试：Handle 失效检测、SlotMap erase 后旧 handle 失效、slot 复用 ABA、`clear()` 后旧 handle 不复活 ✅ 2026-09-26
+- [ ] 测试：generation 回绕（需要为测试注入可操作 generation 的机制）、SlotMap 100 万次插删 churn、StringId 驻留一致性
 - [ ] **benchmark**：`benchmarks/bench_slot_map.cpp`（SlotMap vs `unordered_map` vs `vector+标记位`，测插入/查找/遍历三项）
 - [ ] 用 `perf stat` 记录 cache-miss 差异，写进 benchmark 报告
 
 **验收标准**
-- `Handle<T>` 与 `Handle<U>` 不能隐式互转（编译期测试 `static_assert(!std::is_convertible_v<...>)`）。
-- SlotMap：erase 后旧 handle 的 `get()` 返回 `nullptr`；index 被复用后旧 handle 依然失效（**这是 ABA 测试，必须有**）。
+- `Handle<T>` 与 `Handle<U>` 不能隐式互转（编译期测试 `static_assert(!std::is_convertible_v<...>)`）。✅
+- SlotMap：erase 后旧 handle 的 `get()` 返回 `nullptr`；index 被复用后旧 handle 依然失效（**这是 ABA 测试，必须有**）。✅
 - benchmark 报告：遍历 SlotMap 比 `unordered_map<uint32_t, T>` 快 ≥3x（若没有，分析原因并写下来——分析比数字重要）。
-- ASan preset 下全部测试干净。
+- ASan preset 下全部测试干净（2026-09-26 实测 52/52 通过）。
 
 **产出物**：`benchmarks/` 下的 benchmark 代码 + `benchmarks/README.md` 里的数据表与结论（方法必须可复现：硬件、编译选项、迭代次数、如何防止被优化掉）。
 **学习点**：位打包、稠密/稀疏数组、cache line、false sharing 初体验、`std::chrono`、benchmark 方法论（预热、多次取中位数、防编译器优化掉）。
 **常见坑**：① generation 溢出回绕导致 ABA（40 bit 够用，但要写测试证明你想过）；② `SlotMap::get` 返回 `T*` 后容器扩容导致指针失效（文档写明"指针只在本帧有效"）；③ StringId 的哈希冲突（用"hash 定位 + 字符串比较确认"，不要只信 hash）。
 **Godot 对照**：`core/templates/rid.h` + `rid_owner.h`（generation + slot）、`core/object/object_id.h`、`core/string/string_name.h`（StringName 的实现，含 512 个 slot 的 hash 表）。
 **降级方案**：`SparseSet` 推到 M4（Transform SoA 需要时再写）；数学库只做 `Vec3/Mat4`。
+
+### M1 当前执行拆分（2026-09-26 更新）
+
+为避免一次引入过多概念，实际按下面顺序推进：
+
+| 子阶段 | 内容 | 状态 |
+|---|---|---|
+| M1a | `Handle<T>` + `SlotMap<T>` + ABA / clear / reserve 测试 | ✅ |
+| M1b | generation 回绕测试 + 100 万次 churn 测试 | ⬜ 下一步 |
+| M1c | E1 benchmark（SlotMap / unordered_map / vector+freelist） | ⬜ |
+| M1d | `StringId` | ⬜ |
+| M1e | `Time` / `ObjectID` | ⬜ |
+| 暂缓 | `SparseSet`、数学库 | 等真实消费者 |
 
 ---
 
