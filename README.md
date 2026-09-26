@@ -8,6 +8,7 @@
 ![status](https://img.shields.io/badge/status-M0__in__progress-blue)
 ![cxx](https://img.shields.io/badge/C%2B%2B-20-00599C?logo=c%2B%2B&logoColor=white)
 ![platform](https://img.shields.io/badge/platform-Linux-lightgrey)
+![license](https://img.shields.io/badge/license-MIT-blue)
 
 ---
 
@@ -15,7 +16,7 @@
 
 | M | 里程碑 | 状态 | 可运行物 |
 |---|---|---|---|
-| M0 | 工程地基（CMake/CI/Catch2/assert/log） | 🔨 进行中（构建 / CI / assert / log 已就绪，剩 LICENSE 与收口） | `ctest` 全绿 + CI 徽章 |
+| M0 | 工程地基（CMake/CI/Catch2/assert/log） | ✅ | `ctest` 全绿|
 | M1 | 句柄、容器、时间 | ⬜ | 容器 benchmark 报告 |
 | M2 | 反射与对象模型 | ⬜ | `yr_inspect` 反射查看器 |
 | M3 | 事件系统与延迟调用 | ⬜ | 事件确定性重放测试 |
@@ -54,15 +55,15 @@ graph TD
     ENG --> APPS["apps/text_adventure<br/>apps/render_demo"]
 ```
 
-依赖**只允许向下**，由分层 CMake target 与 CI 脚本物理强制（不靠自觉）。
+依赖**只允许向下**，由分层 CMake target 与 CI 脚本物理强制。
 完整设计见 [`doc/01-architecture.md`](doc/01-architecture.md)。
 
 ## 文档
 
 | | |
 |---|---|
-| ⭐ [START HERE](doc/START-HERE.md) | **不知道从哪开始时看这篇**：当前状态 + 下一步 + 决策协议 + 分工 |
-| 📌 [文档索引](doc/README.md) | 全部文档一览与维护规则 |
+|  [START HERE](doc/START-HERE.md) | 当前状态 + 下一步 + 决策协议 + 分工 |
+| [文档索引](doc/README.md) | 全部文档一览与维护规则 |
 | [00 · 定位与成功判据](doc/00-vision.md) | 这是什么项目、做完算成功的标准、明确不做什么 |
 | [01 · 目标架构](doc/01-architecture.md) | 分层、模块职责、核心概念、帧循环 14 阶段、线程模型 |
 | [02 · 里程碑路线图](doc/02-roadmap.md) | M0~M11 任务清单 + 验收标准 + 常见坑 |
@@ -100,8 +101,7 @@ ctest --preset debug          # 测试
 
 - **[Yo_Renderer](https://github.com/yoyorm/Yo_Renderer)** — 大一暑假的 Vulkan PBR 渲染器（ECS + RHI + IBL + 阴影 + ImGui 编辑器，~8400 行）。
   本项目 M10 会把它的 `rhi/` 与 `render/` 层重构为可替换的 `RendererBackend`。
-- **Godot Engine 4.x** — 本项目的学习参照系（非官方关联，MIT 许可）。
+- **Godot Engine 4.x** — 本项目的学习参照系。
 
 ## 许可
-
-MIT（M0 时添加 LICENSE 文件）。
+[MIT](LICENSE)
