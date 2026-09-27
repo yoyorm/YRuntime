@@ -103,7 +103,7 @@
 - [ ] `yr/core/sparse_set.h`：吸收 yo_lib `yo_sparse_set.h`，**重构**：`int` -1 哨兵 → `uint32_t npos`、`remove_unstable`/`remove_stable` 两种语义、加迭代器
       ⏸ **已暂缓到 M4**：等 Transform SoA 有真实消费者再做。现在做就是造一个没人用的容器（R3）
 - [ ] `yr/core/string_id.h`：`StringId` 字符串驻留（hash → index，`intern()` / `to_string()`，进程级表 + 启动后只读优化）
-- [ ] `yr/core/time.h`：`Duration`/`TimePoint`（`std::chrono` 别名）+ `Clock`（对照 §4.7）
+- [x] `yr/core/timer.h`：`Duration`/`TimePoint`（`std::chrono` 别名）+ `ScopeTimer`；完整 `Clock` 推迟到 M4 ✅ 2026-09-27
 - [ ] `yr/core/object_id.h`：`ObjectID`（全局唯一 64-bit）——只定义类型与 `ObjectDB` 接口，实现留到 M2
 - [ ] `yr/core/math.h`：最小 `Vec2/Vec3/Vec4/Mat4/Transform3D/Quaternion`（决策 Q1；先做 Vec3 + Mat4 + Transform3D，其余按需）
       ⏸ **已暂缓到 M4**：等 Transform 层级真正需要时再做（R3）
@@ -131,10 +131,11 @@
 | 子阶段 | 内容 | 状态 |
 |---|---|---|
 | M1a | `Handle<T>` + `SlotMap<T>` + ABA / clear / reserve 测试 | ✅ |
-| M1b | 100 万次 churn 测试 | ⬜ 下一步 |
-| M1c | E1 benchmark（SlotMap / unordered_map / vector+freelist） | ⬜ |
-| M1d | `StringId` | ⬜ |
-| M1e | `Time` / `ObjectID` | ⬜ |
+| M1b | 100,000 次固定种子混合操作测试 | ✅ 2026-09-27 |
+| M1c | 最小计时基础（Duration / TimePoint / ScopeTimer） | ✅ 2026-09-27 |
+| M1d | E1 benchmark（SlotMap / unordered_map / vector+freelist） | 🔨 框架与实验代码完成，待 perf 与结论 |
+| M1e | `StringId` | ⬜ |
+| M1f | `ObjectID` | ⬜ |
 | 暂缓 | `SparseSet`、数学库 | 等真实消费者 → 已在 M4 清单里登记（见 M4 顶部） |
 
 ---

@@ -3,7 +3,8 @@ add_executable(YrTests_core
     test_assert.cpp
     test_log.cpp
     test_handle.cpp
-    test_slotmap.cpp)
+    test_slotmap.cpp
+    test_timer.cpp)
 
 target_link_libraries(YrTests_core PRIVATE
     yr::core

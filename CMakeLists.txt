@@ -4,6 +4,7 @@ project(YRuntime VERSION 0.1.0 LANGUAGES CXX)
 
 # 选项
 option(YR_BUILD_TESTS "Build unit tests" ON)
+option(YR_BUILD_BENCHMARKS "Build manual benchmark executables" OFF)
 option(YR_WARNINGS_AS_ERRORS "Treat warnings as errors (CI only)" OFF)
 option(YR_ENABLE_SANITIZERS "Enable AddressSanitizer + UndefinedBehaviorSanitizer" OFF)
 option(YR_ENABLE_ASSERTS "Enable runtime assertions" ON)
@@ -29,6 +30,10 @@ add_subdirectory(engine/core)
 if(YR_BUILD_TESTS)
     enable_testing()          # 必须在 add_subdirectory(tests) 之前
     add_subdirectory(tests)
+endif()
+
+if(YR_BUILD_BENCHMARKS)
+    add_subdirectory(benchmarks)
 endif()
 
 

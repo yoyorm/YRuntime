@@ -30,10 +30,9 @@
 
 | 顺序 | 内容 | 分工 |
 |---|---|---|
-| **1** | 补 `SlotMap` 的大规模插删 churn 测试 | 你写，AI review |
-| **2** | E1：`SlotMap` vs `unordered_map` vs `vector+freelist` benchmark | 你写实现；AI 可写 benchmark/CMake 样板；数据写入 `benchmarks/README.md` |
-| **3** | `StringId` 字符串驻留 | 你写，AI review |
-| **4** | `Time` / `ObjectID` 基础类型 | 你写，AI review |
+| **1** | E1：`SlotMap` vs `unordered_map` vs `vector+freelist` benchmark | 你写实现；AI 可写 benchmark/CMake 样板；数据写入 `benchmarks/README.md` |
+| **2** | `StringId` 字符串驻留 | 你写，AI review |
+| **3** | `Time` / `ObjectID` 基础类型 | 你写，AI review |
 | **暂缓** | `SparseSet`、数学库 | 等有真实消费者再做（R3） |
 
 benchmark 数据和结论统一写到 `benchmarks/README.md`；不要新建额外笔记文件。

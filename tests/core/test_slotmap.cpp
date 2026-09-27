@@ -2,7 +2,10 @@
 
 #include <yr/core/slot_map.h>
 
+#include <cstdint>
+#include <random>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace {
@@ -299,4 +302,85 @@ TEST_CASE("slotmap: 支持不可默认构造且不可平凡复制的类型", "[c
   const auto h = sm.insert(NoDefault{7});
   REQUIRE(sm.get(h) != nullptr);
   CHECK(sm.get(h)->value == 7);
+}
+
+// ============================================================================
+// 混合操作压力测试：用独立模型验证长期运行后的生命周期语义
+// ============================================================================
+
+TEST_CASE("slotmap: deterministic mixed operations preserve all handle invariants", "[core][slotmap][churn]") {
+  struct ActiveEntry {
+    IntHandle handle;
+    int value;
+  };
+
+  constexpr std::uint32_t kSeed = 0x5EED1234u;
+  constexpr std::uint32_t kOperationCount = 100'000;
+  constexpr std::uint32_t kValidationInterval = 4'096;
+
+  IntMap sm;
+  std::mt19937 rng(kSeed);
+  std::uniform_int_distribution<std::uint32_t> operationRoll(0, 99);
+  std::vector<ActiveEntry> active;
+  std::vector<IntHandle> stale;
+  active.reserve(10'000);
+  stale.reserve(50'000);
+
+  const auto validate = [&]() {
+    std::unordered_set<int> expectedValues;
+    expectedValues.reserve(active.size());
+
+    for (const ActiveEntry& entry : active) {
+      REQUIRE(sm.contains(entry.handle));
+      const int* actual = sm.get(entry.handle);
+      REQUIRE(actual != nullptr);
+      CHECK(*actual == entry.value);
+      CHECK(expectedValues.insert(entry.value).second);
+    }
+
+    CHECK(sm.size() == active.size());
+
+    std::unordered_set<int> actualValues;
+    actualValues.reserve(sm.size());
+    for (const int value : sm) {
+      CHECK(actualValues.insert(value).second);
+    }
+    CHECK(actualValues == expectedValues);
+
+    for (const IntHandle handle : stale) {
+      CHECK_FALSE(sm.contains(handle));
+      CHECK(sm.get(handle) == nullptr);
+    }
+  };
+
+  for (std::uint32_t operation = 0; operation < kOperationCount; ++operation) {
+    const std::uint32_t roll = operationRoll(rng);
+
+    if (active.empty() || roll < 45) {
+      const int value = static_cast<int>(operation) * 2 + 1;
+      const IntHandle handle = sm.insert(value);
+      active.push_back({handle, value});
+    } else if (roll < 80) {
+      std::uniform_int_distribution<std::size_t> activeIndex(0, active.size() - 1);
+      const std::size_t index = activeIndex(rng);
+      const IntHandle handle = active[index].handle;
+
+      REQUIRE(sm.erase(handle));
+      stale.push_back(handle);
+      active[index] = active.back();
+      active.pop_back();
+    } else {
+      std::uniform_int_distribution<std::size_t> activeIndex(0, active.size() - 1);
+      const ActiveEntry& entry = active[activeIndex(rng)];
+      const int* actual = sm.get(entry.handle);
+      REQUIRE(actual != nullptr);
+      CHECK(*actual == entry.value);
+    }
+
+    if ((operation + 1) % kValidationInterval == 0) {
+      validate();
+    }
+  }
+
+  validate();
 }

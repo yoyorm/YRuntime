@@ -40,6 +40,19 @@
                 "YR_ENABLE_LOG": "ON",
                 "YR_ENABLE_DEBUG_LOG": "ON"
             }
+        },
+        {
+            "name": "benchmark",
+            "displayName": "Benchmark（手动性能实验）",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "YR_BUILD_TESTS": "OFF",
+                "YR_BUILD_BENCHMARKS": "ON",
+                "YR_ENABLE_ASSERTS": "OFF",
+                "YR_ENABLE_LOG": "OFF",
+                "YR_ENABLE_DEBUG_LOG": "OFF"
+            }
         }
     ],
     "buildPresets": [
@@ -54,6 +67,13 @@
         {
             "name": "asan",
             "configurePreset": "asan"
+        },
+        {
+            "name": "benchmark",
+            "configurePreset": "benchmark",
+            "targets": [
+                "YrBench_slot_map"
+            ]
         }
     ],
     "testPresets": [
