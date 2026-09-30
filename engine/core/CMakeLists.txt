@@ -2,6 +2,7 @@ add_library(yr_core
     src/version.cpp
     src/assert.cpp
     src/log.cpp
+    src/string_interner.cpp
 )
 add_library(yr::core ALIAS yr_core)
 

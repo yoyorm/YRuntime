@@ -10,7 +10,7 @@
 | 里程碑 | 状态 |
 |---|---|
 | **M0 工程地基** | ✅ 已完成（`v0.M0`：CMake / CI / Catch2 / assert / log） |
-| **M1 句柄、容器、时间** | 🔨 进行中 —— `Handle<T>`、`SlotMap<T>` 已完成；测试 52/52 通过 |
+| **M1 句柄、容器、时间、字符串** | 🔨 收口中 —— `Handle<T>`、`SlotMap<T>`、`ScopeTimer`、`StringId` 已完成；测试 64/64 通过 |
 | M2 ~ M11 | ⬜ 未开始 |
 
 进度**只在两处维护**：根 `README.md` 的里程碑表（对外）+ `02-roadmap.md` 的 checkbox（对内）。
@@ -18,24 +18,32 @@
 
 ---
 
-## 2. 下一步：继续 M1
+## 2. 下一步：M1 收口，然后进入 M2
 
 已完成：
 
 - `Handle<T>`：类型安全的 index + generation 句柄、哈希、invalid 语义
 - `SlotMap<T>`：稠密数组 + 稀疏索引 + 空闲链 + generation
-- 测试：52/52 通过；ASan preset 本地验证通过；clang-format 合规
+- `ScopeTimer`：`steady_clock` 时间测量，Debug/ASan 测试通过
+- `StringId` / `StringInterner`：进程级单例、稳定节点指针、只追加驻留
+- 测试：64/64 通过；ASan preset 本地验证通过；clang-format 合规
 
 接下来按这个顺序推进，仍然一次只做一件事：
 
 | 顺序 | 内容 | 分工 |
 |---|---|---|
-| **1** | E1：`SlotMap` vs `unordered_map` vs `vector+freelist` benchmark | 你写实现；AI 可写 benchmark/CMake 样板；数据写入 `benchmarks/README.md` |
-| **2** | `StringId` 字符串驻留 | 你写，AI review |
-| **3** | `Time` / `ObjectID` 基础类型 | 你写，AI review |
+| **1** | `ObjectID` 基础值类型与测试 | 你写，AI review；`ObjectDB` 留到 M2 |
+| **2** | E1 benchmark 做一次收口：补 `perf stat` 数据和结论 | 手动运行，不阻塞 M2 |
+| **3** | M1 收口：更新 checkbox、测试数、里程碑说明，准备 M2 | 对照 roadmap 验收 |
 | **暂缓** | `SparseSet`、数学库 | 等有真实消费者再做（R3） |
 
 benchmark 数据和结论统一写到 `benchmarks/README.md`；不要新建额外笔记文件。
+
+### 时间线判断
+
+M0~M1 的基础设施占用约 3~4 周是合理的：它们建立的是后续所有模块都会复用的构建、测试、生命周期引用和字符串命名基础，约占整个 6~9 个月计划的 10%~15%。但从现在开始不能继续扩张 M1；E1 的 `perf` 数据是收口工作，不应阻塞 M2。
+
+M4 虽然在路线图中排在 M2、M3 之后，但按当前节奏预计在第 7~10 周开始，仍属于前两个月内，不算过晚。M2/M3 为场景树提供 ObjectID、通知、事件和延迟调用语义。为了避免长期看不到 Runtime，M2 完成最小 Object 模型后，可以提前准备一个极小的 tick 骨架，但正式的 `SceneTree/MainLoop` 仍在 M4 实现。
 
 **非阻塞待办**（不急，别打断主线）：
 - log 的 fmt 格式化、时间戳 / 帧号 / 线程 ID、SBO 优化 → 见 `02-roadmap.md`

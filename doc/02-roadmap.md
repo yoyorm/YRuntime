@@ -102,13 +102,13 @@
 - [x] `yr/core/slot_map.h`：`SlotMap<T>`（稠密数组 + 空闲链 + generation）✅ 2026-09-26
 - [ ] `yr/core/sparse_set.h`：吸收 yo_lib `yo_sparse_set.h`，**重构**：`int` -1 哨兵 → `uint32_t npos`、`remove_unstable`/`remove_stable` 两种语义、加迭代器
       ⏸ **已暂缓到 M4**：等 Transform SoA 有真实消费者再做。现在做就是造一个没人用的容器（R3）
-- [ ] `yr/core/string_id.h`：`StringId` 字符串驻留（hash → index，`intern()` / `to_string()`，进程级表 + 启动后只读优化）
+- [x] `yr/core/string_id.h` / `string_interner.h`：`StringId` 字符串驻留（hash → 稳定节点指针，`intern()` / `view()`，进程级单例，只追加）✅ 2026-09-30
 - [x] `yr/core/timer.h`：`Duration`/`TimePoint`（`std::chrono` 别名）+ `ScopeTimer`；完整 `Clock` 推迟到 M4 ✅ 2026-09-27
 - [ ] `yr/core/object_id.h`：`ObjectID`（全局唯一 64-bit）——只定义类型与 `ObjectDB` 接口，实现留到 M2
 - [ ] `yr/core/math.h`：最小 `Vec2/Vec3/Vec4/Mat4/Transform3D/Quaternion`（决策 Q1；先做 Vec3 + Mat4 + Transform3D，其余按需）
       ⏸ **已暂缓到 M4**：等 Transform 层级真正需要时再做（R3）
 - [x] 测试：Handle 失效检测、SlotMap erase 后旧 handle 失效、slot 复用 ABA、`clear()` 后旧 handle 不复活 ✅ 2026-09-26
-- [ ] 测试：SlotMap 100 万次插删 churn、StringId 驻留一致性
+- [x] 测试：100,000 次 SlotMap 混合操作、StringId 驻留一致性与存储增长稳定性 ✅ 2026-09-30
 - [ ] **benchmark**：`benchmarks/bench_slot_map.cpp`（SlotMap vs `unordered_map` vs `vector+标记位`，测插入/查找/遍历三项）
 - [ ] 用 `perf stat` 记录 cache-miss 差异，写进 `benchmarks/README.md`
 
@@ -133,10 +133,25 @@
 | M1a | `Handle<T>` + `SlotMap<T>` + ABA / clear / reserve 测试 | ✅ |
 | M1b | 100,000 次固定种子混合操作测试 | ✅ 2026-09-27 |
 | M1c | 最小计时基础（Duration / TimePoint / ScopeTimer） | ✅ 2026-09-27 |
-| M1d | E1 benchmark（SlotMap / unordered_map / vector+freelist） | 🔨 框架与实验代码完成，待 perf 与结论 |
-| M1e | `StringId` | ⬜ |
-| M1f | `ObjectID` | ⬜ |
+| M1d | E1 benchmark（SlotMap / unordered_map / vector+freelist） | 🔨 框架、插入/查找/删除/遍历完成，待 perf 与结论 |
+| M1e | `StringId` / `StringInterner` | ✅ 2026-09-30 |
+| M1f | `ObjectID` 基础值类型 | ⬜ 下一步 |
 | 暂缓 | `SparseSet`、数学库 | 等真实消费者 → 已在 M4 清单里登记（见 M4 顶部） |
+
+### M1 收口规则（2026-09-30）
+
+M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型、比较、哈希和 invalid 语义；`ObjectDB` 明确留到 M2。E1 只补一次 `perf stat` 与结论，不再为 M1 增加新的容器或优化。完成这两项后立即进入 M2，避免基础设施阶段无限延长。
+
+### M0~M4 时间线校准（2026-09-30）
+
+| 阶段 | 推荐投入 | 目标 | 必须出现的可运行物 |
+|---|---:|---|---|
+| M0~M1 | 3~4 周 | 工程地基、句柄、字符串、时间、性能测量 | `ctest` 全绿 + E1 数据 |
+| M2 | 2~3 周 | ObjectID/ObjectDB、Variant、最小 ClassDB、反射查看 | `yr_inspect --all` |
+| M3 | 1~2 周 | EventBus、Subscription、MessageQueue | 确定性事件重放测试 |
+| M4 | 3~4 周 | Node、SceneTree、MainLoop、延迟删除、headless tick | 10000 帧 `tick_sandbox` |
+
+按 5~8 小时/周计算，M4 应在项目开始后约第 7~10 周出现，这个位置合理。M2 超过 3 周时，应砍掉方法绑定、复杂 Variant 类型和工具输出细节，而不是继续推迟 M4。
 
 ---
 
