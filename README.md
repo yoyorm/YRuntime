@@ -18,8 +18,8 @@
 | M | 里程碑 | 状态 | 可运行物 |
 |---|---|---|---|
 | M0 | 工程地基（CMake/CI/Catch2/assert/log） | ✅ | `ctest` 全绿 + CI |
-| M1 | 句柄、容器、时间、字符串 | 🔨 | Handle/SlotMap/Timer/StringId ✅；ObjectID 与 perf 结论待做 |
-| M1 当前门禁 | — | — | ObjectID 基础类型 + E1 perf 结论 |
+| M1 | 句柄、容器、时间、字符串 | 🔨 | Handle/SlotMap/Timer/StringId/ObjectID ✅；perf 结论待做 |
+| M1 当前门禁 | — | — | E1 perf 数据与结论 |
 | M2 | 反射与对象模型 | ⬜ | `yr_inspect` 反射查看器 |
 | M3 | 事件系统与延迟调用 | ⬜ | 事件确定性重放测试 |
 | M4 | 场景树与主循环 | ⬜ | headless 世界 tick 10000 帧 |
@@ -87,7 +87,7 @@ ctest --preset debug          # 测试
 
 产物在 `build/<preset>/bin/`。给 IDE / clangd 用：`ln -sf build/debug/compile_commands.json .`
 
-`yr::core` 已包含 `version`、`assert`、`log`、`Handle<T>`、`SlotMap<T>`、`ScopeTimer`、`StringId` / `StringInterner`。
+`yr::core` 已包含 `version`、`assert`、`log`、`Handle<T>`、`SlotMap<T>`、`ScopeTimer`、`StringId` / `StringInterner`、`ObjectID`。
 `YR_LOG_*` 支持 tag + 运行期 level 过滤，DEBUG 级在 release 编译期剔除；`YR_ASSERT*` / `YR_VERIFY` 支持可注入 handler。
 
 | 依赖 | 说明 |

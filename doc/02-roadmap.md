@@ -104,7 +104,7 @@
       ⏸ **已暂缓到 M4**：等 Transform SoA 有真实消费者再做。现在做就是造一个没人用的容器（R3）
 - [x] `yr/core/string_id.h` / `string_interner.h`：`StringId` 字符串驻留（hash → 稳定节点指针，`intern()` / `view()`，进程级单例，只追加）✅ 2026-09-30
 - [x] `yr/core/timer.h`：`Duration`/`TimePoint`（`std::chrono` 别名）+ `ScopeTimer`；完整 `Clock` 推迟到 M4 ✅ 2026-09-27
-- [ ] `yr/core/object_id.h`：`ObjectID`（全局唯一 64-bit）——只定义类型与 `ObjectDB` 接口，实现留到 M2
+- [x] `yr/core/object_id.h`：`ObjectID`（全局唯一 64-bit 强类型）；有效 ID 分配与 `ObjectDB` 实现留到 M2 ✅ 2026-10-01
 - [ ] `yr/core/math.h`：最小 `Vec2/Vec3/Vec4/Mat4/Transform3D/Quaternion`（决策 Q1；先做 Vec3 + Mat4 + Transform3D，其余按需）
       ⏸ **已暂缓到 M4**：等 Transform 层级真正需要时再做（R3）
 - [x] 测试：Handle 失效检测、SlotMap erase 后旧 handle 失效、slot 复用 ABA、`clear()` 后旧 handle 不复活 ✅ 2026-09-26
@@ -135,7 +135,7 @@
 | M1c | 最小计时基础（Duration / TimePoint / ScopeTimer） | ✅ 2026-09-27 |
 | M1d | E1 benchmark（SlotMap / unordered_map / vector+freelist） | 🔨 框架、插入/查找/删除/遍历完成，待 perf 与结论 |
 | M1e | `StringId` / `StringInterner` | ✅ 2026-09-30 |
-| M1f | `ObjectID` 基础值类型 | ⬜ 下一步 |
+| M1f | `ObjectID` 基础值类型 | ✅ 2026-10-01 |
 | 暂缓 | `SparseSet`、数学库 | 等真实消费者 → 已在 M4 清单里登记（见 M4 顶部） |
 
 ### M1 收口规则（2026-09-30）
@@ -160,8 +160,8 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 **目标**：让 C++ 类型在运行时可被"看见"。这是序列化、检视器、事件、脚本的共同地基，也是本项目最有含金量的模块。
 
 - [ ] `yr/object/variant.h`：Variant（第一版 9 种类型，见 §4.3）+ 完整测试（类型混淆、拷贝、比较、Dict 保序）
-- [ ] `yr/object/object.h`：`Object` 基类 + `notification(uint32_t)` + `ObjectID`
-- [ ] `yr/object/object_db.h`：`ObjectDB`（`ObjectID → Object*`，注册/注销/查询，Debug 下统计存活数与类型分布）
+- [ ] `yr/object/object.h`：`Object` 基类 + `notification(uint32_t)` + `ObjectID`（其中 ObjectID RAII 自动注册/注销、禁止复制移动已完成 ✅ 2026-10-01；notification 待后续）
+- [x] `yr/object/object_db.h`：`vector<ObjectSlot> + freelist` 的非拥有 `ObjectID → Object*` 索引；注册/注销/查询、generation 复用、存活计数已完成。类型分布统计等反射就位后再补 ✅ 2026-10-01
 - [ ] `yr/object/ref_counted.h`：`RefCounted` + `Ref<T>` + `WeakRef<T>`（走 ObjectDB）
 - [ ] `yr/object/property_info.h` + `class_info.h`：`PropertyInfo`（name/type/flags/default/hint）+ `ClassInfo`（属性表 + factory + get/set 适配 + 继承链）
 - [ ] `yr/object/class_db.h`：注册表 + `instantiate(StringId)` + `inheritors_of` + `freeze()`
@@ -187,6 +187,18 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 ⑤ 属性默认值存储：放 `ClassInfo` 里（每类一份）而不是每对象一份。
 **Godot 对照**：`core/object/object.h`（`GDCLASS` 宏、`_bind_methods`、`notification`）、`core/object/class_db.h/.cpp`（`bind_property` / `ClassInfo` 结构 / `instantiate`）、`core/object/property_info.h`、`core/object/method_bind.h`（方法绑定的类型擦除，比属性绑定更难，选读）、`core/register_core_types.cpp`（显式注册顺序）、`tests/core/object/test_class_db.cpp` + `test_object.cpp`（**看成熟项目怎么测反射**）。
 **降级方案**：只做 `YR_CLASS` + `YR_PROPERTY`，不做方法绑定（`YR_BIND_METHOD` 推到 stretch）；Variant 只做 6 种类型（null/int/float/string/vec3/objectid）。
+
+### M2 当前执行拆分（2026-10-01）
+
+| 子阶段 | 内容 | 状态 |
+|---|---|---|
+| M2a | `yr_object` target + ObjectDB 非拥有索引 + ObjectID ABA 测试 | ✅ |
+| M2b | `Object` 自动注册/注销、`id()`、禁止复制移动与生命周期测试 | ✅ 2026-10-01 |
+| M2c | 最小 `Variant` | ⬜ 下一步 |
+| M2d | `PropertyInfo` / `ClassInfo`，先手工注册 | ⬜ |
+| M2e | `ClassDB` + 显式注册顺序 | ⬜ |
+| M2f | `YR_CLASS` / `YR_PROPERTY` 宏化 | ⬜ |
+| M2g | `yr_inspect` | ⬜ |
 
 ---
 

@@ -26,6 +26,7 @@ target_compile_options(yr_build_flags INTERFACE
 
 # 子目录 
 add_subdirectory(engine/core)
+add_subdirectory(engine/object)
 
 if(YR_BUILD_TESTS)
     enable_testing()          # 必须在 add_subdirectory(tests) 之前

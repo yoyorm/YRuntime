@@ -11,7 +11,8 @@
 |---|---|
 | **M0 工程地基** | ✅ 已完成（`v0.M0`：CMake / CI / Catch2 / assert / log） |
 | **M1 句柄、容器、时间、字符串** | 🔨 收口中 —— `Handle<T>`、`SlotMap<T>`、`ScopeTimer`、`StringId` 已完成；测试 64/64 通过 |
-| M2 ~ M11 | ⬜ 未开始 |
+| **M2 反射与对象模型** | 🔨 进行中 —— ObjectDB 与 Object 身份 RAII 完成 |
+| M3 ~ M11 | ⬜ 未开始 |
 
 进度**只在两处维护**：根 `README.md` 的里程碑表（对外）+ `02-roadmap.md` 的 checkbox（对内）。
 别的地方不要重复记录，否则一定会漂移。
@@ -32,9 +33,9 @@
 
 | 顺序 | 内容 | 分工 |
 |---|---|---|
-| **1** | `ObjectID` 基础值类型与测试 | 你写，AI review；`ObjectDB` 留到 M2 |
-| **2** | E1 benchmark 做一次收口：补 `perf stat` 数据和结论 | 手动运行，不阻塞 M2 |
-| **3** | M1 收口：更新 checkbox、测试数、里程碑说明，准备 M2 | 对照 roadmap 验收 |
+| **1** | E1 benchmark 做一次收口：补 `perf stat` 数据和结论 | 手动运行，不阻塞 M2 |
+| **2** | M1 收口：更新 checkbox、测试数、里程碑说明，准备 M2 | 对照 roadmap 验收 |
+| **3** | M2c：设计最小 `Variant` | 先确定类型集合、存储策略和递归容器边界 |
 | **暂缓** | `SparseSet`、数学库 | 等有真实消费者再做（R3） |
 
 benchmark 数据和结论统一写到 `benchmarks/README.md`；不要新建额外笔记文件。

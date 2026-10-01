@@ -24,3 +24,4 @@ endif()
 include(Catch)          # 提供 catch_discover_tests()，两种方式都需要
 
 add_subdirectory(core)
+add_subdirectory(object)

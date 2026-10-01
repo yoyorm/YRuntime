@@ -5,7 +5,8 @@ add_executable(YrTests_core
     test_handle.cpp
     test_slotmap.cpp
     test_timer.cpp
-    test_string_id.cpp)
+    test_string_id.cpp
+    test_object_id.cpp)
 
 target_link_libraries(YrTests_core PRIVATE
     yr::core
