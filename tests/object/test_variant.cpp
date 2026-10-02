@@ -17,7 +17,10 @@ namespace {
   using yr::core::ObjectID;
   using yr::core::StringId;
   using yr::core::StringInterner;
+  using yr::obj::Array;
+  using yr::obj::Dict;
   using yr::obj::Variant;
+  using yr::obj::Vec3;
 
   class TestObject final : public yr::obj::Object {};
 
@@ -41,6 +44,9 @@ static_assert(std::is_constructible_v<Variant, StringId>);
 static_assert(std::is_constructible_v<Variant, ObjectID>);
 static_assert(!std::is_constructible_v<Variant, int>);
 static_assert(std::is_constructible_v<Variant, std::string>);
+static_assert(std::is_constructible_v<Variant, Array>);
+static_assert(std::is_constructible_v<Variant, Dict>);
+static_assert(std::is_constructible_v<Variant, Vec3>);
 static_assert(std::is_convertible_v<std::int64_t, Variant>); // 构造非 explicit
 
 // 含堆成员后 Variant 不再是字面类型，无法再定义 constexpr Variant 对象；
@@ -343,4 +349,209 @@ TEST_CASE("variant: reset 释放 string 后回到 null", "[object][variant][stri
 
   CHECK(value.isNil());
   CHECK(value.type() == Variant::Type::kNull);
+}
+
+// ============================================================================
+// Array（递归堆类型）：构造 / 深拷贝 / 移动 / 比较 / 嵌套
+// ============================================================================
+
+TEST_CASE("variant: Array 构造与往返", "[object][variant][array]") {
+  const Variant value(Array{Variant(std::int64_t{1}), Variant(std::string("two"))});
+
+  CHECK(value.type() == Variant::Type::kArray);
+  CHECK(value.is<Array>());
+  CHECK(value.tryAs<Array>().has_value());
+  CHECK(value.as<Array>().size() == 2);
+  CHECK(value.as<Array>()[0].as<std::int64_t>() == 1);
+  CHECK(value.as<Array>()[1].as<std::string>() == "two");
+}
+
+TEST_CASE("variant: Array 拷贝是深拷贝，互相独立", "[object][variant][array]") {
+  const Variant original(Array{Variant(std::int64_t{1})});
+  Variant copy = original;
+
+  CHECK(copy == original);
+
+  Array grown = copy.as<Array>(); // as<Array>() 返回按值（拷贝），改它不会动到 copy
+  grown.push_back(Variant(std::int64_t{2}));
+  copy.set(std::move(grown));
+
+  CHECK(copy.as<Array>().size() == 2);
+  CHECK(original.as<Array>().size() == 1); // 原件不受影响
+}
+
+TEST_CASE("variant: Array 移动后源变为 null", "[object][variant][array]") {
+  Variant source(Array{Variant(std::int64_t{1})});
+  Variant moved = std::move(source);
+
+  CHECK(moved.type() == Variant::Type::kArray);
+  CHECK(moved.as<Array>().size() == 1);
+  CHECK(source.isNil());
+}
+
+TEST_CASE("variant: Array 相等按元素逐项比较", "[object][variant][array]") {
+  const Variant oneTwo(Array{Variant(std::int64_t{1}), Variant(std::int64_t{2})});
+  const Variant oneTwoCopy(Array{Variant(std::int64_t{1}), Variant(std::int64_t{2})});
+  const Variant twoOne(Array{Variant(std::int64_t{2}), Variant(std::int64_t{1})});
+  const Variant one(Array{Variant(std::int64_t{1})});
+
+  CHECK(oneTwo == oneTwoCopy);
+  CHECK(oneTwo != twoOne);                          // 顺序敏感
+  CHECK(oneTwo != one);                             // 长度不同
+  CHECK_FALSE(oneTwo == Variant(std::string("x"))); // 跨类型
+}
+
+TEST_CASE("variant: Array 嵌套（递归）构造/拷贝/比较/析构", "[object][variant][array]") {
+  const Variant nested(Array{Array{Variant(std::int64_t{1})}, Array{Variant(std::int64_t{2})}});
+  Variant copy = nested;
+
+  CHECK(copy == nested);
+  CHECK(copy.as<Array>().size() == 2);
+  CHECK(copy.as<Array>()[1].as<Array>()[0].as<std::int64_t>() == 2);
+}
+
+TEST_CASE("variant: reset 释放 Array 后回到 null", "[object][variant][array]") {
+  Variant value(Array{Variant(std::string("a")), Variant(std::int64_t{1})});
+  value.reset();
+
+  CHECK(value.isNil());
+  CHECK(value.type() == Variant::Type::kNull);
+}
+
+// ============================================================================
+// Dict（保序字典）：构造 / 保序 / 深拷贝 / 移动 / 比较 / 嵌套
+// ============================================================================
+
+namespace {
+
+  Dict makeDict(std::initializer_list<std::pair<StringId, Variant>> entries) {
+    return Dict(entries);
+  }
+
+} // namespace
+
+TEST_CASE("variant: Dict 构造与往返", "[object][variant][dict]") {
+  StringInterner& interner = yr::core::globalStringInterner();
+  const StringId hp = interner.intern("variant_dict_hp");
+  const StringId mp = interner.intern("variant_dict_mp");
+
+  const Variant value(makeDict({{hp, Variant(std::int64_t{100})}, {mp, Variant(std::int64_t{50})}}));
+
+  CHECK(value.type() == Variant::Type::kDict);
+  CHECK(value.is<Dict>());
+  CHECK(value.tryAs<Dict>().has_value());
+
+  const Dict entries = value.as<Dict>();
+  CHECK(entries.size() == 2);
+  CHECK(entries[0].first == hp);
+  CHECK(entries[0].second.as<std::int64_t>() == 100);
+  CHECK(entries[1].first == mp);
+  CHECK(entries[1].second.as<std::int64_t>() == 50);
+}
+
+TEST_CASE("variant: Dict 保持插入顺序", "[object][variant][dict]") {
+  StringInterner& interner = yr::core::globalStringInterner();
+  const StringId first = interner.intern("variant_dict_order_first");
+  const StringId second = interner.intern("variant_dict_order_second");
+
+  const Variant value(makeDict({{second, Variant(std::int64_t{2})}, {first, Variant(std::int64_t{1})}}));
+  const Dict entries = value.as<Dict>();
+
+  CHECK(entries[0].first == second); // 按插入序，不是按 key 排序
+  CHECK(entries[1].first == first);
+}
+
+TEST_CASE("variant: Dict 拷贝是深拷贝，互相独立", "[object][variant][dict]") {
+  StringInterner& interner = yr::core::globalStringInterner();
+  const Variant original(makeDict({{interner.intern("variant_dict_deep_a"), Variant(std::int64_t{1})}}));
+  Variant copy = original;
+
+  CHECK(copy == original);
+
+  Dict grown = copy.as<Dict>();
+  grown.emplace_back(interner.intern("variant_dict_deep_b"), Variant(std::int64_t{2}));
+  copy.set(std::move(grown));
+
+  CHECK(copy.as<Dict>().size() == 2);
+  CHECK(original.as<Dict>().size() == 1); // 原件不受影响
+}
+
+TEST_CASE("variant: Dict 移动后源变为 null", "[object][variant][dict]") {
+  StringInterner& interner = yr::core::globalStringInterner();
+  Variant source(makeDict({{interner.intern("variant_dict_move"), Variant(std::int64_t{1})}}));
+  Variant moved = std::move(source);
+
+  CHECK(moved.type() == Variant::Type::kDict);
+  CHECK(moved.as<Dict>().size() == 1);
+  CHECK(source.isNil());
+}
+
+TEST_CASE("variant: Dict 相等保序且按值比较", "[object][variant][dict]") {
+  StringInterner& interner = yr::core::globalStringInterner();
+  const StringId a = interner.intern("variant_dict_eq_a");
+  const StringId b = interner.intern("variant_dict_eq_b");
+
+  const Variant ab(makeDict({{a, Variant(std::int64_t{1})}, {b, Variant(std::int64_t{2})}}));
+  const Variant abCopy(makeDict({{a, Variant(std::int64_t{1})}, {b, Variant(std::int64_t{2})}}));
+  const Variant ba(makeDict({{b, Variant(std::int64_t{2})}, {a, Variant(std::int64_t{1})}}));
+  const Variant abDifferentValue(makeDict({{a, Variant(std::int64_t{1})}, {b, Variant(std::int64_t{9})}}));
+
+  CHECK(ab == abCopy);
+  CHECK(ab != ba); // 保序：顺序不同即不等
+  CHECK(ab != abDifferentValue);
+  CHECK_FALSE(ab == Variant(std::string("x"))); // 跨类型
+}
+
+TEST_CASE("variant: Dict 嵌套 Array（递归）构造/拷贝/比较/析构", "[object][variant][dict]") {
+  StringInterner& interner = yr::core::globalStringInterner();
+  const StringId items = interner.intern("variant_dict_nested_items");
+
+  const Variant nested(makeDict({{items, Array{Variant(std::int64_t{1}), Variant(std::int64_t{2})}}}));
+  Variant copy = nested;
+
+  CHECK(copy == nested);
+  const Dict entries = copy.as<Dict>();
+  CHECK(entries.size() == 1);
+  CHECK(entries[0].second.as<Array>()[1].as<std::int64_t>() == 2);
+}
+
+TEST_CASE("variant: reset 释放 Dict 后回到 null", "[object][variant][dict]") {
+  StringInterner& interner = yr::core::globalStringInterner();
+  Variant value(makeDict({{interner.intern("variant_dict_reset"), Variant(std::string("a"))}}));
+  value.reset();
+
+  CHECK(value.isNil());
+  CHECK(value.type() == Variant::Type::kNull);
+}
+
+// ============================================================================
+// Vec3（内联平凡类型）
+// ============================================================================
+
+TEST_CASE("variant: Vec3 构造与往返", "[object][variant][vec3]") {
+  const Variant value(Vec3(1.0F, 2.0F, 3.0F));
+
+  CHECK(value.type() == Variant::Type::kVec3);
+  CHECK(value.is<Vec3>());
+  CHECK(value.tryAs<Vec3>().has_value());
+  CHECK(value.as<Vec3>() == Vec3(1.0F, 2.0F, 3.0F));
+}
+
+TEST_CASE("variant: Vec3 比较与跨类型", "[object][variant][vec3]") {
+  CHECK(Variant(Vec3(1.0F, 2.0F, 3.0F)) == Variant(Vec3(1.0F, 2.0F, 3.0F)));
+  CHECK(Variant(Vec3(1.0F, 2.0F, 3.0F)) != Variant(Vec3(1.0F, 2.0F, 4.0F)));
+  CHECK_FALSE(Variant(Vec3(1.0F, 2.0F, 3.0F)) == Variant(std::int64_t{1})); // 跨类型
+}
+
+TEST_CASE("variant: Vec3 拷贝/移动/set", "[object][variant][vec3]") {
+  const Variant original(Vec3(1.0F, 2.0F, 3.0F));
+  Variant copy = original;
+  CHECK(copy == original);
+
+  Variant moved = std::move(copy);
+  CHECK(moved.as<Vec3>() == Vec3(1.0F, 2.0F, 3.0F));
+
+  moved.set(Vec3(-1.0F, -2.0F, -3.0F));
+  CHECK(moved.type() == Variant::Type::kVec3);
+  CHECK(moved.as<Vec3>() == Vec3(-1.0F, -2.0F, -3.0F));
 }

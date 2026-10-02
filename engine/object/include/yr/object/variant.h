@@ -4,10 +4,24 @@
 #include <optional>
 #include <string>
 #include <type_traits>
+#include <utility>
+#include <vector>
 
 #include <yr/core/assert.h>
 #include <yr/core/object_id.h>
 #include <yr/core/string_id.h>
+#include <yr/object/vec3.h>
+
+namespace yr::obj {
+  class Variant;
+  // 两个递归容器：装 Variant，所以必须在 Variant 定义之前先声明。
+  // std::vector 自 C++17 起支持不完全类型；alias 本身只是给类型起名，不要求元素完整，
+  // 真正需要 Variant 完整的地方（构造/拷贝/比较）都延迟到 .cpp 或模板实例化时。
+  using Array = std::vector<Variant>;
+  // 保序字典：vector<pair>，不用 unordered_map（D5：序列化输出必须逐字节可复现）。
+  // StringId 没有 operator<，所以也不能用 std::map。
+  using Dict = std::vector<std::pair<yr::core::StringId, Variant>>;
+} // namespace yr::obj
 
 namespace yr::obj::detail {
 
@@ -15,14 +29,15 @@ namespace yr::obj::detail {
   template <typename T>
   inline constexpr bool kSupportedVariantType =
       std::is_same_v<T, bool> || std::is_same_v<T, int64_t> || std::is_same_v<T, double> ||
-      std::is_same_v<T, yr::core::StringId> || std::is_same_v<T, yr::core::ObjectID> || std::is_same_v<T, std::string>;
+      std::is_same_v<T, yr::core::StringId> || std::is_same_v<T, yr::core::ObjectID> ||
+      std::is_same_v<T, std::string> || std::is_same_v<T, Array> || std::is_same_v<T, Dict> || std::is_same_v<T, Vec3>;
 
 } // namespace yr::obj::detail
 
 namespace yr::obj {
   class Variant {
   public:
-    enum class Type : uint8_t { kNull, kBool, kInt, kFloat, kStringId, kObjectID, kString };
+    enum class Type : uint8_t { kNull, kBool, kInt, kFloat, kStringId, kObjectID, kString, kArray, kDict, kVec3 };
 
     Variant() noexcept = default;
 
@@ -64,6 +79,12 @@ namespace yr::obj {
         return data_.sid;
       } else if constexpr (std::is_same_v<T, std::string>) {
         return *data_.str;
+      } else if constexpr (std::is_same_v<T, Array>) {
+        return *data_.arr;
+      } else if constexpr (std::is_same_v<T, Dict>) {
+        return *data_.dict;
+      } else if constexpr (std::is_same_v<T, Vec3>) {
+        return data_.v3;
       } else {
         return data_.oid;
       }
@@ -108,6 +129,12 @@ namespace yr::obj {
         data_.sid = value;
       } else if constexpr (std::is_same_v<T, std::string>) {
         std::construct_at(&data_.str, std::make_unique<std::string>(std::move(value)));
+      } else if constexpr (std::is_same_v<T, Array>) {
+        std::construct_at(&data_.arr, std::make_unique<Array>(std::move(value)));
+      } else if constexpr (std::is_same_v<T, Dict>) {
+        std::construct_at(&data_.dict, std::make_unique<Dict>(std::move(value)));
+      } else if constexpr (std::is_same_v<T, Vec3>) {
+        data_.v3 = value;
       } else {
         data_.oid = value;
       }
@@ -125,6 +152,12 @@ namespace yr::obj {
         return Type::kStringId;
       } else if constexpr (std::is_same_v<T, std::string>) {
         return Type::kString;
+      } else if constexpr (std::is_same_v<T, Array>) {
+        return Type::kArray;
+      } else if constexpr (std::is_same_v<T, Dict>) {
+        return Type::kDict;
+      } else if constexpr (std::is_same_v<T, Vec3>) {
+        return Type::kVec3;
       } else {
         return Type::kObjectID;
       }
@@ -135,6 +168,12 @@ namespace yr::obj {
       switch (type_) {
       case Type::kString:
         std::destroy_at(&data_.str);
+        return;
+      case Type::kArray:
+        std::destroy_at(&data_.arr);
+        return;
+      case Type::kDict:
+        std::destroy_at(&data_.dict);
         return;
       default:
         return;
@@ -157,6 +196,9 @@ namespace yr::obj {
       yr::core::StringId sid;
       yr::core::ObjectID oid;
       std::unique_ptr<std::string> str;
+      std::unique_ptr<Array> arr;
+      std::unique_ptr<Dict> dict;
+      Vec3 v3;
     };
     Storage data_;
   };
