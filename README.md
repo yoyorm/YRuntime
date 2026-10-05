@@ -33,30 +33,6 @@
 
 ## 目标架构
 
-```mermaid
-graph TD
-    CORE["yr_core<br/>Handle · SlotMap · StringId · Log · Time"]
-    JOB["yr_job"]
-    OBJ["yr_object<br/>Object · ClassDB · Variant · Ref"]
-    RIF["yr_render_iface<br/>RenderSnapshot POD 契约"]
-    EVT["yr_event"]
-    SER["yr_serialize"]
-    AST["yr_asset<br/>Resource · AssetDatabase"]
-    SCN["yr_scene<br/>Node · SceneTree"]
-    ENG["yr_engine<br/>MainLoop · World · FrameStats"]
-    RNULL["yr_render_null"]
-    RVK["yr_render_vulkan"]
-
-    CORE --> JOB & OBJ & RIF
-    OBJ --> EVT & SER
-    OBJ --> AST
-    JOB --> AST
-    EVT & SER & AST --> SCN
-    SCN & JOB & RIF --> ENG
-    RIF --> RNULL & RVK
-    ENG --> APPS["apps/text_adventure<br/>apps/render_demo"]
-```
-
 依赖**只允许向下**，由分层 CMake target 与 CI 脚本物理强制。
 完整设计见 [`doc/01-architecture.md`](doc/01-architecture.md)。
 
