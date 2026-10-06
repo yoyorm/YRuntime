@@ -13,14 +13,14 @@
 
 ---
 
-## 当前状态：M1 进行中
+## 当前状态：M2 进行中
 
 | M | 里程碑 | 状态 | 可运行物 |
 |---|---|---|---|
 | M0 | 工程地基（CMake/CI/Catch2/assert/log） | ✅ | `ctest` 全绿 + CI |
 | M1 | 句柄、容器、时间、字符串 | 🔨 | Handle/SlotMap/Timer/StringId/ObjectID ✅；perf 结论待做 |
-| M1 当前门禁 | — | — | E1 perf 数据与结论 |
-| M2 | 反射与对象模型 | ⬜ | `yr_inspect` 反射查看器 |
+| M2 | 反射与对象模型 | 🔨 | Object/ObjectDB/Variant/ClassInfo/ClassDB ✅；`yr_inspect` 待做 |
+| M2 当前门禁 | — | — | M2g `yr_inspect`（M2f 宏可延后） |
 | M3 | 事件系统与延迟调用 | ⬜ | 事件确定性重放测试 |
 | M4 | 场景树与主循环 | ⬜ | headless 世界 tick 10000 帧 |
 | M5 | 序列化与场景资源 | ⬜ | 手写 `.yrscn` + round-trip diff 为空 |

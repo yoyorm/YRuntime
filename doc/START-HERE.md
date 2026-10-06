@@ -10,8 +10,8 @@
 | 里程碑 | 状态 |
 |---|---|
 | **M0 工程地基** | ✅ 已完成（`v0.M0`：CMake / CI / Catch2 / assert / log） |
-| **M1 句柄、容器、时间、字符串** | 🔨 收口中 —— `Handle<T>`、`SlotMap<T>`、`ScopeTimer`、`StringId` 已完成；测试 64/64 通过 |
-| **M2 反射与对象模型** | 🔨 进行中 —— ObjectDB 与 Object 身份 RAII 完成 |
+| **M1 句柄、容器、时间、字符串** | 🔨 收口中 —— Handle/SlotMap/ScopeTimer/StringId/ObjectID 已完成；E1 perf 待做 |
+| **M2 反射与对象模型** | 🔨 进行中 —— Object/ObjectDB/Variant（10 tag）/PropertyInfo/ClassInfo 完成；下一步 M2e `ClassDB` |
 | M3 ~ M11 | ⬜ 未开始 |
 
 进度**只在两处维护**：根 `README.md` 的里程碑表（对外）+ `02-roadmap.md` 的 checkbox（对内）。
@@ -19,24 +19,23 @@
 
 ---
 
-## 2. 下一步：M1 收口，然后进入 M2
+## 2. 下一步：M2g `yr_inspect`（M2 的可运行物）
 
-已完成：
+M2 内已完成（2026-10-06）：
 
-- `Handle<T>`：类型安全的 index + generation 句柄、哈希、invalid 语义
-- `SlotMap<T>`：稠密数组 + 稀疏索引 + 空闲链 + generation
-- `ScopeTimer`：`steady_clock` 时间测量，Debug/ASan 测试通过
-- `StringId` / `StringInterner`：进程级单例、稳定节点指针、只追加驻留
-- 测试：64/64 通过；ASan preset 本地验证通过；clang-format 合规
+- `Variant`：10 个 tag（null/bool/int/float/StringId/ObjectID/string/array/dict/vec3），Rule of Five、深拷贝/移动、比较、保序 Dict
+- `PropertyInfo` / `ClassInfo`：手工注册、按名字 get/set、继承链、遮蔽
+- `ClassDB` + `register_core_classes()`：注册表、按名查询、`inheritorsOf`、`freeze`、SIOF 测试
+- `Vec3`：最小运算（暂放 object 层，M4/M9 前迁到 `yr/core`）
 
 接下来按这个顺序推进，仍然一次只做一件事：
 
 | 顺序 | 内容 | 分工 |
 |---|---|---|
-| **1** | E1 benchmark 做一次收口：补 `perf stat` 数据和结论 | 手动运行，不阻塞 M2 |
-| **2** | M1 收口：更新 checkbox、测试数、里程碑说明，准备 M2 | 对照 roadmap 验收 |
-| **3** | M2c：设计最小 `Variant` | 先确定类型集合、存储策略和递归容器边界 |
-| **暂缓** | `SparseSet`、数学库 | 等有真实消费者再做（R3） |
+| **1** | M2g：`tools/yr_inspect` CLI（`--all` / `--class` / `--tree`，输出 JSON） | M2 的可运行物，正反馈好 |
+| **暂缓** | M2f 注册宏 `YR_CLASS` / `YR_PROPERTY` | 先手工注册，等类多了手写痛了再做（R3） |
+| **暂缓** | `instantiate` 所有权 / `RefCounted` / `Ref<T>` | 和 M5 反序列化一起做 |
+| **暂缓** | E1 perf、`SparseSet`、数学库 | 不阻塞主线 |
 
 benchmark 数据和结论统一写到 `benchmarks/README.md`；不要新建额外笔记文件。
 

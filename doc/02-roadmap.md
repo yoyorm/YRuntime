@@ -159,12 +159,12 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 
 **目标**：让 C++ 类型在运行时可被"看见"。这是序列化、检视器、事件、脚本的共同地基，也是本项目最有含金量的模块。
 
-- [ ] `yr/object/variant.h`：Variant（第一版 9 种类型，见 §4.3）+ 完整测试（类型混淆、拷贝、比较、Dict 保序）
+- [x] `yr/object/variant.h`：Variant（10 个 tag：null/bool/int/float/StringId/ObjectID/string/array/dict/vec3）+ 完整测试（类型混淆、拷贝、比较、Dict 保序、深拷贝/移动 Rule of Five）✅ 2026-10-05
 - [ ] `yr/object/object.h`：`Object` 基类 + `notification(uint32_t)` + `ObjectID`（其中 ObjectID RAII 自动注册/注销、禁止复制移动已完成 ✅ 2026-10-01；notification 待后续）
 - [x] `yr/object/object_db.h`：`vector<ObjectSlot> + freelist` 的非拥有 `ObjectID → Object*` 索引；注册/注销/查询、generation 复用、存活计数已完成。类型分布统计等反射就位后再补 ✅ 2026-10-01
 - [ ] `yr/object/ref_counted.h`：`RefCounted` + `Ref<T>` + `WeakRef<T>`（走 ObjectDB）
-- [ ] `yr/object/property_info.h` + `class_info.h`：`PropertyInfo`（name/type/flags/default/hint）+ `ClassInfo`（属性表 + factory + get/set 适配 + 继承链）
-- [ ] `yr/object/class_db.h`：注册表 + `instantiate(StringId)` + `inheritors_of` + `freeze()`
+- [x] `yr/object/property_info.h` + `class_info.h`：`PropertyInfo`（name/type/flags/class_hint + getter/setter 适配器）+ `ClassInfo`（属性表 + get/set + 继承链 + 遮蔽）。手工注册，无宏；factory/default 值留到 M2e/M5 ✅ 2026-10-05
+- [x] `yr/object/class_db.h` + `register_core_classes()`：`unordered_map<StringId, const ClassInfo*>` 注册表 + `registerClass`/`getClass`/`allClasses`/`inheritorsOf`/`freeze`；显式注册入口 + SIOF 测试。`instantiate` 暂返回裸指针（所有权待 `Ref`，M5 再定）✅ 2026-10-06
 - [ ] **注册宏** `YR_CLASS` / `YR_PROPERTY`：先手写一个不用宏的版本（直接构造 `ClassInfo`），跑通后再封装成宏
 - [ ] 用 `clang -E` 展开一次 `YR_CLASS`，读懂生成的每一行（**这是唯一能真正看懂宏的办法**）
 - [ ] `tools/yr_inspect`：命令行反射查看器（`--all` / `--class Node` / `--tree`），支持输出 JSON
@@ -194,9 +194,9 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 |---|---|---|
 | M2a | `yr_object` target + ObjectDB 非拥有索引 + ObjectID ABA 测试 | ✅ |
 | M2b | `Object` 自动注册/注销、`id()`、禁止复制移动与生命周期测试 | ✅ 2026-10-01 |
-| M2c | 最小 `Variant` | ⬜ 下一步 |
-| M2d | `PropertyInfo` / `ClassInfo`，先手工注册 | ⬜ |
-| M2e | `ClassDB` + 显式注册顺序 | ⬜ |
+| M2c | 最小 `Variant`（10 个 tag，含 string/array/dict/vec3） | ✅ 2026-10-05 |
+| M2d | `PropertyInfo` / `ClassInfo`，先手工注册 | ✅ 2026-10-05 |
+| M2e | `ClassDB` + 显式注册顺序 | ✅ 2026-10-06 |
 | M2f | `YR_CLASS` / `YR_PROPERTY` 宏化 | ⬜ |
 | M2g | `yr_inspect` | ⬜ |
 
