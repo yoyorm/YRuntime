@@ -198,7 +198,7 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 | M2d | `PropertyInfo` / `ClassInfo`，先手工注册 | ✅ 2026-10-05 |
 | M2e | `ClassDB` + 显式注册顺序 | ✅ 2026-10-06 |
 | M2f | `YR_CLASS` / `YR_PROPERTY` 宏化 | ⬜ |
-| M2g | `yr_inspect` | ⬜ |
+| M2g | `yr_inspect` | ⬜ 暂缓（等 M4/M8 有真实类再做） |
 
 ---
 

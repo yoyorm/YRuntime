@@ -19,7 +19,7 @@
 
 ---
 
-## 2. 下一步：M2g `yr_inspect`（M2 的可运行物）
+## 2. 下一步：M3 事件系统（或补 M2f 宏）
 
 M2 内已完成（2026-10-06）：
 
@@ -28,13 +28,17 @@ M2 内已完成（2026-10-06）：
 - `ClassDB` + `register_core_classes()`：注册表、按名查询、`inheritorsOf`、`freeze`、SIOF 测试
 - `Vec3`：最小运算（暂放 object 层，M4/M9 前迁到 `yr/core`）
 
-接下来按这个顺序推进，仍然一次只做一件事：
+M2 剩余（已决定延后）：
+- **M2g `yr_inspect`**：命令行反射查看器；等 M4/M8 有真实类后再做成 M2 的可运行物
+- **M2f 注册宏** `YR_CLASS` / `YR_PROPERTY`：手工注册已够用，等类多了再做（R3；宏工程是最大的调试黑洞）
+- `instantiate` 所有权 / `RefCounted` / `Ref<T>`：和 M5 反序列化一起做
+
+接下来：
 
 | 顺序 | 内容 | 分工 |
 |---|---|---|
-| **1** | M2g：`tools/yr_inspect` CLI（`--all` / `--class` / `--tree`，输出 JSON） | M2 的可运行物，正反馈好 |
-| **暂缓** | M2f 注册宏 `YR_CLASS` / `YR_PROPERTY` | 先手工注册，等类多了手写痛了再做（R3） |
-| **暂缓** | `instantiate` 所有权 / `RefCounted` / `Ref<T>` | 和 M5 反序列化一起做 |
+| **1** | M3：`yr_event`（EventBus + Subscription + MessageQueue + 确定性重放测试） | 有明确语义和可运行物 |
+| **2** | M2f 注册宏（可选，先于或晚于 M3） | 用 `clang -E` 展开读懂 |
 | **暂缓** | E1 perf、`SparseSet`、数学库 | 不阻塞主线 |
 
 benchmark 数据和结论统一写到 `benchmarks/README.md`；不要新建额外笔记文件。

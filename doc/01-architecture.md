@@ -322,6 +322,10 @@ class MessageQueue {                                     // 延迟调用：任�
 }
 ```
 
+**进程级入口**：与 `ClassDB` / `ObjectDB` 一致，提供 `[[nodiscard]] EventBus& yr::evt::globalEventBus() noexcept;`
+作为默认公共入口（函数内 static）。`EventBus` 仍允许公开构造，测试/需要隔离的场景可使用局部实例；
+未来 `Engine` 可以持有并暴露自己的 `EventBus`（`Engine::events()`），但默认路径是 `globalEventBus()`。
+
 **三条必须写进测试的语义**（这是本模块真正的难点，不是模板）：
 | 语义 | 决策 | 理由 |
 |---|---|---|
@@ -615,7 +619,7 @@ class Engine {                                    // 组装并拥有所有子系
   void shutdown();                                // **顺序与 initialize 严格相反**，写在文档里
   [[nodiscard]] scene::SceneTree& tree();
   [[nodiscard]] asset::AssetDatabase& assets();
-  [[nodiscard]] evt::EventBus& events();
+  [[nodiscard]] evt::EventBus& events();               // 可持有自己的总线；默认入口是 globalEventBus()
   [[nodiscard]] job::JobSystem& jobs();
   [[nodiscard]] render::RendererBackend* renderer();   // headless 时为 NullBackend 或 nullptr
   [[nodiscard]] FrameStats& stats();
@@ -662,7 +666,7 @@ class Engine {                                    // 组装并拥有所有子系
 | `SceneTree` / 所有 `Node` | Engine | 读写 | **禁止访问** | — |
 | `ClassDB` | 进程 | 读（启动时写） | 只读 | 启动后冻结（`freeze()` + assert） |
 | `ObjectDB` | Object | 读写 | **禁止** | — |
-| `EventBus` | Engine | 读写 | 只能 `post` 到 MPSC 队列 | 帧首合并 |
+| `EventBus` | 进程（默认 `globalEventBus`）/ Engine | 读写 | 只能 `post` 到 MPSC 队列 | 帧首合并 |
 | `AssetDatabase` 索引 | Asset | 读写 | 只读快照 | 加载任务只读路径表 |
 | 资源**原始字节/解码结果** | Job 内部 | 不碰 | 读写 | `pump()` 在主线程构造对象 |
 | `Transform3D` 数组（SoA） | Scene | 读 | **可并行写**（阶段 8） | 索引分片，无重叠 |
