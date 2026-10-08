@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <yr/core/assert.h>
 #include <yr/event/event_bus.h>
 #include <yr/event/subscription.h>
 
@@ -44,6 +45,15 @@ namespace {
   static_assert(!std::is_copy_assignable_v<EventBus>);
   static_assert(!std::is_move_constructible_v<EventBus>);
   static_assert(!std::is_move_assignable_v<EventBus>);
+
+  // 递归 flush 测试需要让断言"报告后继续"，否则默认 handler 会直接 trap。
+#if YR_ENABLE_ASSERTS
+  int g_flushAssertCount = 0;
+  yr::core::AssertAction flushCountingHandler(const yr::core::AssertInfo&) noexcept {
+    ++g_flushAssertCount;
+    return yr::core::AssertAction::kContinue;
+  }
+#endif
 
 } // namespace
 
@@ -201,7 +211,8 @@ TEST_CASE("event bus: move 赋值释放原有绑定并接管新订阅", "[event]
 }
 
 TEST_CASE("event bus: 没有订阅者时 publish 为 no-op", "[event][event_bus]") {
-  const EventBus bus;
+  // publish 非 const（深度计数/清理会修改 EventBus），因此这里用非 const 实例。
+  EventBus bus;
   bus.publish(DamageEvent{1});
   bus.publish(HealEvent{2});
   CHECK(true);
@@ -240,4 +251,167 @@ TEST_CASE("event bus: 可通过 globalEventBus 订阅/发布/RAII 退订", "[eve
   received = 0;
   yr::evt::globalEventBus().publish(GlobalBusProbeEvent{7});
   CHECK(received == 0);
+}
+
+TEST_CASE("event bus: post 不立即发布，flush 才按入队顺序派发", "[event][event_bus][post_flush]") {
+  EventBus bus;
+  std::vector<int> received;
+  const Subscription sub =
+      bus.subscribe<DamageEvent>([&received](const DamageEvent& event) { received.push_back(event.amount); });
+
+  bus.post(DamageEvent{11}); // 右值：走 move 路径
+  DamageEvent second{22};
+  bus.post(second); // 左值：走 copy 路径
+
+  CHECK(received.empty()); // post 不立即发布
+  CHECK(bus.pending() == 2);
+
+  bus.flush();
+
+  REQUIRE(received.size() == 2);
+  CHECK(received[0] == 11);
+  CHECK(received[1] == 22);
+  CHECK(bus.pending() == 0);
+}
+
+TEST_CASE("event bus: flush 按跨事件类型的 post 顺序派发", "[event][event_bus][post_flush]") {
+  EventBus bus;
+  std::vector<int> order;
+  const Subscription damage =
+      bus.subscribe<DamageEvent>([&order](const DamageEvent& event) { order.push_back(event.amount); });
+  const Subscription heal =
+      bus.subscribe<HealEvent>([&order](const HealEvent& event) { order.push_back(100 + event.amount); });
+
+  bus.post(DamageEvent{1});
+  bus.post(HealEvent{2});
+  bus.post(DamageEvent{3});
+  bus.post(HealEvent{4});
+  CHECK(order.empty());
+
+  bus.flush();
+
+  REQUIRE(order.size() == 4);
+  CHECK(order[0] == 1);
+  CHECK(order[1] == 102);
+  CHECK(order[2] == 3);
+  CHECK(order[3] == 104);
+}
+
+TEST_CASE("event bus: flush 期间 post 的事件留到下一次 flush", "[event][event_bus][post_flush]") {
+  EventBus bus;
+  std::vector<int> received;
+  const Subscription sub = bus.subscribe<DamageEvent>([&bus, &received](const DamageEvent& event) {
+    received.push_back(event.amount);
+    if (event.amount == 1) {
+      bus.post(DamageEvent{2}); // 必须进入另一缓冲，不在本轮派发
+    }
+  });
+
+  bus.post(DamageEvent{1});
+  bus.flush();
+
+  REQUIRE(received.size() == 1);
+  CHECK(received[0] == 1);
+
+  // 本次 flush 中 post 的事件等待下一次 flush。
+  CHECK(bus.pending() == 1);
+
+  bus.flush();
+
+  REQUIRE(received.size() == 2);
+  CHECK(received[1] == 2);
+  CHECK(bus.pending() == 0);
+}
+
+TEST_CASE("event bus: 空队列 flush 安全", "[event][event_bus][post_flush]") {
+  EventBus bus;
+
+  bus.flush();
+  bus.flush();
+
+  CHECK(bus.pending() == 0);
+}
+
+TEST_CASE("event bus: 递归 flush 直接返回且不处理下一队列", "[event][event_bus][post_flush][assert]") {
+  EventBus bus;
+  std::vector<int> received;
+  bool reentered = false;
+  const Subscription sub = bus.subscribe<DamageEvent>([&](const DamageEvent& event) {
+    received.push_back(event.amount);
+    if (!reentered) {
+      reentered = true;
+      bus.post(DamageEvent{99}); // 进入下一队列
+      bus.flush();               // 递归 flush：应为无副作用的 no-op
+    }
+  });
+
+  bus.post(DamageEvent{1});
+
+#if YR_ENABLE_ASSERTS
+  g_flushAssertCount = 0;
+  yr::core::setAssertHandler(flushCountingHandler);
+#endif
+  bus.flush();
+#if YR_ENABLE_ASSERTS
+  yr::core::setAssertHandler(nullptr);
+  CHECK(g_flushAssertCount == 1); // 触发断言但 handler 允许继续
+#endif
+
+  REQUIRE(received.size() == 1); // 递归 flush 没有提前派发 99
+  CHECK(received[0] == 1);
+  CHECK(bus.pending() == 1);
+
+  bus.flush();
+
+  REQUIRE(received.size() == 2);
+  CHECK(received[1] == 99);
+  CHECK(bus.pending() == 0);
+}
+
+TEST_CASE("event bus: move-only 事件可以 post/flush", "[event][event_bus][post_flush]") {
+  EventBus bus;
+  int observed = 0;
+  const Subscription sub =
+      bus.subscribe<MoveOnlyEvent>([&observed](const MoveOnlyEvent& event) { observed = *event.payload; });
+
+  bus.post(MoveOnlyEvent{std::make_unique<int>(7)});
+  CHECK(observed == 0);
+  CHECK(bus.pending() == 1);
+
+  bus.flush();
+
+  CHECK(observed == 7);
+  CHECK(bus.pending() == 0);
+}
+
+TEST_CASE("event bus: 连续多次 flush 正确切换队列，不重复不丢事件", "[event][event_bus][post_flush]") {
+  EventBus bus;
+  std::vector<int> received;
+  const Subscription sub = bus.subscribe<DamageEvent>([&bus, &received](const DamageEvent& event) {
+    received.push_back(event.amount);
+    if (event.amount % 2 == 1) {
+      bus.post(DamageEvent{event.amount + 1}); // 每次奇数事件派生一个偶数事件到下一轮
+    }
+  });
+
+  bus.post(DamageEvent{1});
+  bus.flush();
+  REQUIRE(received == std::vector<int>{1});
+  CHECK(bus.pending() == 1);
+
+  bus.flush();
+  REQUIRE(received == std::vector<int>{1, 2}); // 2 为偶数，不再派生
+  CHECK(bus.pending() == 0);
+
+  bus.post(DamageEvent{3});
+  bus.flush();
+  REQUIRE(received == std::vector<int>{1, 2, 3});
+  CHECK(bus.pending() == 1);
+
+  bus.flush();
+  REQUIRE(received == std::vector<int>{1, 2, 3, 4});
+  CHECK(bus.pending() == 0);
+
+  bus.flush(); // 已空，再次 flush 不应重复
+  REQUIRE(received == std::vector<int>{1, 2, 3, 4});
 }

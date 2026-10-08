@@ -308,7 +308,7 @@ class EventBus {
  public:
   template <typename E> Subscription subscribe(std::function<void(const E&)>);
   void unsubscribe(Subscription);
-  template <typename E> void publish(const E&);          // **立即**派发（同线程、可重入）
+  template <typename E> void publish(const E&);          // **立即**派发（同线程、可重入，同步深度上限 8）
   template <typename E> void post(const E&);             // **入队**，下一次 flush 时派发
   void flush();                                          // 由 MainLoop 在固定阶段调用
   [[nodiscard]] size_t pending() const noexcept;
@@ -330,7 +330,7 @@ class MessageQueue {                                     // 延迟调用：任�
 | 语义 | 决策 | 理由 |
 |---|---|---|
 | `publish` 期间订阅者 `unsubscribe` 自己 | 安全，本次调用照常执行完 | 否则回调里销毁自己 = 崩溃 |
-| `publish` 期间订阅者再 `publish` 同一事件 | 允许，但深度上限 8，超出转 `post` | 防止无限递归 |
+| `publish` 期间订阅者再 `publish` 同一事件 | 允许，但同步 publish 调用栈深度上限 8（总线级，不按事件类型分别计数）；第 9 层视为编程错误：Debug assert，所有构建都拒绝本次发布 | 防止无限递归；`publish(const E&)` 无法统一把 move-only 事件转入 `post`，故不实现"超限转 post" |
 | `flush` 期间 `post` 新消息 | 进**下一帧**队列（双缓冲） | 保证一帧内事件集合确定，可复现 |
 
 **线程约束**：`EventBus` 默认**仅主线程**。工作线程要发事件 → 通过 `JobSystem` 把"发布"本身作为任务投回主线程，或用一个 MPSC 队列在帧首合并。这条规则要在 M7 明确写下来并加 assert。

@@ -1,27 +1,24 @@
 #pragma once
 
-// TODO(M3b): post / flush（双缓冲）。
 // TODO(M3c): MessageQueue（延迟调用）。
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <functional>
+#include <memory>
 #include <typeindex>
 #include <unordered_map>
 #include <utility>
-#include <vector>
+#include <yr/core/assert.h>
 #include <yr/event/subscription.h>
 
 namespace yr::evt {
 
   // 类型化同步事件总线。
-  // - 每种事件类型 E 在 subscribers_ 里有一张独立分表：type_index → vector<Entry>。
-  // - 回调公开形式是强类型 void(const E&)；内部用 std::function<void(const void*)>
-  //   擦除类型。安全性来自"按 type_index 分区"：只有 publish<E> 会以 E* 解释该表的 payload。
-  // - 退订只把对应记录的 active 置 false，不删除 vector 元素，避免 publish 遍历期间迭代器失效。
-  // - 不拥有 Subscription：subscribe 返回的 Subscription 保存本总线的非拥有指针，
-  //   正常使用要求 Subscription 不晚于其 EventBus 销毁。避免全局/静态 Subscription；
-  //   确有需要时应在退出前显式 reset()。
-  // - 线程约束：暂定仅主线程；主线程 assert / MPSC 见 M3 后续（roadmap §M3）。
+  // - 每种事件类型 E 一张独立分表（type_index → deque<Entry>）；用 deque 保证 publish
+  //   回调中订阅同类型时不会移动正在执行的 std::function。
+  // - 回调以强类型 void(const E&) 公开，内部按 type_index 分区做类型擦除。
+  // - 仅主线程；主线程 assert / MPSC 见 roadmap §M3。
   class EventBus {
   public:
     EventBus() = default;
@@ -41,18 +38,35 @@ namespace yr::evt {
       return Subscription(this, std::type_index(typeid(E)), id);
     }
 
-    // 立即同步派发
-    template <typename E> void publish(const E& event) const {
+    // 同步 publish 调用栈深度上限
+    static constexpr std::size_t kMaxPublishDepth = 8;
+
+    // 立即同步派发，超限直接返回
+    template <typename E> void publish(const E& event) {
+      if (publishDepth_ >= kMaxPublishDepth) {
+        YR_ASSERT_MSG(publishDepth_ < kMaxPublishDepth, "EventBus::publish: max sync publish depth exceeded");
+        return;
+      }
+
+      ++publishDepth_;
+      struct DepthGuard {
+        EventBus& bus;
+        explicit DepthGuard(EventBus& target) noexcept : bus(target) {}
+        ~DepthGuard() {
+          if (--bus.publishDepth_ == 0) {
+            bus.cleanupInactive(); // inactive 清理推迟到最外层 publish 返回
+          }
+        }
+      } guard(*this);
+
       const auto it = subscribers_.find(std::type_index(typeid(E)));
       if (it == subscribers_.end()) {
         return;
       }
-      // 固定本轮订阅者数量：publish 期间新增的同类型订阅者不接收本次事件。
-      // 按索引访问而非迭代器，回调里 subscribe 造成的 vector 扩容不会让遍历越界；
-      // 但"publish 中订阅同一类型"（扩容会移动正在执行的 std::function）留待 M3 重入语义处理。
-      const std::size_t count = it->second.size();
+      std::deque<Entry>& entries = it->second;
+      const std::size_t count = entries.size();
       for (std::size_t i = 0; i < count; ++i) {
-        const Entry& entry = it->second[i];
+        Entry& entry = entries[i];
         if (entry.active) {
           entry.callback(&event);
         }
@@ -61,6 +75,20 @@ namespace yr::evt {
 
     void unsubscribe(Subscription& sub) noexcept;
 
+    // 入队事件，不立即派发；下一次 flush() 时按 post 顺序（跨类型）派发。
+    template <typename E> void post(E&& event) {
+      using EventType = std::decay_t<E>;
+      auto& queue = writeQueueIs0_ ? pendings0_ : pendings1_;
+      queue.push_back(std::make_unique<TypedPendingEvent<EventType>>(std::forward<E>(event)));
+    }
+
+    void flush();
+
+    // 等待下一次 flush 派发的事件数（即当前写缓冲的长度）
+    [[nodiscard]] std::size_t pending() const noexcept {
+      return writeQueueIs0_ ? pendings0_.size() : pendings1_.size();
+    }
+
   private:
     struct Entry {
       std::uint32_t id = 0;
@@ -68,12 +96,36 @@ namespace yr::evt {
       std::function<void(const void*)> callback;
     };
 
-    std::unordered_map<std::type_index, std::vector<Entry>> subscribers_;
+    // 类型擦除的待派发事件：虚函数在 flush 时回调到 EventBus::publish<E>。
+    struct PendingEvent {
+      virtual ~PendingEvent() = default;
+      virtual void dispatch(EventBus& bus) = 0;
+    };
+
+    template <typename E> struct TypedPendingEvent final : PendingEvent {
+      explicit TypedPendingEvent(E value) : event(std::move(value)) {}
+      void dispatch(EventBus& bus) override { bus.publish<E>(event); }
+      E event;
+    };
+
+    // 物理删除所有分表里 active == false 的 Entry。只在 publishDepth_ 归零（栈上无任何
+    // publish）时调用，否则 erase 会使外层 publish 正在遍历的分表失效。保留空分表。
+    void cleanupInactive();
+
+    std::unordered_map<std::type_index, std::deque<Entry>> subscribers_;
     std::uint32_t nextId_ = 1;
+
+    // 总线级同步 publish 调用栈深度（不按事件类型分开）；用于把 inactive 清理推迟到最外层。
+    std::size_t publishDepth_ = 0;
+
+    // 双缓冲待派发队列：writeQueueIs0_ 明确表示"post 当前写入哪个队列"：
+    std::deque<std::unique_ptr<PendingEvent>> pendings0_;
+    std::deque<std::unique_ptr<PendingEvent>> pendings1_;
+    bool writeQueueIs0_ = true;
+    bool flushing_ = false;
   };
 
-  // 进程级默认事件总线（函数内 static，与 globalClassDB / globalObjectDB 一致）。
-  // 公共使用路径通过它共享同一实例；EventBus 仍可公开构造，局部实例用于测试/隔离。
+  // 进程级默认事件总线
   [[nodiscard]] EventBus& globalEventBus() noexcept;
 
 } // namespace yr::evt

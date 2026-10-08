@@ -209,7 +209,7 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 - [ ] `yr/event/subscription.h`：强类型 `Subscription`（RAII，析构自动退订）
 - [ ] `yr/event/event_bus.h`：吸收 yo_lib `yo_eventsys.h` 并按 §4.5 重构（删 `lastMsg_`、强类型 token、`publish`/`post` 分离、双缓冲队列）
 - [ ] `yr/event/message_queue.h`：`MessageQueue`（deferred call：`ObjectID` + `StringId` + `vector<Variant>`；flush 期间新增进下一帧）
-- [ ] 重入策略实现 + assert：发布深度上限、退订自己安全、flush 双缓冲
+- [ ] 重入策略实现 + assert：发布深度上限 8（第 9 层为编程错误，Debug assert 且拒绝，不转 post）、退订自己安全、flush 双缓冲
 - [ ] 线程约束：`EventBus::publish` 加主线程 assert；提供 `post_from_any_thread`（MPSC，帧首合并）
 - [ ] 把 `Object::notification()` 与 EventBus 的分工想清楚（notification = 定向、沿继承链传播；event = 广播、跨模块），结论写进两者的头文件注释
 - [ ] 测试：§4.5 表格里那三条语义各一个用例；1000 事件/帧的压力测试；订阅者抛异常/退订其他订阅者的边界测试
