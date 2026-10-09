@@ -44,6 +44,12 @@ static_assert(sizeof(IntHandle) == sizeof(FloatHandle));
 
 // 位布局自洽
 static_assert(yr::core::HandleBits::kIndexBits + yr::core::HandleBits::kGenerationBits == 64);
+static_assert(yr::core::HandleBits::kGenerationMask == ((uint64_t{1} << 40) - 1));
+
+// 与 ObjectID 同一约定：generation 规范化到 40 位，回绕后跳过 0。
+static_assert(yr::core::HandleBits::nextGeneration(1) == 2);
+static_assert(yr::core::HandleBits::nextGeneration((uint64_t{1} << 40) - 1) == 1);
+static_assert(yr::core::HandleBits::nextGeneration(0) == 1);
 
 // ============================================================================
 // 无效值语义
@@ -114,6 +120,23 @@ TEST_CASE("handle: generation 取较大值时不被截断", "[core][handle]") {
 
   CHECK(h.index() == 3);
   CHECK(h.generation() == kBigGen);
+}
+
+TEST_CASE("handle: encode 把 generation 掩码到 40 位", "[core][handle]") {
+  using Bits = yr::core::HandleBits;
+
+  CHECK(Bits::encode(7, 5) == rawOf(7, 5));
+  // 超过 40 位的 generation 在编码时被截断，解码只看到规范化后的低 40 位
+  CHECK((Bits::encode(3, (uint64_t{1} << 40) + 5) >> Bits::kIndexBits) == 5);
+}
+
+TEST_CASE("handle: generation 回绕从 0 跳到 1（无需循环 2^40 次）", "[core][handle]") {
+  using Bits = yr::core::HandleBits;
+  constexpr uint64_t kMaxGeneration = (uint64_t{1} << 40) - 1;
+
+  CHECK(Bits::nextGeneration(1) == 2);
+  CHECK(Bits::nextGeneration(kMaxGeneration) == 1); // 最大 + 1：回绕并跳过 0
+  CHECK(Bits::nextGeneration(0) == 1);              // 0 保留给 invalid，不作为合法 generation
 }
 
 // ============================================================================

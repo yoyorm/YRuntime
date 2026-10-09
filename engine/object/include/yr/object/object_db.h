@@ -30,6 +30,7 @@ namespace yr::obj {
   private:
     struct ObjectSlot {
       Object* object = nullptr;
+      // 规范化到 ObjectIDBits::kGenerationBits 位；0 保留给 invalid ID，回绕时跳过 0。
       std::uint64_t generation = 1;
     };
 

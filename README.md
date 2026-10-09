@@ -5,7 +5,7 @@
 > 先跑通一个 headless 的文字冒险 Demo，再把自研 Vulkan 渲染器作为可替换 Backend 接入，
 > 形成 `游戏状态 → Runtime → Renderer → GPU` 的完整链路。全程以 Godot 4.x 源码为参照系。
 
-![status](https://img.shields.io/badge/status-M1__closing-blue)
+![status](https://img.shields.io/badge/status-M3%20done%20M4%20next-brightgreen)
 ![CI](https://github.com/yoyorm/YRuntime/actions/workflows/ci.yml/badge.svg)
 ![cxx](https://img.shields.io/badge/C%2B%2B-20-00599C?logo=c%2B%2B&logoColor=white)
 ![platform](https://img.shields.io/badge/platform-Linux-lightgrey)
@@ -13,16 +13,15 @@
 
 ---
 
-## 当前状态：M2 进行中
+## 当前状态：M3 单线程 EventBus 已收口，下一主线 M4
 
 | M | 里程碑 | 状态 | 可运行物 |
 |---|---|---|---|
 | M0 | 工程地基（CMake/CI/Catch2/assert/log） | ✅ | `ctest` 全绿 + CI |
-| M1 | 句柄、容器、时间、字符串 | 🔨 | Handle/SlotMap/Timer/StringId/ObjectID ✅；perf 结论待做 |
-| M2 | 反射与对象模型 | 🔨 | Object/ObjectDB/Variant/ClassInfo/ClassDB ✅；`yr_inspect` 待做 |
-| M2 当前门禁 | — | — | M2g `yr_inspect`（暂缓）/ M2f 宏（暂缓） |
-| M3 | 事件系统与延迟调用 | ⬜ | 事件确定性重放测试 |
-| M4 | 场景树与主循环 | ⬜ | headless 世界 tick 10000 帧 |
+| M1 | 句柄、容器、时间、字符串 | ✅ 核心完成 | Handle/SlotMap/Timer/StringId/ObjectID ✅；E1 perf 结论未做（非阻塞） |
+| M2 | 反射与对象模型 | ✅ 核心完成 | Object/ObjectDB/Variant/ClassInfo/ClassDB ✅；`yr_inspect`、注册宏延后 |
+| M3 | 事件系统（**单线程 EventBus**） | ✅ 单线程范围完成 | Subscription RAII、同步 subscribe/publish/unsubscribe、post/flush、重入与深度上限 8、确定性重放 + 1000 事件测试 |
+| M4 | 场景树与主循环 | 🔨 **下一主线** | 从 Node 父子关系 / lifecycle 语义开始；目标 headless 世界 tick 10000 帧 |
 | M5 | 序列化与场景资源 | ⬜ | 手写 `.yrscn` + round-trip diff 为空 |
 | M6 | 资源系统（异步加载） | ⬜ | 慢 IO 下不卡帧的加载曲线 |
 | M7 | 任务系统（并行） | ⬜ | 加速比曲线 + TSan 干净 |

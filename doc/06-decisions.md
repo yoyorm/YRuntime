@@ -94,7 +94,7 @@
 
 **后果**：+ 各自的性能与安全都最优；− 概念数量 +1，新人（含 3 个月后的你）容易混 → 必须在 `01-architecture.md` §4.1 与两个类型的头文件注释里各放一张对照表。
 
-**待定子问题**：generation 位宽（40 bit 是否浪费？32/32 是否够？）、`Handle<T>` 是否允许 `Handle<const T>`、哈希函数选择 → 待 benchmark E1 实测后决定；generation 回绕见 START-HERE R5（接受，不测）。
+**待定子问题**：generation 位宽（40 bit 是否浪费？32/32 是否够？）、`Handle<T>` 是否允许 `Handle<const T>`、哈希函数选择 → 待 benchmark E1 实测后决定；generation 回绕后的 ABA 见 START-HERE R5（接受，不做注入机制），但 generation 自增本身统一规范化到 40 位并在回绕时跳过 0（`HandleBits` / `ObjectIDBits::nextGeneration`，边界用静态测试覆盖）。
 
 ---
 

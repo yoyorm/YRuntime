@@ -10,44 +10,47 @@
 | 里程碑 | 状态 |
 |---|---|
 | **M0 工程地基** | ✅ 已完成（`v0.M0`：CMake / CI / Catch2 / assert / log） |
-| **M1 句柄、容器、时间、字符串** | 🔨 收口中 —— Handle/SlotMap/ScopeTimer/StringId/ObjectID 已完成；E1 perf 待做 |
-| **M2 反射与对象模型** | 🔨 进行中 —— Object/ObjectDB/Variant（10 tag）/PropertyInfo/ClassInfo 完成；下一步 M2e `ClassDB` |
-| M3 ~ M11 | ⬜ 未开始 |
+| **M1 句柄、容器、时间、字符串** | ✅ 核心完成 —— Handle/SlotMap/ScopeTimer/StringId/ObjectID 完成；E1 perf 结论未做（非阻塞） |
+| **M2 反射与对象模型** | ✅ 核心完成 —— Object/ObjectDB/Variant（10 tag）/PropertyInfo/ClassInfo/ClassDB 完成；`yr_inspect`、注册宏延后 |
+| **M3 单线程 EventBus** | ✅ 已完成 / 收口（2026-10-08） |
+| **M4 场景树与主循环** | 🔨 **下一主线** |
+| M5 ~ M11 | ⬜ 未开始 |
 
 进度**只在两处维护**：根 `README.md` 的里程碑表（对外）+ `02-roadmap.md` 的 checkbox（对内）。
 别的地方不要重复记录，否则一定会漂移。
 
 ---
 
-## 2. 下一步：M3 事件系统（或补 M2f 宏）
+## 2. 下一步：M4 场景树与主循环
 
-M2 内已完成（2026-10-06）：
+### M3 已完成：单线程 EventBus（2026-10-08）
 
-- `Variant`：10 个 tag（null/bool/int/float/StringId/ObjectID/string/array/dict/vec3），Rule of Five、深拷贝/移动、比较、保序 Dict
-- `PropertyInfo` / `ClassInfo`：手工注册、按名字 get/set、继承链、遮蔽
-- `ClassDB` + `register_core_classes()`：注册表、按名查询、`inheritorsOf`、`freeze`、SIOF 测试
-- `Vec3`：最小运算（暂放 object 层，M4/M9 前迁到 `yr/core`）
+- `Subscription` RAII：析构 / `reset()` 自动退订，move-only
+- `EventBus` 同步 `subscribe` / `publish` / `unsubscribe`：订阅按注册顺序、类型分表隔离
+- `post` / `flush` 双缓冲：flush 中 `post` 进下一轮、支持 move-only 事件、递归 flush 防护
+- 重入语义：回调退订自己 / 他人安全、inactive 延迟到最外层清理、统一同步深度上限 8（第 9 层拒绝）
+- `globalEventBus`，以及确定性重放 + 1000 事件正确性测试
 
-M2 剩余（已决定延后）：
-- **M2g `yr_inspect`**：命令行反射查看器；等 M4/M8 有真实类后再做成 M2 的可运行物
-- **M2f 注册宏** `YR_CLASS` / `YR_PROPERTY`：手工注册已够用，等类多了再做（R3；宏工程是最大的调试黑洞）
-- `instantiate` 所有权 / `RefCounted` / `Ref<T>`：和 M5 反序列化一起做
+### M3 明确推迟（不要当成已完成）
 
-接下来：
+- **`MessageQueue`**：`ObjectID + StringId method + vector<Variant>` 的延迟调用。它依赖尚未实现的**方法绑定**
+  与未来 `MainLoop` 的**安全 flush 点**（帧阶段 2），**不是纯多线程功能**；两样具备后再做
+- **`post_from_any_thread` / MPSC / TSan 验证**：推迟到 **M7**
+- 事件追踪日志、`std::function` 性能实验：非阻塞优化，不阻塞主线
 
-| 顺序 | 内容 | 分工 |
-|---|---|---|
-| **1** | M3：`yr_event`（EventBus + Subscription + MessageQueue + 确定性重放测试） | 有明确语义和可运行物 |
-| **2** | M2f 注册宏（可选，先于或晚于 M3） | 用 `clang -E` 展开读懂 |
-| **暂缓** | E1 perf、`SparseSet`、数学库 | 不阻塞主线 |
+### M4 第一个可独立任务（一次只引入一个概念）
+
+1. **先研究并定义最小 `Node` 父子关系 / lifecycle 语义，不写代码骨架**：单亲指针 + 子列表的所有权规则、
+   `add_child` / `remove_child` 的前置条件、`kEnterTree` / `kReady`（后序）/ `kExitTree` 的触发顺序，
+   以及 `queue_free` 为什么必须延迟到安全点。
+2. **动笔前读**：`01-architecture.md` §4.6 `Node` / `SceneTree`；`04-godot-study.md` 的
+   "Node 生命周期" 行（`scene/main/node.h` + `node.cpp` 的 `_propagate_ready` / `_propagate_enter_tree` /
+   `_propagate_exit_tree`）。
+3. 产物先在对话里定成一页设计结论（仓库不产出笔记）；确认后再落 `yr/scene/node.h` 最小头文件。
+
+之后再按 `02-roadmap.md` M4 清单逐项推进（`NodePath`、`SceneTree`、`MainLoop` 阶段……），**不要一次实现整章**。
 
 benchmark 数据和结论统一写到 `benchmarks/README.md`；不要新建额外笔记文件。
-
-### 时间线判断
-
-M0~M1 的基础设施占用约 3~4 周是合理的：它们建立的是后续所有模块都会复用的构建、测试、生命周期引用和字符串命名基础，约占整个 6~9 个月计划的 10%~15%。但从现在开始不能继续扩张 M1；E1 的 `perf` 数据是收口工作，不应阻塞 M2。
-
-M4 虽然在路线图中排在 M2、M3 之后，但按当前节奏预计在第 7~10 周开始，仍属于前两个月内，不算过晚。M2/M3 为场景树提供 ObjectID、通知、事件和延迟调用语义。为了避免长期看不到 Runtime，M2 完成最小 Object 模型后，可以提前准备一个极小的 tick 骨架，但正式的 `SceneTree/MainLoop` 仍在 M4 实现。
 
 **非阻塞待办**（不急，别打断主线）：
 - log 的 fmt 格式化、时间戳 / 帧号 / 线程 ID、SBO 优化 → 见 `02-roadmap.md`
@@ -65,7 +68,7 @@ M4 虽然在路线图中排在 M2、M3 之后，但按当前节奏预计在第 7
 | **R2** | 两个方案都行 → **选代码更少、概念更少的那个** |
 | **R3** | 不确定要不要做 → 现在不做，写 `// TODO(M?)`，等它真的痛了再做 |
 | **R4** | 只有"影响 ≥1 天工作量"或"改起来很贵"的选择，才值得停下来讨论 |
-| **R5** | 理论极值 / 可预测的边界（例：generation 回绕）→ 理解并接受即可，不写测试、不做注入机制 |
+| **R5** | 理论极值 / 可预测的边界（例：generation 回绕）→ 理解并接受即可，不做注入机制；但**边界算术本身**（掩码、跳过 0）可用纯 helper 静态测试覆盖，无需真实触发 2^40 次 |
 | **R6** | 纯粹的工程完备性（覆盖率门禁、tidy 全绿、make it "工业级"）→ 与学习价值无关就不做。**这是学习项目，理解 > 完成 > 展示** |
 
 **讨论完怎么落地**：绝大多数问题**在对话里解决掉就完了，不产生新文档**。

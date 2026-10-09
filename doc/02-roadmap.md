@@ -15,7 +15,7 @@
 | M0 | 工程地基 | 1 | `yr_core`(壳) `tests/core` | `cmake --preset && ctest` 全绿 + CI 徽章 | ★ |
 | M1 | 句柄与容器 | 1~2 | `yr_core` | benchmark 报告：SlotMap vs unordered_map | ★★ |
 | M2 | 反射与对象模型 | 2~3 | `yr_object` `yr_inspect` | `yr_inspect --all` 打印所有类与属性 | ★★★★ |
-| M3 | 事件与延迟调用 | 1~2 | `yr_event` | 事件重入/顺序测试全绿 + 事件追踪日志 | ★★ |
+| M3 | 事件系统（单线程 EventBus） | 1~2 | `yr_event` | 确定性重放 + 1000 事件正确性测试全绿（MessageQueue 与跨线程 post 推迟） | ★★ |
 | M4 | 场景树与主循环 | 3~4 | `yr_scene` `yr_engine` | **headless 世界 tick 10000 帧**（可录屏终端输出） | ★★★★★ |
 | M5 | 序列化与场景资源 | 3~4 | `yr_serialize` | 手写 `.yrscn` 加载 + 存读档 round-trip diff | ★★★★★ |
 | M6 | 资源系统 | 2~3 | `yr_asset` | 异步加载进度条（模拟慢 IO 不卡帧） | ★★★★ |
@@ -120,7 +120,7 @@
 
 **产出物**：`benchmarks/` 下的 benchmark 代码 + `benchmarks/README.md` 里的数据表与结论（方法必须可复现：硬件、编译选项、迭代次数、如何防止被优化掉）。
 **学习点**：位打包、稠密/稀疏数组、cache line、false sharing 初体验、`std::chrono`、benchmark 方法论（预热、多次取中位数、防编译器优化掉）。
-**常见坑**：① generation 溢出回绕导致 ABA（40 bit 下需 2^40 次同 slot 复用，实际不可达；已知并接受，不写注入机制、不测——见 START-HERE R5）；② `SlotMap::get` 返回 `T*` 后容器扩容导致指针失效（文档写明"指针只在本帧有效"）；③ StringId 的哈希冲突（用"hash 定位 + 字符串比较确认"，不要只信 hash）。
+**常见坑**：① generation 溢出回绕导致 ABA（40 bit 下需 2^40 次同 slot 复用，实际不可达；回绕后的 ABA 已知并接受，不做注入机制——见 START-HERE R5；但 generation 自增已统一掩码到 40 位并在回绕时跳过 0，边界算术用 helper 静态测试覆盖）；② `SlotMap::get` 返回 `T*` 后容器扩容导致指针失效（文档写明"指针只在本帧有效"）；③ StringId 的哈希冲突（用"hash 定位 + 字符串比较确认"，不要只信 hash）。
 **Godot 对照**：`core/templates/rid.h` + `rid_owner.h`（generation + slot）、`core/object/object_id.h`、`core/string/string_name.h`（StringName 的实现，含 512 个 slot 的 hash 表）。
 **降级方案**：`SparseSet` 与数学库已直接推到 M4（见上方 ⏸ 标记），本里程碑不再包含它们。
 
@@ -148,7 +148,7 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 |---|---:|---|---|
 | M0~M1 | 3~4 周 | 工程地基、句柄、字符串、时间、性能测量 | `ctest` 全绿 + E1 数据 |
 | M2 | 2~3 周 | ObjectID/ObjectDB、Variant、最小 ClassDB、反射查看 | `yr_inspect --all` |
-| M3 | 1~2 周 | EventBus、Subscription、MessageQueue | 确定性事件重放测试 |
+| M3 | 1~2 周 | 单线程 EventBus（Subscription/post/flush/重入）；MessageQueue 推迟 | 确定性重放 + 1000 事件测试 |
 | M4 | 3~4 周 | Node、SceneTree、MainLoop、延迟删除、headless tick | 10000 帧 `tick_sandbox` |
 
 按 5~8 小时/周计算，M4 应在项目开始后约第 7~10 周出现，这个位置合理。M2 超过 3 周时，应砍掉方法绑定、复杂 Variant 类型和工具输出细节，而不是继续推迟 M4。
@@ -206,32 +206,44 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 
 **目标**：让模块之间不需要互相 include 就能通信，并解决"回调里改容器"的经典难题。
 
-- [ ] `yr/event/subscription.h`：强类型 `Subscription`（RAII，析构自动退订）
-- [ ] `yr/event/event_bus.h`：吸收 yo_lib `yo_eventsys.h` 并按 §4.5 重构（删 `lastMsg_`、强类型 token、`publish`/`post` 分离、双缓冲队列）
+**收口范围（2026-10-08）**：本轮完成的是**单线程 EventBus**（核心 / 单线程范围完成）。
+`MessageQueue` 与跨线程 `post` 未实现，推迟理由见下。
+
+- [x] `yr/event/subscription.h`：强类型 `Subscription`（RAII，析构自动退订）✅ 2026-10-08
+- [x] `yr/event/event_bus.h`：按 §4.5 重构（删 `lastMsg_`、强类型 token、`publish`/`post` 分离、双缓冲队列、`globalEventBus`）✅ 2026-10-08
 - [ ] `yr/event/message_queue.h`：`MessageQueue`（deferred call：`ObjectID` + `StringId` + `vector<Variant>`；flush 期间新增进下一帧）
-- [ ] 重入策略实现 + assert：发布深度上限 8（第 9 层为编程错误，Debug assert 且拒绝，不转 post）、退订自己安全、flush 双缓冲
+      ⏸ **推迟**：依赖尚未实现的**方法绑定**与未来 `MainLoop` 的**安全 flush 点**（§4.5 / 帧阶段 2）。它不是纯多线程功能，和方法绑定/M4 一起具备后再做
+- [x] 重入策略实现 + assert：发布深度上限 8（第 9 层为编程错误，Debug assert 且拒绝，不转 post）、退订自己安全、flush 双缓冲 ✅ 2026-10-08
 - [ ] 线程约束：`EventBus::publish` 加主线程 assert；提供 `post_from_any_thread`（MPSC，帧首合并）
+      ⏸ **推迟到 M7**：与线程模型、TSan 一起做；单线程契约目前只写在头文件/架构注释里，不加 assert
 - [ ] 把 `Object::notification()` 与 EventBus 的分工想清楚（notification = 定向、沿继承链传播；event = 广播、跨模块），结论写进两者的头文件注释
-- [ ] 测试：§4.5 表格里那三条语义各一个用例；1000 事件/帧的压力测试；订阅者抛异常/退订其他订阅者的边界测试
+      ⏸ 随 `Object::notification` 本身（M4 的 Node 生命周期通知）一起做
+- [x] 测试：§4.5 表格里那三条语义各一个用例；1000 事件/帧的压力测试；订阅者抛异常/退订其他订阅者的边界测试；确定性重放 ✅ 2026-10-08
 - [ ] 事件追踪：`YR_LOG_DEBUG` 打印每次 publish 的类型与订阅者数量（调试期极其有用）
+      ⏸ **非阻塞优化**：不阻塞 M3 收口，需要调试时再加
 
 **验收标准**
-- §4.5 三条语义测试全绿（**这三条是模块的真正交付物**）。
-- `Subscription` 析构后不再收到事件（RAII 测试）。
-- 同一帧内事件派发顺序确定（同样输入两次运行日志逐字节相同）——这是"可复现"的基础，写进测试。
-- TSan preset 下 `post_from_any_thread` + 主线程 flush 无竞争报告。
+- [x] §4.5 三条语义测试全绿（**这三条是模块的真正交付物**）✅ 2026-10-08
+- [x] `Subscription` 析构后不再收到事件（RAII 测试）✅
+- [x] 同一帧内事件派发顺序确定（同样输入两次运行完整回调日志逐项相同，使用局部 EventBus，不依赖全局残留）✅ 2026-10-08
+- [ ] TSan preset 下 `post_from_any_thread` + 主线程 flush 无竞争报告 ⏸ 推迟到 M7
 
-**产出物**：一个"确定性重放"测试（同输入两次运行日志逐字节相同）。
-**学习点**：`std::function` 的堆分配与小对象优化、变参模板、MPSC 队列、重入与迭代器失效、RAII 句柄。
-**常见坑**：① `std::function` 捕获大对象导致每次订阅都堆分配（测一下，决定是否用 `unique_function` + 移动）；② 事件类型用 `typeid` 做 key 的 RTTI 开销与跨 TU 一致性（yo_lib 用 `type_index`，可以保留但要理解代价；更好的是用 §4.5 的 `kTypeId` 静态常量）；③ flush 中 post 导致死循环。
-**Godot 对照**：`core/object/object.h` 的 signal（`connect`/`emit_signal`/`Callable`）、`core/object/message_queue.h/.cpp`（**精读**：双缓冲、flush 时机、`push_call`）、`core/object/callable_mp.h`（成员函数指针 → Callable 的擦除手法，与 M2 的属性适配同源）。
-**降级方案**：不做 `post_from_any_thread`（推到 M7）；`MessageQueue` 只支持无参调用。
+**产出物**：确定性重放测试（同输入两次运行完整回调日志逐项相同）✅ 2026-10-08。
+**学习点**：`std::function` 的堆分配与小对象优化、重入与迭代器失效、RAII 句柄（已覆盖）；变参模板、MPSC 队列随 M7 一起补。
+**常见坑**：① `std::function` 捕获大对象导致每次订阅都堆分配（性能实验推迟，非阻塞）；② 事件类型用 `typeid` 做 key 的 RTTI 开销与跨 TU 一致性（当前保留 `type_index`，理解代价即可）；③ flush 中 post 导致死循环（双缓冲已解决，递归 flush 有 assert）。
+**Godot 对照**：`core/object/object.h` 的 signal（`connect`/`emit_signal`/`Callable`）；`core/object/message_queue.h/.cpp` 与 `core/object/callable_mp.h` 推迟到 MessageQueue 解禁后再精读。
+**降级方案**：`post_from_any_thread` 推到 M7（已执行）；`MessageQueue` 整体推迟到方法绑定 + `MainLoop` 安全点具备后（已执行）。
 
 ---
 
 ## M4 · 场景树与主循环（3~4 周）★ 运行时的灵魂
 
 **目标**：**第一次有一个"活着的世界"**。这个里程碑结束时，你应该能在终端看到一个世界 tick 一万帧，节点在创建、更新、销毁。
+
+> **M4 第一步（建议，一次只引入一个概念）**：先研究并定义最小 `Node` 父子关系 / lifecycle 语义
+> （单亲指针 + 子列表所有权、`add_child`/`remove_child` 前置条件、`kEnterTree`/`kReady`（后序）/`kExitTree` 顺序、
+> `queue_free` 安全点），确认设计后再落 `yr/scene/node.h` 最小头文件。动笔前读 `01-architecture.md` §4.6
+> 与 `04-godot-study.md` 的 "Node 生命周期" 行。
 
 - [ ] **（从 M1 推来）** `yr/core/math.h`：只做 Transform 需要的部分（`Vec3` + `Mat4` + TRS 合成 + 求逆）；不要一次写全（D4）
 - [ ] **（从 M1 推来，可选）** `yr/core/sparse_set.h`：**只在 S3（ECS 数据层）真要做时才写**。Transform 用普通 SoA 数组就够，不必先造 SparseSet

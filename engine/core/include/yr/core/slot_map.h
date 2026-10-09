@@ -20,7 +20,7 @@ namespace yr::core {
       } else {
         slot = freelist_.back();
         freelist_.pop_back();
-        generation_[slot]++;
+        generation_[slot] = HandleBits::nextGeneration(generation_[slot]);
       }
       const uint32_t pos = static_cast<uint32_t>(dense_.size()); // 先得到size 再 push，无需后续size -1
       dense_.emplace_back(std::move(val));
@@ -106,10 +106,10 @@ namespace yr::core {
 
     // 清空
     void clear() {
-      // 不能重置计数器，并且需要++generation 来让旧handle失效
+      // 不能重置计数器，并且需要前进 generation（规范化 + 跳过 0）来让旧handle失效
       for (std::size_t slot = 0; slot < slot2dense_.size(); ++slot) {
         if (slot2dense_[slot] != kInvalidDense) {
-          ++generation_[slot];
+          generation_[slot] = HandleBits::nextGeneration(generation_[slot]);
           slot2dense_[slot] = kInvalidDense;
           freelist_.push_back(static_cast<uint32_t>(slot));
         }

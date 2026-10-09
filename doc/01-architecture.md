@@ -34,7 +34,7 @@ graph TD
     OBJ["yr_object<br/><i>yr::obj</i><br/>Object·ObjectID·ClassDB<br/>PropertyInfo·Variant·Ref"]
     RIF["yr_render_iface<br/><i>yr::render</i><br/>RenderSnapshot · RendererBackend<br/>纯 POD 契约，零 Runtime 依赖"]
 
-    EVT["yr_event<br/><i>yr::evt</i><br/>EventBus·MessageQueue"]
+    EVT["yr_event<br/><i>yr::evt</i><br/>EventBus（单线程）·MessageQueue（推迟）"]
     SER["yr_serialize<br/><i>yr::ser</i><br/>VariantCodec·Text/Binary Writer"]
     AST["yr_asset<br/><i>yr::asset</i><br/>Resource·AssetDatabase·Loader/Saver·Pak"]
 
@@ -72,7 +72,7 @@ graph TD
 | `yr_core` | `yr::core` | 仅 std | 句柄、容器、字符串驻留、日志、断言、时间 | M0~M1 |
 | `yr_job` | `yr::job` | core | 线程池 + 任务依赖图 | M7 |
 | `yr_object` | `yr::obj` | core | 对象模型 + 反射 + 动态值 | M1~M2 |
-| `yr_event` | `yr::evt` | object | 类型化事件总线 + 延迟调用队列 | M3 |
+| `yr_event` | `yr::evt` | object | 类型化同步事件总线（单线程）；延迟调用队列推迟 | M3 |
 | `yr_serialize` | `yr::ser` | object | 值/属性的编解码与格式后端 | M5 |
 | `yr_asset` | `yr::asset` | object, job | 资源注册、加载、卸载、pak | M6 |
 | `yr_scene` | `yr::scene` | object, event, serialize, asset | 节点树 + 场景树 + 场景存读档 | M4~M5 |
@@ -174,7 +174,7 @@ template <typename T> class SlotMap {             // 稠密数组 + 空闲链，
 ```
 
 **所有权**：`SlotMap` 独占其元素。`Handle` 不延长生命周期（弱引用语义）。需要延长生命周期时用 `Ref<T>`（§4.4）。
-**失败模式**：① 用失效句柄访问 → `get()` 返回 nullptr / `operator[]` Debug assert；② index 复用导致 ABA → generation 位数足够（40 bit 回绕不可达，接受不测，见 START-HERE R5）；③ `Handle<void>` 与 `Handle<T>` 混用 → 模板参数强制类型，转换需显式 `Handle<T>::from_void()`。
+**失败模式**：① 用失效句柄访问 → `get()` 返回 nullptr / `operator[]` Debug assert；② index 复用导致 ABA → generation 位数足够（40 bit 回绕不可达，接受其后的 ABA，见 START-HERE R5；但 generation 自增会先掩码到 40 位并在回绕时跳过 0，边界算术用 helper 静态测试覆盖）；③ `Handle<void>` 与 `Handle<T>` 混用 → 模板参数强制类型，转换需显式 `Handle<T>::from_void()`。
 **Godot 对照**：`core/templates/rid.h`（`RID`）、`core/templates/rid_owner.h`（`RID_Owner`，就是 slot map + generation）、`core/object/object_id.h`。
 **学习点**：位域打包、稠密/稀疏数组、cache 局部性（写 benchmark 对比 `std::unordered_map`，见 `03-learning-map.md` §4）。
 
@@ -321,6 +321,11 @@ class MessageQueue {                                     // 延迟调用：任�
 };
 }
 ```
+
+> **实现状态（2026-10-08）**：`EventBus` / `Subscription` 已按下方三条语义实现（**单线程**）。
+> `MessageQueue` **尚未实现**：它的 `(ObjectID, StringId method, vector<Variant>)` 依赖尚未具备的**方法绑定**，
+> 且需要一个**未来 `MainLoop` 的安全 flush 点**（帧阶段 2，见 §5）。这与多线程无关，方法绑定与 MainLoop
+> 就位后再做；`post_from_any_thread` / MPSC 明确推迟到 **M7**（线程模型）。
 
 **进程级入口**：与 `ClassDB` / `ObjectDB` 一致，提供 `[[nodiscard]] EventBus& yr::evt::globalEventBus() noexcept;`
 作为默认公共入口（函数内 static）。`EventBus` 仍允许公开构造，测试/需要隔离的场景可使用局部实例；
@@ -640,7 +645,7 @@ class Engine {                                    // 组装并拥有所有子系
 |---|---|---|---|---|
 | 0 | `begin_frame` | `Clock` 采样墙钟、算 `game_delta`、累加 physics accumulator | 主 | 否 |
 | 1 | `poll_input` | 平台输入 → `InputEvent`（headless 下从脚本/命令注入） | 主 | 否 |
-| 2 | `flush_messages` | `MessageQueue::flush()`（上一帧的 deferred call） | 主 | 是（安全点） |
+| 2 | `flush_messages` | `MessageQueue::flush()`（上一帧的 deferred call；**尚未实现**，见 §4.5） | 主 | 是（安全点） |
 | 3 | `flush_events` | `EventBus::flush()`（上一帧 post 的事件） | 主 | 是（安全点） |
 | 4 | `pump_assets` | `AssetDatabase::pump()`：完成异步加载回调、失败上报 | 主 | 是 |
 | 5 | `pre_physics` | 派发 `kPrePhysicsProcess` | 主 | 否（只改数据） |
@@ -666,7 +671,7 @@ class Engine {                                    // 组装并拥有所有子系
 | `SceneTree` / 所有 `Node` | Engine | 读写 | **禁止访问** | — |
 | `ClassDB` | 进程 | 读（启动时写） | 只读 | 启动后冻结（`freeze()` + assert） |
 | `ObjectDB` | Object | 读写 | **禁止** | — |
-| `EventBus` | 进程（默认 `globalEventBus`）/ Engine | 读写 | 只能 `post` 到 MPSC 队列 | 帧首合并 |
+| `EventBus` | 进程（默认 `globalEventBus`）/ Engine | 读写 | 只能 `post` 到 MPSC 队列（M7 起） | 帧首合并 |
 | `AssetDatabase` 索引 | Asset | 读写 | 只读快照 | 加载任务只读路径表 |
 | 资源**原始字节/解码结果** | Job 内部 | 不碰 | 读写 | `pump()` 在主线程构造对象 |
 | `Transform3D` 数组（SoA） | Scene | 读 | **可并行写**（阶段 8） | 索引分片，无重叠 |
@@ -751,8 +756,8 @@ sequenceDiagram
 |---|---|---|
 | M0 | `yr_core`(空壳) + `tests/core` | CMake/preset/CI 跑通；assert + log 就位；smoke/assert/log 共 23 个测试 |
 | M1 | `yr_core` | Handle/SlotMap/StringId/ScopeTimer（SparseSet 与数学库推迟到 M4） |
-| M2 | + `yr_object` | Object/ClassDB/Variant/Ref + `tools/yr_inspect` |
-| M3 | + `yr_event` | EventBus/MessageQueue |
+| M2 | + `yr_object` | Object/ClassDB/Variant/PropertyInfo（`Ref`、`yr_inspect`、注册宏延后） |
+| M3 | + `yr_event` | EventBus/Subscription（单线程）；MessageQueue 推迟 |
 | M4 | + `yr_scene`, `yr_engine` | Node/SceneTree/MainLoop，headless tick demo |
 | M5 | + `yr_serialize` | 文本/二进制 + PackedScene + 场景存读档 |
 | M6 | + `yr_asset` | Resource/AssetDatabase/异步加载 |

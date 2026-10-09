@@ -1,6 +1,6 @@
 #pragma once
 
-// TODO(M3c): MessageQueue（延迟调用）。
+// TODO: MessageQueue（延迟调用）
 #include <cstddef>
 #include <cstdint>
 #include <deque>

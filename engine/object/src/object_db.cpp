@@ -34,7 +34,7 @@ namespace yr::obj {
 
     ObjectSlot& slot = slots_[id.index()];
     slot.object = nullptr;
-    ++slot.generation;
+    slot.generation = yr::core::ObjectIDBits::nextGeneration(slot.generation);
     freelist_.push_back(id.index());
     --aliveCount_;
     return true;

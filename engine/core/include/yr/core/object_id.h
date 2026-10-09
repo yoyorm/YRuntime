@@ -16,6 +16,19 @@ namespace yr::core {
     static constexpr std::uint32_t kIndexBits = 24;
     static constexpr std::uint32_t kGenerationBits = 40;
     static constexpr std::uint64_t kIndexMask = (std::uint64_t{1} << kIndexBits) - 1;
+    static constexpr std::uint64_t kGenerationMask = (std::uint64_t{1} << kGenerationBits) - 1;
+
+    // 把 index / generation 规范编码进 64-bit raw。generation 先掩码到 40 位，
+    // 这样 ObjectID::make() 与 ObjectDB 存储的 generation 永远落在同一取值域。
+    [[nodiscard]] static constexpr std::uint64_t encode(std::uint32_t index, std::uint64_t generation) noexcept {
+      return ((generation & kGenerationMask) << kIndexBits) | (static_cast<std::uint64_t>(index) & kIndexMask);
+    }
+
+    // generation 前进一格并规范化到 40 位；回绕到 0 时跳到 1（0 保留给 invalid ID）。
+    [[nodiscard]] static constexpr std::uint64_t nextGeneration(std::uint64_t generation) noexcept {
+      const std::uint64_t next = (generation + 1) & kGenerationMask;
+      return next == 0 ? 1 : next;
+    }
   };
 
   // 全局对象身份：只描述对象是谁，不拥有对象，也不负责对象生命周期。
@@ -41,8 +54,7 @@ namespace yr::core {
   private:
     static constexpr ObjectID make(std::uint32_t index, std::uint64_t generation) noexcept {
       ObjectID id;
-      id.raw_ = ((generation << ObjectIDBits::kIndexBits) & ~ObjectIDBits::kIndexMask) |
-                (static_cast<std::uint64_t>(index) & ObjectIDBits::kIndexMask);
+      id.raw_ = ObjectIDBits::encode(index, generation);
       return id;
     }
 

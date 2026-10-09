@@ -4,8 +4,10 @@
 #include <yr/event/event_bus.h>
 #include <yr/event/subscription.h>
 
-#include <cstdint>
+#include <algorithm>
+#include <cstddef>
 #include <memory>
+#include <string>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -38,6 +40,42 @@ namespace {
   static_assert(!std::is_copy_assignable_v<Subscription>);
   static_assert(std::is_move_constructible_v<Subscription>);
   static_assert(std::is_move_assignable_v<Subscription>);
+
+  // 确定性重放用的两类事件：跨类型 post + flush 派发中再次 post。
+  struct ReplayAEvent {
+    int value = 0;
+  };
+
+  struct ReplayBEvent {
+    int value = 0;
+  };
+
+  // 构造固定输入并返回完整回调日志。每次调用都新建局部 EventBus，不依赖 globalEventBus 残留状态。
+  std::vector<std::string> runDeterministicReplayScenario() {
+    EventBus bus;
+    std::vector<std::string> log;
+
+    const Subscription a = bus.subscribe<ReplayAEvent>([&bus, &log](const ReplayAEvent& event) {
+      log.push_back("A" + std::to_string(event.value));
+      if (event.value == 1) {
+        bus.post(ReplayBEvent{10}); // 跨类型 post：进入下一缓冲，不在本轮派发
+      }
+    });
+    const Subscription b = bus.subscribe<ReplayBEvent>([&bus, &log](const ReplayBEvent& event) {
+      log.push_back("B" + std::to_string(event.value));
+      if (event.value == 10) {
+        bus.post(ReplayAEvent{2}); // flush 派发中再次 post：进入下一轮 flush
+      }
+    });
+
+    bus.post(ReplayAEvent{1});
+    bus.post(ReplayBEvent{20});
+    bus.flush(); // 派发 A1、B20；A1 回调再 post B10
+    bus.flush(); // 派发 B10；B10 回调再 post A2
+    bus.flush(); // 派发 A2
+
+    return log;
+  }
 
   // EventBus 保持公开可构造（局部实例合法），但禁止复制/移动。
   static_assert(std::is_default_constructible_v<EventBus>);
@@ -414,4 +452,37 @@ TEST_CASE("event bus: 连续多次 flush 正确切换队列，不重复不丢事
 
   bus.flush(); // 已空，再次 flush 不应重复
   REQUIRE(received == std::vector<int>{1, 2, 3, 4});
+}
+
+TEST_CASE("event bus: 确定性重放——固定输入两次运行的完整回调日志逐项相同", "[event][event_bus][determinism]") {
+  const std::vector<std::string> first = runDeterministicReplayScenario();
+  const std::vector<std::string> second = runDeterministicReplayScenario();
+
+  CHECK(first == second); // 同输入 → 同顺序，逐项相同
+  CHECK(first == std::vector<std::string>{"A1", "B20", "B10", "A2"});
+}
+
+TEST_CASE("event bus: 1000 个有序事件 flush 后数量正确、保序、不重复不丢失", "[event][event_bus][stress]") {
+  EventBus bus;
+  std::vector<int> received;
+  const Subscription sub =
+      bus.subscribe<DamageEvent>([&received](const DamageEvent& event) { received.push_back(event.amount); });
+
+  constexpr int kEventCount = 1000;
+  for (int i = 0; i < kEventCount; ++i) {
+    bus.post(DamageEvent{i});
+  }
+  REQUIRE(bus.pending() == static_cast<std::size_t>(kEventCount));
+
+  bus.flush();
+
+  REQUIRE(received.size() == static_cast<std::size_t>(kEventCount)); // 数量正确、无丢失
+  for (int i = 0; i < kEventCount; ++i) {
+    CHECK(received[static_cast<std::size_t>(i)] == i); // 严格保序
+  }
+
+  std::vector<int> sorted = received;
+  std::sort(sorted.begin(), sorted.end());
+  CHECK(std::adjacent_find(sorted.begin(), sorted.end()) == sorted.end()); // 无重复
+  CHECK(bus.pending() == 0);                                               // 无残留
 }

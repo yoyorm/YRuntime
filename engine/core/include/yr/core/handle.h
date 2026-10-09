@@ -10,6 +10,19 @@ namespace yr::core {
     static constexpr uint32_t kIndexBits = 24;
     static constexpr uint32_t kGenerationBits = 40;
     static constexpr uint64_t kIndexMask = (uint64_t(1) << kIndexBits) - 1;
+    static constexpr uint64_t kGenerationMask = (uint64_t(1) << kGenerationBits) - 1;
+
+    // 把 index / generation 规范编码进 64-bit raw。generation 先掩码到 40 位，
+    // 保证 Handle::make() 与 SlotMap 存储的 generation 落在同一取值域。
+    [[nodiscard]] static constexpr uint64_t encode(uint32_t index, uint64_t generation) noexcept {
+      return ((generation & kGenerationMask) << kIndexBits) | (static_cast<uint64_t>(index) & kIndexMask);
+    }
+
+    // generation 前进一格并规范化到 40 位；回绕到 0 时跳到 1（0 保留给 invalid handle）。
+    [[nodiscard]] static constexpr uint64_t nextGeneration(uint64_t generation) noexcept {
+      const uint64_t next = (generation + 1) & kGenerationMask;
+      return next == 0 ? 1 : next;
+    }
   };
 
   template <typename T> class Handle {
@@ -37,8 +50,7 @@ namespace yr::core {
     friend class SlotMap<T>;
     static constexpr Handle make(uint32_t index, uint64_t generation) noexcept {
       Handle h;
-      h.raw_ = ((generation << HandleBits::kIndexBits) & ~HandleBits::kIndexMask) |
-               (static_cast<uint64_t>(index) & HandleBits::kIndexMask);
+      h.raw_ = HandleBits::encode(index, generation);
       return h;
     }
 
