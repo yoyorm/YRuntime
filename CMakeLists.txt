@@ -28,6 +28,7 @@ target_compile_options(yr_build_flags INTERFACE
 add_subdirectory(engine/core)
 add_subdirectory(engine/object)
 add_subdirectory(engine/event)
+add_subdirectory(engine/scene)
 
 if(YR_BUILD_TESTS)
     enable_testing()          # 必须在 add_subdirectory(tests) 之前

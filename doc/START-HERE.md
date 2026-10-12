@@ -38,17 +38,30 @@
 - **`post_from_any_thread` / MPSC / TSan 验证**：推迟到 **M7**
 - 事件追踪日志、`std::function` 性能实验：非阻塞优化，不阻塞主线
 
-### M4 第一个可独立任务（一次只引入一个概念）
+### M4 当前第一步：Node-2 设计（Node-1 已完成）
 
-1. **先研究并定义最小 `Node` 父子关系 / lifecycle 语义，不写代码骨架**：单亲指针 + 子列表的所有权规则、
-   `add_child` / `remove_child` 的前置条件、`kEnterTree` / `kReady`（后序）/ `kExitTree` 的触发顺序，
-   以及 `queue_free` 为什么必须延迟到安全点。
-2. **动笔前读**：`01-architecture.md` §4.6 `Node` / `SceneTree`；`04-godot-study.md` 的
-   "Node 生命周期" 行（`scene/main/node.h` + `node.cpp` 的 `_propagate_ready` / `_propagate_enter_tree` /
-   `_propagate_exit_tree`）。
-3. 产物先在对话里定成一页设计结论（仓库不产出笔记）；确认后再落 `yr/scene/node.h` 最小头文件。
+M4 按 `02-roadmap.md` 拆成 Node-1 → Node-2 → Node-3 → Node-4 四步。
 
-之后再按 `02-roadmap.md` M4 清单逐项推进（`NodePath`、`SceneTree`、`MainLoop` 阶段……），**不要一次实现整章**。
+**Node-1（父子关系与所有权）✅ 已完成（2026-10-12）**，落地在 `yr_scene`
+（`engine/scene/include/yr/scene/node.h` + `src/node.cpp`，测试 `YrTests_scene`）：
+父用 `std::vector<std::unique_ptr<Node>>` 拥有子，`addChild` 成功转移所有权、失败不消费（调用者仍持有），
+`removeChild` 交出所有权；生命周期/更新回调只占位 no-op。空 / 自己 / 多父 / 成环四项验收、
+父析构级联 + ObjectDB 注销均有测试，Debug/Release/ASan 全绿。
+
+**下一步 Node-2：SceneTree 内状态与生命周期传播**。本步**只做** `enter` / `ready` / `exit` 派发，
+验收：三层树断言 enter 前序（父先子）、ready 后序（子先父）且只一次、exit 后序。
+**不写**延迟删除（Node-3）与 process 遍历（Node-4）。
+
+**动笔前读**：`01-architecture.md` §4.6（Node 生命周期顺序）与
+`04-godot-study.md` 的 "Node 生命周期" 行。
+
+**Node-1 已决定的接口**（不再重开）：
+
+1. 父拥有子用 `std::unique_ptr<Node>`（旧草图的 `Ref<T>` 尚未实现，已弃用）。
+2. `addChild(std::unique_ptr<Node>&&)` 失败时**不消费**参数，所有权归调用者。
+3. `queueFree` 的标志放 `Object` 还是 `Node` 留到 Node-3 决定。
+
+之后按 `02-roadmap.md` M4 的 Node-3/4 逐步推进，**不要一次实现整章**。
 
 benchmark 数据和结论统一写到 `benchmarks/README.md`；不要新建额外笔记文件。
 

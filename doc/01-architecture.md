@@ -378,18 +378,32 @@ class SceneTree {                                              // 拥有 root �
 }
 ```
 
-**为什么必须延迟删除（本项目最值得写进博客的一个点）**：
-正在 `process` 遍历子节点时，某个节点自杀（`delete this`）会让遍历器指向已释放内存。
-`queue_free()` 只打标记 + 加入待删列表，遍历结束后 `flush_deletions()` 统一处理，且**父节点先于子节点被标记时，子节点要从待删列表里去掉**（否则会 double free）。
-Godot 的 `Object::queue_free()` / `Node::_propagate_ready()` 就是这个机制。
+> **Node-1 已定（2026-10-12）**：上面的 `add_child(Ref<Node>)` 与所有权矩阵里的 `vector<Ref<Node>>` 只是规划草图。
+> `RefCounted` / `Ref<T>` **尚未实现**（M2 推迟），Node-1 实际采用 `std::unique_ptr<Node>`：父通过
+> `std::vector<std::unique_ptr<Node>>` 拥有子；`addChild` 成功即转移所有权，失败时**不消费**、所有权仍归调用者；
+> `child → parent` 保持裸指针。`queueFree` 的标志放 `Object` 还是 `Node` 留到 Node-3 决定。
 
-**遍历策略**（要写测试锁定顺序）：`_ready` 是**后序**（子先于父），`_process` 是**前序**（父先于子），
-删除标记需要处理"遍历过程中新增的节点本帧是否 process"——Godot 的答案是新增节点下一帧才 process，用双缓冲节点列表实现。
+**生命周期顺序（Godot 对照，测试逐条锁定）**：
+- `enter_tree` 是**前序**：父先于子。
+- `ready` 是**后序**：子先于父；默认**只调用一次**，重新进树会重新 `enter`/`exit` 但不会自动再次 `ready`，除非显式 `request_ready`。
+- `exit_tree` 是**后序**，且通常**倒序**处理子节点。
+
+**为什么必须延迟删除（本项目最值得写进博客的一个点）**：
+正在遍历子节点时，某个节点自杀（`delete this`）会让遍历器指向已释放内存。
+Godot 的 `queue_free()` 不立即删除，只把 `ObjectID` 放进 `SceneTree` 的删除队列，在帧的**安全点**解析 ID 再删。
+父子同帧排队时，父先删使子的 ID 解析失效，从而天然避免 double free。
+YRuntime 第一版据此做：`queueFree()` + `ObjectID` 删除队列 + 显式 `flushDeletions()`，且 `flushDeletions()` **必须在遍历之外执行**。
+
+**遍历策略**（要写测试锁定顺序）：`_process` 是**前序**（父先于子）。
+Godot 的 `process` **不每帧遍历全树**，而是遍历注册列表的快照；回调中新增的节点本帧不 `process`（Node-4 照此实现）。
+
+**第一版明确不搬 Godot 的复杂度**：`owner`（编辑器归属）、internal child、groups、multiplayer、
+editor 相关逻辑、process thread groups、physics interpolation 均不进入 YRuntime 第一版。
 
 **所有权矩阵**：
 | 关系 | 表达方式 | 谁销毁 |
 |---|---|---|
-| parent → child | `std::vector<Ref<Node>>`（强引用） | parent（或 `queue_free`） |
+| parent → child | `std::vector<std::unique_ptr<Node>>`（Node-1 已定） | parent（或后续 `queue_free`） |
 | child → parent | `Node*` 裸指针（**非拥有**） | 不销毁，parent 保证 child 存活期间有效 |
 | 外部 → 树内节点 | `ObjectID` 或 `WeakRef<Node>` | 不销毁；用前查 ObjectDB |
 

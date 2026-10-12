@@ -240,10 +240,24 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 
 **目标**：**第一次有一个"活着的世界"**。这个里程碑结束时，你应该能在终端看到一个世界 tick 一万帧，节点在创建、更新、销毁。
 
-> **M4 第一步（建议，一次只引入一个概念）**：先研究并定义最小 `Node` 父子关系 / lifecycle 语义
-> （单亲指针 + 子列表所有权、`add_child`/`remove_child` 前置条件、`kEnterTree`/`kReady`（后序）/`kExitTree` 顺序、
-> `queue_free` 安全点），确认设计后再落 `yr/scene/node.h` 最小头文件。动笔前读 `01-architecture.md` §4.6
-> 与 `04-godot-study.md` 的 "Node 生命周期" 行。
+### M4 当前执行拆分（2026-10-12）
+
+一次只引入一个概念，每步独立可验收。**不要一次实现整章。**
+
+| 子阶段 | 唯一新概念 | 交付物 | 独立验收点 | 状态 |
+|---|---|---|---|---|
+| **Node-1** | 父子关系与所有权 | `yr/scene/node.h` + `src/node.cpp` + `tests/scene/test_node.cpp` | 单父不变量：不能加自己 / 多父 / 成环；`addChild` 转移所有权、`removeChild` 交出所有权 | ✅ 已完成（2026-10-12） |
+| **Node-2** | SceneTree 内状态与生命周期传播 | `enter` / `ready` / `exit` 派发 | 三层树断言：enter 前序（父先子）、ready 后序（子先父）且只一次、exit 后序 | ⬜ |
+| **Node-3** | 延迟删除 | `queueFree` + `ObjectID` 删除队列 + 显式 `flushDeletions` 安全点 | 自己 / 父 / 子 / 兄弟四种删除场景不 double free；父先删则子 ID 解析失效 | ⬜ |
+| **Node-4** | process 遍历 | 注册列表快照遍历 | 回调中新增节点本帧不 process（与 Godot 一致） | ⬜ |
+
+**Node-1 已决策（2026-10-12，详见 `START-HERE.md` §2）**：
+① 父拥有子用 `std::unique_ptr<Node>`（旧草图的 `Ref<Node>` 未实现，已弃用）；
+② `addChild` 失败时**不消费**参数，所有权仍归调用者（`std::unique_ptr<Node>&&` 强失败保证）；
+③ `queueFree` 标志放 `Object` 还是 `Node` 留到 Node-3 决定。
+
+> Node-1 已落地 `yr/scene/node.h`（`yr_scene` target）+ `YrTests_scene`；生命周期/更新回调仅占位 no-op。
+> Node-2 动笔前读 `01-architecture.md` §4.6 与 `04-godot-study.md` 的 "Node 生命周期" 行。
 
 - [ ] **（从 M1 推来）** `yr/core/math.h`：只做 Transform 需要的部分（`Vec3` + `Mat4` + TRS 合成 + 求逆）；不要一次写全（D4）
 - [ ] **（从 M1 推来，可选）** `yr/core/sparse_set.h`：**只在 S3（ECS 数据层）真要做时才写**。Transform 用普通 SoA 数组就够，不必先造 SparseSet

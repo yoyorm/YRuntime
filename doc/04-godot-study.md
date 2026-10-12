@@ -96,9 +96,9 @@ git log -p -S "flush_transform_notifications" -- scene/main/scene_tree.cpp | hea
 |---|---|---|---|
 | **一帧的权威顺序** | `main/main.cpp` 里的 `Main::iteration()` | ★★★ | 一个 iteration 里各步骤的确切顺序是什么？physics accumulator 怎么写？`_process` 与 `_physics_process` 的调度差异？时间缩放与暂停在哪一层生效？ |
 | MainLoop 抽象 | `main/main.h`、`main/main.cpp` 的 `MainLoop`/`Main::start()` | ★★ | `MainLoop` 与 `SceneTree` 的关系？为什么要有这个抽象层（headless/server 模式）？ |
-| Node 生命周期 | `scene/main/node.h` + `node.cpp` | ★★★ | `_enter_tree`/`_ready`/`_exit_tree` 的派发顺序与递归实现（`_propagate_ready` 等）？`ready` 只触发一次怎么保证？`process_mode`（暂停传播）如何设计？ |
-| 延迟删除 | `node.cpp` 的 `queue_delete()` / `scene_tree.cpp` 的 `flush_delete_queue()` | ★★★ | 待删队列如何处理父子同删？为什么必须在遍历外 flush？ |
-| SceneTree | `scene/main/scene_tree.h` + `.cpp` | ★★★ | `process()`/`physics_process()` 的节点分组（process group）如何避免每帧全树遍历？`flush_transform_notifications` 解决什么？节点增删如何不打断遍历（双缓冲列表）？ |
+| Node 生命周期 | `scene/main/node.h` + `node.cpp` | ★★★ | `_enter_tree`/`_ready`/`_exit_tree` 的派发顺序（enter 前序 / ready 后序且只一次 / exit 后序且通常倒序）与递归实现（`_propagate_ready` 等）？重新进树为什么不自动再次 `ready`，`request_ready` 何时用？`process_mode`（暂停传播）如何设计？ |
+| 延迟删除 | `node.cpp` 的 `queue_delete()` / `scene_tree.cpp` 的 `flush_delete_queue()` | ★★★ | 待删队列为什么存 `ObjectID` 而不是裸指针？父子同帧排队为何父先删即可避免 double free？为什么必须在遍历外 flush？ |
+| SceneTree | `scene/main/scene_tree.h` + `.cpp` | ★★★ | `process()`/`physics_process()` 的节点分组（process group）如何避免每帧全树遍历？回调中新增的节点为何本帧不 process（注册列表快照）？`flush_transform_notifications` 解决什么？节点增删如何不打断遍历（双缓冲列表）？ |
 | SceneTreeTimer | `scene/main/scene_tree.h`（`class SceneTreeTimer` 第 57 行）、`scene/main/timer.h`（`Timer` 节点） | ★★ | Timer 与 SceneTreeTimer 的分工？暂停/时间缩放/物理帧标志怎么组合？ |
 | NodePath | `core/string/node_path.h` | ★★ | 路径如何编码（names + subnames + 绝对标志）？缓存策略？ |
 | Transform 传播 | `scene/main/canvas_item.h`、`scene/3d/node_3d.h` + `.cpp` | ★★ | 世界变换的脏标记如何向上传/向下传？通知 `NOTIFICATION_TRANSFORM_CHANGED` 的作用？ |

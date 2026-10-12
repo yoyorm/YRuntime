@@ -21,7 +21,7 @@
 | M1 | 句柄、容器、时间、字符串 | ✅ 核心完成 | Handle/SlotMap/Timer/StringId/ObjectID ✅；E1 perf 结论未做（非阻塞） |
 | M2 | 反射与对象模型 | ✅ 核心完成 | Object/ObjectDB/Variant/ClassInfo/ClassDB ✅；`yr_inspect`、注册宏延后 |
 | M3 | 事件系统（**单线程 EventBus**） | ✅ 单线程范围完成 | Subscription RAII、同步 subscribe/publish/unsubscribe、post/flush、重入与深度上限 8、确定性重放 + 1000 事件测试 |
-| M4 | 场景树与主循环 | 🔨 **下一主线** | 从 Node 父子关系 / lifecycle 语义开始；目标 headless 世界 tick 10000 帧 |
+| M4 | 场景树与主循环 | 🔨 **下一主线** | Node-1 父子关系与所有权 ✅（`yr_scene`）；Node-2 lifecycle 派发进行中；目标 headless 世界 tick 10000 帧 |
 | M5 | 序列化与场景资源 | ⬜ | 手写 `.yrscn` + round-trip diff 为空 |
 | M6 | 资源系统（异步加载） | ⬜ | 慢 IO 下不卡帧的加载曲线 |
 | M7 | 任务系统（并行） | ⬜ | 加速比曲线 + TSan 干净 |
