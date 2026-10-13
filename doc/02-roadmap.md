@@ -247,7 +247,7 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 | 子阶段 | 唯一新概念 | 交付物 | 独立验收点 | 状态 |
 |---|---|---|---|---|
 | **Node-1** | 父子关系与所有权 | `yr/scene/node.h` + `src/node.cpp` + `tests/scene/test_node.cpp` | 单父不变量：不能加自己 / 多父 / 成环；`addChild` 转移所有权、`removeChild` 交出所有权 | ✅ 已完成（2026-10-12） |
-| **Node-2** | SceneTree 内状态与生命周期传播 | `enter` / `ready` / `exit` 派发 | 三层树断言：enter 前序（父先子）、ready 后序（子先父）且只一次、exit 后序 | 🔨 enter/exit 已完成（2026-10-13）；ready 未完成 |
+| **Node-2** | SceneTree 内状态与生命周期传播 | `enter` / `ready` / `exit` 派发 + selective propagation guard | 三层树断言：enter 前序（父先子）、ready 后序（子先父）且只一次、exit 后序；回调中越界修改被拒 | ✅ 已完成（2026-10-13） |
 | **Node-3** | 延迟删除 | `queueFree` + `ObjectID` 删除队列 + 显式 `flushDeletions` 安全点 | 自己 / 父 / 子 / 兄弟四种删除场景不 double free；父先删则子 ID 解析失效 | ⬜ |
 | **Node-4** | process 遍历 | 注册列表快照遍历 | 回调中新增节点本帧不 process（与 Godot 一致） | ⬜ |
 
@@ -259,11 +259,17 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 > Node-1 已落地 `yr/scene/node.h`（`yr_scene` target）+ `YrTests_scene`；生命周期/更新回调仅占位 no-op。
 > Node-2 动笔前读 `01-architecture.md` §4.6 与 `04-godot-study.md` 的 "Node 生命周期" 行。
 >
-> **Node-2 进度（2026-10-13）**：enter/exit 子步骤已完成，落地 `scene_tree.h/.cpp` +
-> `test_scene_tree.cpp` + `test_lifecycle.cpp`。`Node::setTree/propagateEnterTree/propagateExitTree`
+> **Node-2 完成（2026-10-13）**：enter/exit、ready 与 selective propagation guard 均已完成，落地
+> `scene_tree.h/.cpp` + `node.h/.cpp` + `test_scene_tree.cpp` + `test_lifecycle.cpp` + `test_ready.cpp`
+> + `test_propagation_guard.cpp`。`Node::setTree/propagateEnterTree/propagateExitTree/propagateReady`
 > 为私有传播函数（`friend SceneTree`）；`SceneTree::setRoot/clearRoot/析构`、`Node::addChild/removeChild/detach`
-> 已接线。**ready（双状态：entered/ready_requested + 后序且只一次）尚未实现，也未接线 `onReady()`** ——
-> 这是 Node-2 的下一步唯一新概念。回调中修改树结构的完整重入保护（blocked）同样未做。
+> 已接线。ready 采用**单标记 `everReady_`**（不是 `entered` + `ready_requested` 双状态）：后序、子先父、
+> 一生只一次；`everReady_` 在 detach/exit/clearRoot 不重置，重新入树只重新 enter；`setRoot` 在整树
+> enter 前序完成后统一 ready，`addChild` 对已 ready 的树内父节点让新子树 enter 后立即 ready。
+> propagation guard 采用**私有传播深度计数 `propagationDepth_` + 最小 RAII guard**（不是 bool）：
+> 只冻结“正在被遍历的节点自身 children_”——enter/ready 中允许修改自己的 children，禁止 child 回调修改
+> 正在被遍历的 parent，exit 期间冻结当前节点结构；`requestReady()` 不实现。
+> **Node-2 已完成，下一步 Node-3（`queueFree` + `ObjectID` 删除队列 + 显式 `flushDeletions` 延迟删除）**。
 
 - [ ] **（从 M1 推来）** `yr/core/math.h`：只做 Transform 需要的部分（`Vec3` + `Mat4` + TRS 合成 + 求逆）；不要一次写全（D4）
 - [ ] **（从 M1 推来，可选）** `yr/core/sparse_set.h`：**只在 S3（ECS 数据层）真要做时才写**。Transform 用普通 SoA 数组就够，不必先造 SparseSet

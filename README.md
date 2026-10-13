@@ -1,89 +1,85 @@
 # YRuntime
 
-> **一个以"理解游戏引擎运行时"为目的的 C++20 学习型项目。**
-> 从零实现对象生命周期、反射、事件、场景树、序列化、异步资源、任务调度与主循环，
-> 先跑通 headless Runtime 骨架（可 tick 的世界 + 可验证的 NullBackend），
-> 再定义 renderer-neutral 的渲染契约（RenderSnapshot / RendererBackend），
-> 接入最小 Vulkan backend，最终让 Runtime 里的 Node 移动驱动画面变化，
-> 形成 `游戏状态 → Runtime → RenderSnapshot → Renderer → GPU` 的完整链路。全程以 Godot 4.x 源码为参照系。
+一个以理解游戏引擎运行时为目的的 C++20 学习型项目：先跑通可 tick 的 headless
+Runtime，再以 renderer-neutral 的渲染契约把游戏状态接到渲染后端，形成
+`游戏状态 → Runtime → RenderSnapshot → Renderer → GPU` 的链路。
 
-![status](https://img.shields.io/badge/status-M3%20done%20M4%20next-brightgreen)
+![status](https://img.shields.io/badge/status-M4%20in%20progress-yellow)
 ![CI](https://github.com/yoyorm/YRuntime/actions/workflows/ci.yml/badge.svg)
 ![cxx](https://img.shields.io/badge/C%2B%2B-20-00599C?logo=c%2B%2B&logoColor=white)
 ![platform](https://img.shields.io/badge/platform-Linux-lightgrey)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 
----
+## 目标与原则
 
-## 当前状态：M3 单线程 EventBus 已收口，下一主线 M4
+- **headless-first**：先在无窗口、无 GPU 的环境里把运行时核心跑通、测透，再接入渲染。
+- **依赖只向下**：分层 CMake target 与 CI 检查物理约束 include 方向。
+- **可测试优先**：核心逻辑不依赖 GPU / 窗口即可单测，`ctest` 全绿是每步的底线。
+- **Godot 4.x 为参照系**：对照其源码验证设计判断，而不是复刻。
 
-| M | 里程碑 | 状态 | 可运行物 |
-|---|---|---|---|
-| M0 | 工程地基（CMake/CI/Catch2/assert/log） | ✅ | `ctest` 全绿 + CI |
-| M1 | 句柄、容器、时间、字符串 | ✅ 核心完成 | Handle/SlotMap/Timer/StringId/ObjectID ✅；E1 perf 结论未做（非阻塞） |
-| M2 | 反射与对象模型 | ✅ 核心完成 | Object/ObjectDB/Variant/ClassInfo/ClassDB ✅；`yr_inspect`、注册宏延后 |
-| M3 | 事件系统（**单线程 EventBus**） | ✅ 单线程范围完成 | Subscription RAII、同步 subscribe/publish/unsubscribe、post/flush、重入与深度上限 8、确定性重放 + 1000 事件测试 |
-| M4 | 场景树与主循环 | 🔨 **下一主线** | Node-1 父子关系与所有权 ✅（`yr_scene`）；Node-2 enter/exit ✅；目标 headless 世界 tick 10000 帧 |
-| M5 | 渲染契约与 NullBackend | ⬜ | renderer-neutral 快照 dump/replay + 确定性统计 |
-| M6 | 最小 Vulkan Bootstrap | ⬜ | 窗口 + 清屏 + 硬编码三角形 |
-| M7 | Snapshot 驱动画面 | ⬜ | **Runtime 移动 Node → 画面变化（首个主要作品节点）** |
-| M8 | 序列化与场景资源 | ⬜ | 手写 `.yrscn` + save→load→save 逐字节 round-trip |
-| M9 | 资源系统（异步加载） | ⬜ | 慢 IO 下不卡帧 + AssetHandle→GPU 桥接 |
-| M10 | 任务系统（并行） | ⬜ | 加速比曲线 + TSan 干净 |
-| M11 | 工具链与打磨 | ⬜ | `.yrpak` 打包 + 覆盖率 |
+## 架构
 
-## 目标架构
-
-依赖**只允许向下**，由分层 CMake target 与 CI 脚本物理强制。
-完整设计见 [`doc/01-architecture.md`](doc/01-architecture.md)。
-
-## 文档
-
-| | |
+| target | 职责 |
 |---|---|
-|  [START HERE](doc/START-HERE.md) | 当前状态 + 下一步 + 决策协议 + 分工 |
-| [AI 交接文档](HANDOFF.md) | 面向后续 AI 的项目概况、约束、当前上下文与下一步 |
-| [文档索引](doc/README.md) | 全部文档一览与维护规则 |
-| [00 · 定位与成功判据](doc/00-vision.md) | 这是什么项目、做完算成功的标准、明确不做什么 |
-| [01 · 目标架构](doc/01-architecture.md) | 分层、模块职责、核心概念、帧循环 14 阶段、线程模型 |
-| [02 · 里程碑路线图](doc/02-roadmap.md) | M0~M11 任务清单 + 验收标准 + 常见坑 |
-| [03 · 学习地图](doc/03-learning-map.md) | 知识点 → 里程碑映射、书单、16 个待做实验 |
-| [04 · Godot 源码研究](doc/04-godot-study.md) | 按主题组织的源码索引与对照问题 |
-| [05 · 工程规范](doc/05-engineering.md) | 构建/测试/日志/调试/剖析/Git/CI/代码风格 |
-| [06 · 架构决策记录](doc/06-decisions.md) | 19 条 ADR：决策、备选、代价、推翻条件 |
-| [07 · 作品展示策略](doc/07-portfolio.md) | 理解自检、展示物、博客规划、40 道面试题 |
+| `yr_core` | 句柄、容器、时间、日志、断言、字符串 |
+| `yr_object` | Object / ObjectDB / Variant / ClassDB |
+| `yr_event` | 单线程 EventBus |
+| `yr_scene` | Node / SceneTree |
+| `yr_engine` | MainLoop / World / RenderExtract |
+| `yr_render_iface` · `yr_render_null` · `yr_render_vulkan` | RenderSnapshot 契约、NullBackend、Vulkan 后端 |
+| `apps/` · `tools/` | demo 与打包 / 查看工具 |
 
-## 构建与运行
+依赖方向由构建系统强制，完整分层见 [`doc/01-architecture.md`](doc/01-architecture.md)。
+
+## 里程碑
+
+| 里程碑 | 状态 | 一句话 |
+|---|---|---|
+| M0 工程地基 | 完成 | CMake / CI / Catch2 / assert / log |
+| M1 句柄、容器、时间、字符串 | 完成 | Handle / SlotMap / Timer / StringId / ObjectID |
+| M2 反射与对象模型 | 完成 | Object / ObjectDB / Variant / ClassInfo / ClassDB |
+| M3 单线程 EventBus | 完成 | subscribe / publish / post+flush、重入与确定性重放 |
+| M4 场景树与主循环 | **进行中** | Node-1 / Node-2 完成，下一步 Node-3 延迟删除；目标 headless 世界 tick 10000 帧 |
+| M5 渲染契约与 NullBackend | 未开始 | RenderSnapshot + RendererBackend 及 dump/replay |
+| M6 最小 Vulkan Bootstrap | 未开始 | 窗口 + 清屏 + 硬编码三角形 |
+| M7 Snapshot 驱动画面 | 未开始 | Runtime 移动 Node → 画面变化 |
+| M8+ 序列化 / 资源 / 任务 / 工具链 | 未开始 | 见路线图 |
+
+进度同时维护在根 README 与 [`doc/02-roadmap.md`](doc/02-roadmap.md)。
+
+## 构建与测试
 
 ```bash
-cmake --list-presets          # debug / release / asan
-cmake --preset debug          # 配置（每个 preset 首次都要先 configure）
+cmake --preset debug          # 配置
 cmake --build --preset debug  # 构建
 ctest --preset debug          # 测试
 ```
 
-产物在 `build/<preset>/bin/`。给 IDE / clangd 用：`ln -sf build/debug/compile_commands.json .`
+另有 `release` / `asan` preset（提交前跑 asan）。产物在 `build/<preset>/bin/`；
+给 clangd 用：`ln -sf build/debug/compile_commands.json .`。
 
-`yr::core` 已包含 `version`、`assert`、`log`、`Handle<T>`、`SlotMap<T>`、`ScopeTimer`、`StringId` / `StringInterner`、`ObjectID`。
-`YR_LOG_*` 支持 tag + 运行期 level 过滤，DEBUG 级在 release 编译期剔除；`YR_ASSERT*` / `YR_VERIFY` 支持可注入 handler。
+环境：GCC 13+ 或 Clang 18+（C++20）、CMake 3.25+ / Ninja、Catch2 3
+（`sudo apt install libcatch2-dev`）、Linux。Vulkan SDK 与 GLFW3 仅在
+`YR_BUILD_VULKAN_BACKEND=ON`（M6 起）时需要。
 
-| 依赖 | 说明 |
+## 文档
+
+| 文档 | 内容 |
 |---|---|
-| GCC 13+ 或 Clang 18+ | C++20 |
-| CMake 3.25+ / Ninja | preset 格式 v6 需要 3.25 |
-| Catch2 3 | `sudo apt install libcatch2-dev`（本机 3.7.1） |
-| Linux | 见 ADR D12，不做跨平台移植 |
-| Vulkan SDK ≥1.4 · GLFW3 | **仅新 M6 起的 `yr_render_vulkan` 需要**，`YR_BUILD_VULKAN_BACKEND=OFF` 时不需要 |
-
-可选：`ccache`（装了自动启用）。
+| [`doc/START-HERE.md`](doc/START-HERE.md) | 现在在哪、下一步做什么 |
+| [`doc/00-vision.md`](doc/00-vision.md) | 定位、目标 / 非目标、成功判据 |
+| [`doc/01-architecture.md`](doc/01-architecture.md) | 分层、模块职责、帧循环、线程模型 |
+| [`doc/02-roadmap.md`](doc/02-roadmap.md) | 任务清单与验收标准 |
+| [`doc/README.md`](doc/README.md) | 全部文档索引 |
 
 ## 相关项目
 
-- **[Yo_Renderer](https://github.com/yoyorm/Yo_Renderer)** — 大一暑假的 Vulkan PBR 渲染器（ECS + RHI + IBL + 阴影 + ImGui 编辑器，~8400 行）。
-  本项目把它当作**参考与反面教材**：Vulkan backend 以最小重写为主，**选择性借鉴/逐文件吸收底层机制**
-  （`platform/VulkanContext`、`Swapchain`、`SyncObjects`、`CommandRecorder`、`VulkanResourceTable` 等），
-  不整体搬入 `rhi/`+`render/`，也不把 Yo_Renderer 作为 subdirectory。详见 `doc/02-roadmap.md` M6 与 ADR D19。
-- **Godot Engine 4.x** — 本项目的学习参照系。
+- [Yo_Renderer](https://github.com/yoyorm/Yo_Renderer)：一个 Vulkan PBR 渲染器。本项目把它作为
+  Vulkan 底层机制的参考和选择性吸收来源（`VulkanContext`、`Swapchain`、`SyncObjects`、
+  `CommandRecorder` 等），最小 Vulkan 后端以重写为主；不整体引入其 `rhi/` + `render/`，
+  也不作为 subdirectory。
+- Godot Engine 4.x：学习参照系。
 
 ## 许可
+
 [MIT](LICENSE)

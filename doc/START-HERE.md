@@ -13,7 +13,7 @@
 | **M1 句柄、容器、时间、字符串** | ✅ 核心完成 —— Handle/SlotMap/ScopeTimer/StringId/ObjectID 完成；E1 perf 结论未做（非阻塞） |
 | **M2 反射与对象模型** | ✅ 核心完成 —— Object/ObjectDB/Variant（10 tag）/PropertyInfo/ClassInfo/ClassDB 完成；`yr_inspect`、注册宏延后 |
 | **M3 单线程 EventBus** | ✅ 已完成 / 收口（2026-10-08） |
-| **M4 场景树与主循环** | 🔨 **下一主线**（Node-1/Node-2 enter/exit 已完成，下一步 ready） |
+| **M4 场景树与主循环** | 🔨 **下一主线**（Node-1 完成；Node-2 生命周期完成，下一步 Node-3 延迟删除） |
 | M5 ~ M11 | ⬜ 未开始 |
 
 **远期方向一句话**（现在不要跳过去）：M4 最小闭环 → M5 渲染契约 + NullBackend → M6 最小 Vulkan bootstrap → M7 Snapshot 驱动画面（首个主要作品节点）→ M8 序列化 → M9 资源系统 → M10 任务系统 → M11 工具链打磨。**当前唯一任务仍是 M4。**
@@ -40,7 +40,7 @@
 - **`post_from_any_thread` / MPSC / TSan 验证**：推迟到 **M10**
 - 事件追踪日志、`std::function` 性能实验：非阻塞优化，不阻塞主线
 
-### M4 当前进度：Node-2 enter/exit 已完成，下一步 ready
+### M4 当前进度：Node-2 生命周期完成，下一步 Node-3 延迟删除
 
 M4 按 `02-roadmap.md` 拆成 Node-1 → Node-2 → Node-3 → Node-4 四步。
 
@@ -55,12 +55,25 @@ M4 按 `02-roadmap.md` 拆成 Node-1 → Node-2 → Node-3 → Node-4 四步。
 `Node` 私有 `setTree` / `propagateEnterTree`（前序、父先子）/ `propagateExitTree`（后序、子节点倒序）
 维护 `tree_` 并调用受保护的 `onEnterTree` / `onExitTree`；
 `addChild` / `removeChild` / `detach` 已接线（新子树只 enter 一次、摘下的子树只 exit 一次）。
-测试在 `tests/scene/test_scene_tree.cpp` + `test_lifecycle.cpp`，Debug/Release/ASan 全绿。
-回调契约：不得抛异常、不得修改树结构（blocked 重入保护尚未实现）。
 
-**下一步：Node-2 的 `ready` 子步骤（只学这一个新概念）**。ready 是双状态
-（`entered` + `ready_requested`）+ 后序且默认只一次；重新进树会重新 enter/exit，但不自动再次 ready。
-本步**只做** ready，**不写**延迟删除（Node-3）与 process 遍历（Node-4）。
+**Node-2 的 ready 子步骤 ✅ 已完成（2026-10-13）**：
+`Node` 增加私有单标记 `everReady_`（一生只 ready 一次）与私有 `propagateReady()`
+（后序、子先父、正序递归全部 children，仅首次 ready 才回调 `onReady()`）；
+`SceneTree::setRoot` 在整树 enter 前序完成后统一 ready；`addChild` 对已 ready 的树内父节点
+会让新子树 enter 后立即 ready。`everReady_` 是**单标记**（不是 `entered` + `ready_requested`
+双状态）：detach/exit/clearRoot 不重置，重新入树只重新 enter、不自动再次 ready；
+`requestReady()` 本步不实现。测试在 `test_scene_tree.cpp` + `test_lifecycle.cpp` + `test_ready.cpp`，
+Debug/Release/ASan 全绿。
+
+**Node-2 的 selective propagation guard ✅ 已完成（2026-10-13）**：
+`Node` 增加私有传播深度计数 `propagationDepth_` 与最小 RAII guard。enter/ready 的 children
+正序遍历、exit 的 children 倒序遍历 + `onExitTree` 期间计数 > 0，只冻结“正在被遍历的
+节点自身 children_”：`onEnterTree`/`onReady` 中仍可 `this->addChild`，但 child 回调中修改
+正在被遍历的 parent（`parent->addChild/removeChild`、经 `detach` 修改 parent）会被拒绝；
+`onExitTree` 期间当前节点结构冻结。测试在 `test_propagation_guard.cpp`，Debug/Release/ASan 全绿。
+
+**下一步：Node-3 延迟删除（只学这一个新概念）**：`queueFree` + `ObjectID` 删除队列 +
+显式 `flushDeletions` 安全点。本步**不写** `requestReady()` 与 process 遍历（Node-4）。
 
 **动笔前读**：`01-architecture.md` §4.6（Node 生命周期顺序）与
 `04-godot-study.md` 的 "Node 生命周期" 行。
