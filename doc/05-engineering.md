@@ -24,11 +24,11 @@
 | perf | ✅ | 有 | CPU 采样与 cache 统计（`perf stat` / `perf record`） |
 | clang-format | ✅ | 18 | 与 Yo_Renderer 保持一致的版本 |
 | ASan / UBSan | ✅ | GCC 实测可用 | `asan` preset |
-| GLFW3 | ✅ | `/usr/include/GLFW` | M10 用 |
-| Vulkan SDK | ✅ | `/home/yoyorm/SDK/Vulkan/1.4.357.1/x86_64`；另有 GLFW3（`/usr/include/GLFW`）与系统 `libvulkan.so.1.4.313` | **`VULKAN_SDK` 环境变量未设置**（2026-09-22 复查仍未设）。M10 前把 `export VULKAN_SDK=~/SDK/Vulkan/1.4.357.1/x86_64` 写进 `~/.bashrc`，并在 CMake 里做 fallback 查找 |
+| GLFW3 | ✅ | `/usr/include/GLFW` | 新 M6 用 |
+| Vulkan SDK | ✅ | `/home/yoyorm/SDK/Vulkan/1.4.357.1/x86_64`；另有 GLFW3（`/usr/include/GLFW`）与系统 `libvulkan.so.1.4.313` | **`VULKAN_SDK` 环境变量未设置**（2026-09-22 复查仍未设）。新 M6 前把 `export VULKAN_SDK=~/SDK/Vulkan/1.4.357.1/x86_64` 写进 `~/.bashrc`，并在 CMake 里做 fallback 查找 |
 | Python | ✅ | 3.12.3 | `tools/check_deps.py` 等脚本用 |
 | **clang-tidy** | ❌ 未装 | — | **可选**：`sudo apt install clang-tidy`。被推了三次（M0→M1→M11），说明学习价值低 → 不痛就不装（R6） |
-| **valgrind** | ❌ 未装 | — | `sudo apt install valgrind` —— 可选，ASan 已覆盖大部分场景；M6/M7 查内存时序问题时可能想要 |
+| **valgrind** | ❌ 未装 | — | `sudo apt install valgrind` —— 可选，ASan 已覆盖大部分场景；M9/M10 查内存时序问题时可能想要 |
 | **ccache** | ❌ 未装 | — | `sudo apt install ccache` —— 安排在 **Day 5**（做 CI 缓存时才知道它省了多少）。CMake 侧用 `find_program` 探测，装了就用、没装不报错 |
 | clangd | ✅ **已接入** | apt 安装 | 根目录 `compile_commands.json` → `build/debug/` 符号链接；`.vscode/settings.json` 里已禁用 C/C++ 扩展的 IntelliSense 避免冲突 |
 | doxygen / graphviz | ❌ 未装 | — | 可选（M11 生成调用图/依赖图） |
@@ -36,7 +36,7 @@
 | gcovr / lcov | ❓ 待查 | — | **可选**，M11 想看覆盖率时再装：`sudo apt install python3-pip gcovr`。只统计，不做门禁 |
 
 **硬件**：12 线程 CPU / 31GB RAM / 磁盘剩余 240GB。
-→ 对 M7 的意义：`JobSystem` 默认 `worker_count = 11`，benchmark 时记录这个值；
+→ 对 M10 的意义：`JobSystem` 默认 `worker_count = 11`，benchmark 时记录这个值；
 → 对构建的意义：`-j12`。**实测 M0 规模：configure 0.15s / 全量 1.2s / 改一个 .cpp 增量 0.18s**（还没到需要 ccache 的量级）。
 
 ---
@@ -68,7 +68,7 @@
 
 | preset | 何时 | 关键 flag |
 |---|---|---|
-| `tsan` | M7 | `-fsanitize=thread`（**不能与 asan 同用**） |
+| `tsan` | M10 | `-fsanitize=thread`（**不能与 asan 同用**） |
 | `ci` | 不单独建 | CI 用 `release` + 命令行 `-DYR_WARNINGS_AS_ERRORS=ON`，避免 preset 数量翻倍 |
 
 每个 preset 都要能用 `ctest --preset <name>` 跑测试。
@@ -133,7 +133,8 @@ TEST_CASE("Node: queue_free during own kProcess is deferred to phase 9", "[scene
 |---|---|---|---|
 | 单元测试 | `tests/<layer>/` | 每次构建 + CI | 语义正确 |
 | 集成测试 | `tests/integration/`（如"跑 10000 帧 headless"） | CI | 系统协同、泄漏、稳定性 |
-| 玩法回归测试 | `apps/text_adventure` 的 headless 自动通关脚本 | CI | 证明 Runtime 真能承载游戏 |
+| headless scene simulation | `apps/tick_sandbox` 跑 10000 帧（创建/删除/移动 Node，ObjectDB 归零） | CI | 证明 Runtime 真能承载世界、生命周期与删除安全 |
+| 快照重放门禁 | `apps/render_demo --dump-snapshot` / `--replay-snapshot` + `NullBackend` 确定性统计 | CI | 证明渲染契约完备、与后端解耦 |
 | benchmark | `benchmarks/` | **手动**（不进 CI，太慢且噪声大） | 性能判断，产出报告 |
 
 ### 3.5 测试必须能脱离真实环境（原则 P5）
@@ -150,7 +151,7 @@ TEST_CASE("Node: queue_free during own kProcess is deferred to phase 9", "[scene
 | Sanitizer | 何时跑 | 备注 |
 |---|---|---|
 | ASan + UBSan | **每次提交前**（本地 asan preset 跑一遍全测试）+ CI | 主力。注意 `-fno-sanitize-recover=all` 让 UB 直接失败 |
-| TSan | M3（`post_from_any_thread`）、M6（异步加载）、M7（全量）+ CI 单独 job | 不能与 ASan 同用；Catch2 + TSan 可能对静态初始化报 suppress 项，需要 `tsan.supp` |
+| TSan | M3（`post_from_any_thread`）、M9（异步加载）、M10（全量）+ CI 单独 job | 不能与 ASan 同用；Catch2 + TSan 可能对静态初始化报 suppress 项，需要 `tsan.supp` |
 | MSan | 不用 | 需要全量 instrumented 依赖，成本过高 |
 | 泄漏检测 | ASan 自带 LeakSanitizer；额外用 `ObjectDB` 存活计数在测试结束时断言为 0 | **ObjectDB 断言比 LSan 更有价值**：它能告诉你泄漏的是哪个类 |
 
@@ -179,7 +180,7 @@ YR_LOG_INFO / YR_LOG_WARN / YR_LOG_ERROR / YR_LOG_FATAL
 **待补**（推迟，见 `02-roadmap.md`）
 - fmt 风格格式化（`{}` 占位符）。**当前宏只传格式串本身，`__VA_ARGS__` 不求值**——因此参数里的副作用不会发生。
 - 输出补 时间戳 / 帧号 / 线程 ID。
-- 线程安全（单 mutex + 行缓冲）+ `InlineBuffer` SBO 优化，与 M7 一起做。
+- 线程安全（单 mutex + 行缓冲）+ `InlineBuffer` SBO 优化，与 M10 一起做。
 - `--log-level` / `--log-filter` / `--log-file` 命令行开关。
 
 **禁止**：用日志代替返回值上报错误；在热路径（每帧每节点）打 INFO 以上日志。
@@ -206,7 +207,7 @@ YR_LOG_INFO / YR_LOG_WARN / YR_LOG_ERROR / YR_LOG_FATAL
 
 `setAssertHandler()` 可替换"报告什么 / 要不要停"（`nullptr` 恢复默认）。
 这不是为测试而造的抽象——它让"release 下降级为日志"成为可能，而测试只是第一个消费者。
-handler 目前非线程安全，约定在启动线程前设置（M7 修）。
+handler 目前非线程安全，约定在启动线程前设置（M10 修）。
 
 **使用规则**
 
@@ -332,11 +333,11 @@ handler 目前非线程安全，约定在启动线程前设置（M7 修）。
 | job | 内容 | 触发 |
 |---|---|---|
 | `build-test` | matrix: {gcc-13, clang-18} × {debug, release, asan} → configure/build/ctest | push + PR |
-| `tsan` | 单独 job（M7 起启用） | push + PR |
+| `tsan` | 单独 job（M10 起启用） | push + PR |
 | `format` | `clang-format-18 --dry-run -Werror` 全仓库 | push + PR |
 | `lint` | `tools/check_deps.py`（反向依赖 + 禁用符号）；clang-tidy 可选 | push + PR |
 | `coverage` | gcovr → 上传 + 徽章（M11，**可选**：只统计、不做门禁） | push to master |
-| `demo` | 构建 `apps/text_adventure` 并跑 headless 自动通关（M8 起） | push + PR |
+| `sandbox` | 构建 `apps/tick_sandbox` + 跑 headless 10000 帧 simulation + `NullBackend` 快照 dump/replay（M5 起；Vulkan 路径不在无 GPU runner 跑） | push + PR |
 
 要求：**CI 必须能在无 GPU、无窗口、无网络的 runner 上全绿**（这就是 headless-first 的红利）。
 Vulkan 后端 target 用 CMake option `YR_BUILD_VULKAN_BACKEND=OFF` 默认关闭，CI 里不构建。
@@ -366,16 +367,16 @@ CI 门禁用 `clang-format-18 --dry-run -Werror $(git ls-files '*.h' '*.cpp')`�
 | 单文件行数 | `.h` ≤ 300 行，`.cpp` ≤ 600 行；超了就是该拆的信号 |
 | 函数行数 | ≤ 60 行；超了先想"是不是职责多了"，再想"怎么拆" |
 | 注释语言 | 中文可以（与既有项目一致），但 **public API 的契约注释用中英皆可、必须写清前置/后置条件** |
-| TODO | 必须带负责人与里程碑：`// TODO(M5): 支持 SubResource 循环引用` |
-| 禁止 | 裸 `new/delete`、`reinterpret_cast`（除序列化 POD 且有注释）、`using namespace` 在头文件、全局可变状态（白名单：`ClassDB` / `ObjectDB` / `Engine` / **断言 handler**（`assert.cpp` 的 `g_handler`，理由：断言系统必须在任何其他系统之前可用，不能依赖注入；非线程安全，M7 处理），均有 ADR 或注释说明）、`std::endl`（用 `'\n'`，除非要 flush） |
+| TODO | 必须带负责人与里程碑：`// TODO(M8): 支持 SubResource 循环引用` |
+| 禁止 | 裸 `new/delete`、`reinterpret_cast`（除序列化 POD 且有注释）、`using namespace` 在头文件、全局可变状态（白名单：`ClassDB` / `ObjectDB` / `Engine` / **断言 handler**（`assert.cpp` 的 `g_handler`，理由：断言系统必须在任何其他系统之前可用，不能依赖注入；非线程安全，M10 处理），均有 ADR 或注释说明）、`std::endl`（用 `'\n'`，除非要 flush） |
 
 ---
 
 ## 13. 资源与 assets 目录规范
 
 ```
-assets_src/        # 源资源（可编辑格式：.png/.gltf/.md 剧情原稿）——M11 引入
-assets/            # 运行时资源（.yrscn/.yrres/.json/.yrdlg）——M5 起
+assets_src/        # 源资源（可编辑格式：.png/.gltf/.md 等）——M11 引入
+assets/            # 运行时资源（.yrscn/.yrres/.json/.txt）——M8 起
 build/<preset>/assets/   # 构建时拷贝（或 yr_pack 产物 .yrpak）
 ```
 | 规则 | 理由 |
@@ -400,11 +401,11 @@ build/<preset>/assets/   # 构建时拷贝（或 yr_pack 产物 .yrpak）
 | `doc/05-engineering.md` §1 | 装了新工具时 | 工具表现状与本机一致 |
 | `README.md`（根） | 每里程碑收口 | 里程碑表、构建命令、截图/GIF 是最新的 |
 | `benchmarks/README.md` | 每个实验（E1~E16） | 方法可复现 + 有结论 + 有"对设计的影响" |
-| `doc/07-portfolio.md` | 里程碑收口时看；M8 后大修 | §2 自检问题是否仍答得出、§3 展示物打勾 |
+| `doc/07-portfolio.md` | 里程碑收口时看；M7 后大修 | §2 自检问题是否仍答得出、§3 展示物打勾 |
 
 **不产出**：周记、设计笔记、Godot 对照笔记、evidence 文件。
 这些信息分别由 **commit message 正文**（高频理由）、**ADR**（架构取舍）、**代码注释**（离开代码就会失效的细节，如内存序、帧阶段顺序、快照字段单位）承载。
 
-**根 README 的最小结构**（M0 建骨架，M8/M10 补内容）：
-项目一句话 → 状态与里程碑进度表 → 架构图 → 两个 Demo 的 GIF → 构建与运行（三条命令）→
+**根 README 的最小结构**（M0 建骨架，M7/M11 补内容）：
+项目一句话 → 状态与里程碑进度表 → 架构图 → `tick_sandbox` / `render_demo` 的 GIF → 构建与运行（三条命令）→
 模块说明表 → 测试与 CI 徽章 → 文档索引 → 致谢/参考。

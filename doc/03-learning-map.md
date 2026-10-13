@@ -38,19 +38,19 @@
 | 宏工程（`__VA_ARGS__`、`__VA_OPT__`、token pasting、多行宏、宏内声明静态变量） | M2 | **B** | 为什么所有引擎都在用宏做反射；宏的可调试性代价 | Godot `GDCLASS`、Unreal `UCLASS`（读，不抄） |
 | 类型擦除（函数指针 + void* context、`std::function`、成员指针） | M2, M3 | **C** | 三种擦除方式的体积/性能/可读性对比 | `core/object/callable_mp.h`、`method_bind.h` |
 | tagged union / `std::variant` / 手写 Variant | M2 | **B** | 为什么引擎不用 `std::variant` | Godot `variant.h` |
-| 智能指针与侵入式引用计数 | M2, M6 | **C** | intrusive vs non-intrusive；控制块开销；`enable_shared_from_this` | 《Effective Modern C++》Item 18-22；Godot `ref_counted.h` |
-| 原子与内存模型（`memory_order_*`、happens-before、false sharing） | M3, M7 | **B** | acquire/release 配对；为什么 stats 要 `alignas(64)` | 《C++ Concurrency in Action》2nd 第 5、7、9、10 章 ← **M7 前必读** |
-| 线程池 / 任务图 / work stealing | M7 | **B** | 任务粒度；主线程帮忙执行 | Godot `worker_thread_pool.cpp`；Folly/EnkiTS 源码选读 |
-| 条件变量与 lost wakeup | M7 | **B** | 为什么 `wait` 必须带 predicate | 《C++ Concurrency in Action》第 4 章 |
+| 智能指针与侵入式引用计数 | M2, M9 | **C** | intrusive vs non-intrusive；控制块开销；`enable_shared_from_this` | 《Effective Modern C++》Item 18-22；Godot `ref_counted.h` |
+| 原子与内存模型（`memory_order_*`、happens-before、false sharing） | M3, M10 | **B** | acquire/release 配对；为什么 stats 要 `alignas(64)` | 《C++ Concurrency in Action》2nd 第 5、7、9、10 章 ← **M10 前必读** |
+| 线程池 / 任务图 / work stealing | M10 | **B** | 任务粒度；主线程帮忙执行 | Godot `worker_thread_pool.cpp`；Folly/EnkiTS 源码选读 |
+| 条件变量与 lost wakeup | M10 | **B** | 为什么 `wait` 必须带 predicate | 《C++ Concurrency in Action》第 4 章 |
 | `std::chrono` 与时间语义 | M1, M4 | A | steady vs system clock；duration cast 精度丢失 | cppreference |
-| 缓存友好数据布局（SoA/AoS、稠密数组、对齐） | M1, M4, M7 | **B** | 为什么遍历比查找更值得优化 | 《Data-Oriented Design》(Richard Fabian) 前 3 章；Mike Acton "Data-Oriented Design and C++" (CppCon 2014) |
-| 手写 lexer/parser（递归下降） | M5 | **B** | token 化、错误位置报告 | 《Crafting Interpreters》第 6 章（扫描器）即可 |
-| 二进制序列化（对齐、字节序、版本头、`static_assert(sizeof)`） | M5 | **B** | 结构体填充陷阱；为什么不能直接 `fwrite(struct)` | Godot `resource_format_binary.cpp` |
-| POD 契约 / ABI 稳定 | M9 | **B** | 为什么跨模块边界传 POD 而不是类 | — |
-| Vulkan（已有基础）：dynamic rendering、sync2、descriptor、frame-in-flight、延迟销毁 | M10 | **B** | 你已会；重点转向"如何被 Runtime 驱动" | 你自己的 Yo_Renderer + vkguide.dev |
+| 缓存友好数据布局（SoA/AoS、稠密数组、对齐） | M1, M4, M10 | **B** | 为什么遍历比查找更值得优化 | 《Data-Oriented Design》(Richard Fabian) 前 3 章；Mike Acton "Data-Oriented Design and C++" (CppCon 2014) |
+| 手写 lexer/parser（递归下降） | M8 | **B** | token 化、错误位置报告 | 《Crafting Interpreters》第 6 章（扫描器）即可 |
+| 二进制序列化（对齐、字节序、版本头、`static_assert(sizeof)`） | M8 | **B** | 结构体填充陷阱；为什么不能直接 `fwrite(struct)` | Godot `resource_format_binary.cpp` |
+| POD 契约 / ABI 稳定 | M5 | **B** | 为什么跨模块边界传 POD 而不是类 | — |
+| Vulkan（已有基础）：dynamic rendering、sync2、descriptor、frame-in-flight、延迟销毁 | M6/M7 | **B** | 你已会；重点转向"如何被 Runtime 驱动" | 你自己的 Yo_Renderer + vkguide.dev |
 
 **不需要学的**（明确排除，防止时间浪费）：C++23 新特性（本项目固定 C++20）、异常安全的全部细节（不用异常做控制流）、
-协程（M6 的异步用回调 + 状态机足够，协程列入 stretch 之外的"永不"）、模板元编程炫技。
+协程（M9 的异步用回调 + 状态机足够，协程列入 stretch 之外的"永不"）、模板元编程炫技。
 
 ---
 
@@ -61,17 +61,17 @@
 | 游戏循环与时间管理 | M4 | 固定步长 vs 可变步长的取舍？spiral of death 怎么防？插值渲染怎么做？ | 《Game Engine Architecture》(GEA) 第 8 章；Glenn Fiedler "Fix Your Timestep" |
 | 对象模型：GameObject/Component 的三种流派 | M2, M4 | 继承树 / 组件组合 / ECS 各自的适用场景与代价？ | GEA 第 22 章（原文按版本可能不同，找"Gameplay Systems"章）；Scott Bilas "Data-Driven Game Object System" (GDC 2002)；EnTT wiki "ECS back and forth" |
 | 属性系统与反射 | M2 | 反射能换来什么？代价是什么（编译时间、二进制体积、调试难度）？ | Godot `class_db.h`；Unreal UPROPERTY 文档 |
-| 序列化与资产管线 | M5, M6, M11 | 为什么引擎需要"导入/cook"这一步？为什么不能直接读源文件？ | GEA 资产管理章；Godot `resource_loader.cpp`、`file_access_pack.h` |
-| 资源生命周期与流式加载 | M6 | 引用计数 vs GC vs 显式卸载？异步加载为什么必须回主线程收尾？ | Godot `resource_loader.cpp`（ThreadLoadTask）；UE 的 Async Loading |
+| 序列化与资产管线 | M8, M9, M11 | 为什么引擎需要"导入/cook"这一步？为什么不能直接读源文件？ | GEA 资产管理章；Godot `resource_loader.cpp`、`file_access_pack.h` |
+| 资源生命周期与流式加载 | M9 | 引用计数 vs GC vs 显式卸载？异步加载为什么必须回主线程收尾？ | Godot `resource_loader.cpp`（ThreadLoadTask）；UE 的 Async Loading |
 | 事件/消息/信号 | M3 | 立即派发 vs 队列派发的差别？为什么引擎两者都要？ | Godot `message_queue.h`；GEA 事件系统章 |
-| 并发架构（游戏线程/渲染线程/工作线程） | M7, M9, M10 | 引擎为什么普遍是"单线程逻辑 + 并行数据 + 独立渲染"？边界怎么画？ | GEA 并发章；Godot `server_wrap_mt_common.h`；《Multiplayer Game Programming》(选) |
+| 并发架构（游戏线程/渲染线程/工作线程） | M10, M5, M7 | 引擎为什么普遍是"单线程逻辑 + 并行数据 + 独立渲染"？边界怎么画？ | GEA 并发章；Godot `server_wrap_mt_common.h`；《Multiplayer Game Programming》(选) |
 | 场景图与层级变换 | M4 | 脏标记怎么传播？为什么很多引擎缓存世界矩阵？ | Godot `node.cpp` 的 transform propagation；Yo_Renderer roadmap §1.2 |
-| Server 模式与渲染解耦 | M9, M10 | 为什么 Godot 把渲染/物理/音频都做成 Server + RID？ | Godot `servers/`；Frostbite FrameGraph (GDC 2017)；Unreal RDG 文档 |
+| Server 模式与渲染解耦 | M5, M7 | 为什么 Godot 把渲染/物理/音频都做成 Server + RID？ | Godot `servers/`；Frostbite FrameGraph (GDC 2017)；Unreal RDG 文档 |
 | 构建系统与模块化 | M0, M11 | 为什么大引擎构建系统那么复杂？SCsub/CMake 各解决什么？ | Godot `SConstruct`+`methods.py`；UE 的 UBT 概念文档 |
 | 调试与剖析 | M11 | 没有 profiler 时怎么定位性能问题？ | `perf` 文档；Tracy 文档；GEA 调试章 |
 
 **主线教材**：《Game Engine Architecture》Jason Gregory（第 3 版）。
-**读法**：不要顺序通读。按里程碑跳读——M1 读内存/容器章，M2 读对象模型章，M4 读游戏循环章，M6 读资源章，M7 读并发章。
+**读法**：不要顺序通读。按里程碑跳读——M1 读内存/容器章，M2 读对象模型章，M4 读游戏循环章，M9 读资源章，M10 读并发章。
 每章读完写 5 条"我要在项目里验证的结论"，然后在对应里程碑里验证。
 
 ---
@@ -83,10 +83,10 @@
 |---|---|---|
 | Godot 4.8 源码（本机 `/home/yoyorm/Code/GodotDev/godot`） | 参照系 | 全程，见 `04-godot-study.md` |
 | 《Game Engine Architecture》3rd | 主线教材 | 按章跳读 |
-| 《C++ Concurrency in Action》2nd 第 4/5/7/9/10 章 | M7 前置 | M6 结束时 |
+| 《C++ Concurrency in Action》2nd 第 4/5/7/9/10 章 | M10 前置 | M9 结束时 |
 | 《A Philosophy of Software Design》(John Ousterhout) | 模块设计判断力（薄，~180 页） | M0~M2 期间读完 |
 | Glenn Fiedler "Fix Your Timestep" | M4 固定步长 | M4 开工前 |
-| 你自己的 `Yo_Renderer/doc/*.md` | 反面教材 + 已有成果 | M0、M9、M10 |
+| 你自己的 `Yo_Renderer/doc/*.md` | 反面教材 + 底层机制参考 | M0、M5、M6/M7 |
 
 ### P1（强烈推荐）
 | 材料 | 用途 |
@@ -96,7 +96,7 @@
 | Mike Acton, "Data-Oriented Design and C++" (CppCon 2014) | 数据布局思维（1 小时视频，值得看两遍） |
 | 《Data-Oriented Design》Richard Fabian（免费在线） | 前 3 章 |
 | Godot 官方文档 "Multiple threads" / "Using Servers" | Server 模式与线程模型 |
-| vkguide.dev | M10 复习 Vulkan 工程实践 |
+| vkguide.dev | M6/M7 复习 Vulkan 工程实践 |
 
 ### P2（按需/stretch）
 | 材料 | 用途 |
@@ -106,7 +106,7 @@
 | 《Professional CMake》 | M0/M11 构建系统深入 |
 | 《Game Programming Patterns》(Robert Nystrom，免费在线) | 模式速查（Component/Event Queue/Object Pool/Service Locator 与本项目直接相关） |
 | Tracy Profiler 文档 | M11 |
-| 《Computer Systems: A Programmer's Perspective》 | 你已在读（CS-APP 目录）；cache/链接/虚拟内存章节与 M1/M7 直接相关 |
+| 《Computer Systems: A Programmer's Perspective》 | 你已在读（CS-APP 目录）；cache/链接/虚拟内存章节与 M1/M10 直接相关 |
 
 ---
 
@@ -126,13 +126,13 @@
 | E6 | Variant 体积与拷贝成本（含 Array/Dict 深拷贝） | M2 | `sizeof(Variant)`；COW 值不值得做？ |
 | E7 | 树遍历策略：递归 vs 显式栈 vs 预排序扁平数组 | M4 | 10k 节点树的 `_process` 派发耗时 |
 | E8 | Transform 脏标记 vs 每帧全量重算 | M4 | 不同"每帧移动节点比例"下的收益曲线（Yo_Renderer roadmap §1.2 的正式答案） |
-| E9 | 文本 vs 二进制场景格式 | M5 | 1000 节点场景：文件大小、save 耗时、load 耗时 |
-| E10 | 同步 vs 异步资源加载（配 ThrottledFileAccess） | M6 | 帧时间 p95 对比；加载 100 个资源的总时长 |
-| E11 | JobSystem 加速比 vs 任务粒度 | M7 | 找到"并行收益 = 0"的任务大小区间 |
-| E12 | false sharing 实测：`JobStats` 加/不加 `alignas(64)` | M7 | 差多少倍？（经典实验，结果通常惊人） |
-| E13 | memory_order relaxed vs acquire/release vs seq_cst | M7 | x86 上差别有多大？为什么 ARM 上不一样（查资料回答）？ |
-| E14 | 快照抽取（RenderExtract）耗时 vs 场景规模 | M9 | 1k/10k 节点下 extract 占一帧多少比例？ |
-| E15 | 视锥剔除串行 vs 并行（job） | M10 | 收益与开销平衡点 |
+| E9 | 文本 vs 二进制场景格式 | M8 | 1000 节点场景：文件大小、save 耗时、load 耗时 |
+| E10 | 同步 vs 异步资源加载（配 ThrottledFileAccess） | M9 | 帧时间 p95 对比；加载 100 个资源的总时长 |
+| E11 | JobSystem 加速比 vs 任务粒度 | M10 | 找到"并行收益 = 0"的任务大小区间 |
+| E12 | false sharing 实测：`JobStats` 加/不加 `alignas(64)` | M10 | 差多少倍？（经典实验，结果通常惊人） |
+| E13 | memory_order relaxed vs acquire/release vs seq_cst | M10 | x86 上差别有多大？为什么 ARM 上不一样（查资料回答）？ |
+| E14 | 快照抽取（RenderExtract）耗时 vs 场景规模 | M5 | 1k/10k 节点下 extract 占一帧多少比例？ |
+| E15 | 视锥剔除串行 vs 并行（job） | M7 | 收益与开销平衡点 |
 | E16 | `.yrpak` vs 散文件加载 | M11 | 冷启动时间对比（打包的真实收益） |
 
 > **规则**：每个实验必须有**方法描述**（硬件、编译选项、迭代次数、是否预热、如何防止被优化掉），
@@ -159,7 +159,7 @@
 
 **YRuntime 的答案（写进 ADR D2）**：主体用 Object 树 + 反射（因为项目目标是"理解 Runtime 与工具链"，
 且需要序列化/检视器/事件），但在**数据密集且无层级语义**的地方用 SoA：
-① Transform 世界矩阵平行数组（M4）；② RenderSnapshot 的 DrawItem 数组（M9）；③ 若做 S3，把"渲染实例数据"整体搬进 SparseSet。
+① Transform 世界矩阵平行数组（M4）；② RenderSnapshot 的 DrawItem 数组（M5）；③ 若做 S3，把"渲染实例数据"整体搬进 SparseSet。
 **边界规则**："**逻辑身份用 Object，批量数据用 SoA；Object 持有 index 指向 SoA 行，SoA 不持有 Object 指针。**"
 
 ---
@@ -214,10 +214,10 @@
 | M2 | 宏展开机制（会用 `clang -E`）；成员指针；类型擦除的三种做法 |
 | M3 | `std::function` 的代价；迭代器失效；重入概念 |
 | M4 | 组合模式；树遍历（前/后序）；固定步长（读完 Fix Your Timestep） |
-| M5 | 递归下降解析基本写法；结构体对齐与填充；版本兼容策略 |
-| M6 | 回调 vs future；引用计数语义；IO 抽象与依赖注入 |
-| M7 | **《C++ Concurrency in Action》第 5 章（内存模型）+ 第 9/10 章**；条件变量 predicate |
-| M8 | 无新知识（这是"用引擎"的阶段，重点在玩法与数据组织） |
-| M9 | POD/ABI 概念；双缓冲；Server 模式（读 Godot `servers/` 概览） |
-| M10 | 你已有的 Vulkan 知识 + frame-in-flight 与延迟销毁 |
+| M5 | POD/ABI 概念；Server 模式（读 Godot `servers/` 概览）；可重放性作为验证手段 |
+| M6 | GLFW 窗口 / swapchain；Vulkan 初始化与 frame sync（你已有基础） |
+| M7 | frame-in-flight 与延迟销毁；GPU 资源生命周期 |
+| M8 | 递归下降解析基本写法；结构体对齐与填充；版本兼容策略 |
+| M9 | 回调 vs future；引用计数语义；IO 抽象与依赖注入 |
+| M10 | **《C++ Concurrency in Action》第 5 章（内存模型）+ 第 9/10 章**；条件变量 predicate |
 | M11 | 打包格式基本概念（读 Godot `file_access_pack.h`） |

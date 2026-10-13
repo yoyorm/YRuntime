@@ -2,8 +2,10 @@
 
 > **一个以"理解游戏引擎运行时"为目的的 C++20 学习型项目。**
 > 从零实现对象生命周期、反射、事件、场景树、序列化、异步资源、任务调度与主循环，
-> 先跑通一个 headless 的文字冒险 Demo，再把自研 Vulkan 渲染器作为可替换 Backend 接入，
-> 形成 `游戏状态 → Runtime → Renderer → GPU` 的完整链路。全程以 Godot 4.x 源码为参照系。
+> 先跑通 headless Runtime 骨架（可 tick 的世界 + 可验证的 NullBackend），
+> 再定义 renderer-neutral 的渲染契约（RenderSnapshot / RendererBackend），
+> 接入最小 Vulkan backend，最终让 Runtime 里的 Node 移动驱动画面变化，
+> 形成 `游戏状态 → Runtime → RenderSnapshot → Renderer → GPU` 的完整链路。全程以 Godot 4.x 源码为参照系。
 
 ![status](https://img.shields.io/badge/status-M3%20done%20M4%20next-brightgreen)
 ![CI](https://github.com/yoyorm/YRuntime/actions/workflows/ci.yml/badge.svg)
@@ -21,13 +23,13 @@
 | M1 | 句柄、容器、时间、字符串 | ✅ 核心完成 | Handle/SlotMap/Timer/StringId/ObjectID ✅；E1 perf 结论未做（非阻塞） |
 | M2 | 反射与对象模型 | ✅ 核心完成 | Object/ObjectDB/Variant/ClassInfo/ClassDB ✅；`yr_inspect`、注册宏延后 |
 | M3 | 事件系统（**单线程 EventBus**） | ✅ 单线程范围完成 | Subscription RAII、同步 subscribe/publish/unsubscribe、post/flush、重入与深度上限 8、确定性重放 + 1000 事件测试 |
-| M4 | 场景树与主循环 | 🔨 **下一主线** | Node-1 父子关系与所有权 ✅（`yr_scene`）；Node-2 lifecycle 派发进行中；目标 headless 世界 tick 10000 帧 |
-| M5 | 序列化与场景资源 | ⬜ | 手写 `.yrscn` + round-trip diff 为空 |
-| M6 | 资源系统（异步加载） | ⬜ | 慢 IO 下不卡帧的加载曲线 |
-| M7 | 任务系统（并行） | ⬜ | 加速比曲线 + TSan 干净 |
-| **M8** | **文字冒险 Demo** | ⬜ | **可玩 ≥10 分钟 + 存读档（作品节点 1）** |
-| M9 | 渲染契约与 NullBackend | ⬜ | 快照 dump/replay |
-| **M10** | **Vulkan 后端接入** | ⬜ | **Runtime 驱动画面（作品节点 2）** |
+| M4 | 场景树与主循环 | 🔨 **下一主线** | Node-1 父子关系与所有权 ✅（`yr_scene`）；Node-2 enter/exit ✅；目标 headless 世界 tick 10000 帧 |
+| M5 | 渲染契约与 NullBackend | ⬜ | renderer-neutral 快照 dump/replay + 确定性统计 |
+| M6 | 最小 Vulkan Bootstrap | ⬜ | 窗口 + 清屏 + 硬编码三角形 |
+| M7 | Snapshot 驱动画面 | ⬜ | **Runtime 移动 Node → 画面变化（首个主要作品节点）** |
+| M8 | 序列化与场景资源 | ⬜ | 手写 `.yrscn` + save→load→save 逐字节 round-trip |
+| M9 | 资源系统（异步加载） | ⬜ | 慢 IO 下不卡帧 + AssetHandle→GPU 桥接 |
+| M10 | 任务系统（并行） | ⬜ | 加速比曲线 + TSan 干净 |
 | M11 | 工具链与打磨 | ⬜ | `.yrpak` 打包 + 覆盖率 |
 
 ## 目标架构
@@ -71,14 +73,16 @@ ctest --preset debug          # 测试
 | CMake 3.25+ / Ninja | preset 格式 v6 需要 3.25 |
 | Catch2 3 | `sudo apt install libcatch2-dev`（本机 3.7.1） |
 | Linux | 见 ADR D12，不做跨平台移植 |
-| Vulkan SDK ≥1.4 · GLFW3 | **仅 M10 的 `yr_render_vulkan` 需要**，`YR_BUILD_VULKAN_BACKEND=OFF` 时不需要 |
+| Vulkan SDK ≥1.4 · GLFW3 | **仅新 M6 起的 `yr_render_vulkan` 需要**，`YR_BUILD_VULKAN_BACKEND=OFF` 时不需要 |
 
 可选：`ccache`（装了自动启用）。
 
 ## 相关项目
 
 - **[Yo_Renderer](https://github.com/yoyorm/Yo_Renderer)** — 大一暑假的 Vulkan PBR 渲染器（ECS + RHI + IBL + 阴影 + ImGui 编辑器，~8400 行）。
-  本项目 M10 会把它的 `rhi/` 与 `render/` 层重构为可替换的 `RendererBackend`。
+  本项目把它当作**参考与反面教材**：Vulkan backend 以最小重写为主，**选择性借鉴/逐文件吸收底层机制**
+  （`platform/VulkanContext`、`Swapchain`、`SyncObjects`、`CommandRecorder`、`VulkanResourceTable` 等），
+  不整体搬入 `rhi/`+`render/`，也不把 Yo_Renderer 作为 subdirectory。详见 `doc/02-roadmap.md` M6 与 ADR D19。
 - **Godot Engine 4.x** — 本项目的学习参照系。
 
 ## 许可

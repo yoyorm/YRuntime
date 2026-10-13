@@ -17,18 +17,18 @@
 | M2 | 反射与对象模型 | 2~3 | `yr_object` `yr_inspect` | `yr_inspect --all` 打印所有类与属性 | ★★★★ |
 | M3 | 事件系统（单线程 EventBus） | 1~2 | `yr_event` | 确定性重放 + 1000 事件正确性测试全绿（MessageQueue 与跨线程 post 推迟） | ★★ |
 | M4 | 场景树与主循环 | 3~4 | `yr_scene` `yr_engine` | **headless 世界 tick 10000 帧**（可录屏终端输出） | ★★★★★ |
-| M5 | 序列化与场景资源 | 3~4 | `yr_serialize` | 手写 `.yrscn` 加载 + 存读档 round-trip diff | ★★★★★ |
-| M6 | 资源系统 | 2~3 | `yr_asset` | 异步加载进度条（模拟慢 IO 不卡帧） | ★★★★ |
-| M7 | 任务系统 | 3~4 | `yr_job` | 并行 vs 串行 benchmark + TSan 干净报告 | ★★★★ |
-| M8 | 文字冒险 Demo | 2~3 | `apps/text_adventure` | **可玩 ≥10 分钟 + 存读档 + 录屏** | ★★★★★ 作品节点 1 |
-| M9 | 渲染契约与空后端 | 2 | `yr_render_iface` `yr_render_null` | 快照 dump 成文件并重放 | ★★★ |
-| M10 | Vulkan 后端接入 | 4~6 | `yr_render_vulkan` `apps/render_demo` | **Runtime 驱动画面 + 录屏** | ★★★★★ 作品节点 2 |
-| M11 | 工具链与打磨 | 2~4 | `tools/yr_pack` `yr_scene_conv` | `.yrpak` 打包 + 从 pak 启动游戏 | ★★★ |
+| M5 | 渲染契约与 NullBackend | 2 | `yr_render_iface` `yr_render_null` | renderer-neutral 快照 dump/replay + 确定性统计 | ★★★ |
+| M6 | 最小 Vulkan Bootstrap | 2~3 | `yr_render_vulkan` | 窗口 + 清屏 + 硬编码三角形（不接场景） | ★★★★ |
+| M7 | Snapshot 驱动画面 | 3~4 | `apps/render_demo` | **Runtime 移动 Node → 画面变化**（首个主要作品节点） | ★★★★★ |
+| M8 | 序列化与场景资源 | 3~4 | `yr_serialize` | 手写 `.yrscn` 加载 + save→load→save 逐字节 round-trip | ★★★★★ |
+| M9 | 资源系统 | 2~3 | `yr_asset` | 异步加载不卡帧 + AssetHandle→GPU 资源桥接 | ★★★★ |
+| M10 | 任务系统 | 3~4 | `yr_job` | 并行 vs 串行 benchmark + TSan 干净报告 | ★★★★ |
+| M11 | 工具链与打磨 | 2~4 | `tools/yr_pack` `yr_scene_conv` | `.yrpak` 打包 + 覆盖率 | ★★★ |
 
 **总计 ≈ 26~38 周**（约 6~9 个月）。假期按 3 倍速折算。
 
 ### 三个铁规则
-1. **不跳里程碑**。M2（反射）没做完就开始 M5（序列化）= 返工。唯一例外：M6 可以先做同步加载版本。
+1. **不跳里程碑**。M2（反射）没做完就开始 M8（序列化）= 返工；M4 的最小闭环没走完就冲 M6/M7（Vulkan）= 把渲染写成绕过 Node 生命周期、延迟删除与帧阶段的胶水。唯一例外：M9 可以先做同步加载版本。
 2. **每个里程碑的"可运行物"是验收的一部分**，不是可选项。没有可运行物 → 你无法向别人（也无法向 3 个月后的自己）证明它工作。
 3. **超期 50% 就砍范围，不砍质量**。每个 M 都给了"降级方案"，用它。
 
@@ -60,11 +60,11 @@
 | 计划里写的 | 实际 | 原因 |
 |---|---|---|
 | `cmake/YrLibrary.cmake`（`yr_add_library()` 封装） | **推迟到 M1/M2** | 只有 1 个 target 时抽象没有意义；等第 2、3 个 target 出现重复样板再抽（同 ADR D6 的思路） |
-| `tsan` / `ci` preset | **推迟**（tsan→M7，ci→Day 5） | 决策协议 R3：不痛就不做 |
+| `tsan` / `ci` preset | **推迟**（tsan→M10，ci→Day 5） | 决策协议 R3：不痛就不做 |
 | ccache | **推迟到 Day 5** | 它是"提速"不是"能力"；做 CI 缓存时才知道省了多少 |
 | `.editorconfig` | 未建 | clang-format 已覆盖格式；需要时再加 |
 | `tests/core/test_main.cpp` | 实际叫 `test_smoke.cpp` | 用 `Catch2::Catch2WithMain`，不需要自定义 main（M2 注册反射类型时才需要换） |
-| sanitizer 做成 `cmake/YrSanitizers.cmake`（列表解析 + 互斥检查） | **5 行 `option()` 写在顶层** | TSan 到 M7 才用；避免引入 `foreach`/`list(FIND)`/`FATAL_ERROR` 三组新语法 |
+| sanitizer 做成 `cmake/YrSanitizers.cmake`（列表解析 + 互斥检查） | **5 行 `option()` 写在顶层** | TSan 到 M10 才用；避免引入 `foreach`/`list(FIND)`/`FATAL_ERROR` 三组新语法 |
 | log 的 fmt 风格格式化 | **推迟**（架构已就位） | 格式化是叶子功能，不改接口形状；先确认 `std::format` 可用性再定方案，别手写解析器 |
 
 ### Day 7 收口（已完成，2026-09-26）
@@ -164,7 +164,7 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 - [x] `yr/object/object_db.h`：`vector<ObjectSlot> + freelist` 的非拥有 `ObjectID → Object*` 索引；注册/注销/查询、generation 复用、存活计数已完成。类型分布统计等反射就位后再补 ✅ 2026-10-01
 - [ ] `yr/object/ref_counted.h`：`RefCounted` + `Ref<T>` + `WeakRef<T>`（走 ObjectDB）
 - [x] `yr/object/property_info.h` + `class_info.h`：`PropertyInfo`（name/type/flags/class_hint + getter/setter 适配器）+ `ClassInfo`（属性表 + get/set + 继承链 + 遮蔽）。手工注册，无宏；factory/default 值留到 M2e/M5 ✅ 2026-10-05
-- [x] `yr/object/class_db.h` + `register_core_classes()`：`unordered_map<StringId, const ClassInfo*>` 注册表 + `registerClass`/`getClass`/`allClasses`/`inheritorsOf`/`freeze`；显式注册入口 + SIOF 测试。`instantiate` 暂返回裸指针（所有权待 `Ref`，M5 再定）✅ 2026-10-06
+- [x] `yr/object/class_db.h` + `register_core_classes()`：`unordered_map<StringId, const ClassInfo*>` 注册表 + `registerClass`/`getClass`/`allClasses`/`inheritorsOf`/`freeze`；显式注册入口 + SIOF 测试。`instantiate` 暂返回裸指针（所有权待 `Ref`，M8 再定）✅ 2026-10-06
 - [ ] **注册宏** `YR_CLASS` / `YR_PROPERTY`：先手写一个不用宏的版本（直接构造 `ClassInfo`），跑通后再封装成宏
 - [ ] 用 `clang -E` 展开一次 `YR_CLASS`，读懂生成的每一行（**这是唯一能真正看懂宏的办法**）
 - [ ] `tools/yr_inspect`：命令行反射查看器（`--all` / `--class Node` / `--tree`），支持输出 JSON
@@ -198,7 +198,7 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 | M2d | `PropertyInfo` / `ClassInfo`，先手工注册 | ✅ 2026-10-05 |
 | M2e | `ClassDB` + 显式注册顺序 | ✅ 2026-10-06 |
 | M2f | `YR_CLASS` / `YR_PROPERTY` 宏化 | ⬜ |
-| M2g | `yr_inspect` | ⬜ 暂缓（等 M4/M8 有真实类再做） |
+| M2g | `yr_inspect` | ⬜ 暂缓（等 M4（Node）有真实类再做） |
 
 ---
 
@@ -215,7 +215,7 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
       ⏸ **推迟**：依赖尚未实现的**方法绑定**与未来 `MainLoop` 的**安全 flush 点**（§4.5 / 帧阶段 2）。它不是纯多线程功能，和方法绑定/M4 一起具备后再做
 - [x] 重入策略实现 + assert：发布深度上限 8（第 9 层为编程错误，Debug assert 且拒绝，不转 post）、退订自己安全、flush 双缓冲 ✅ 2026-10-08
 - [ ] 线程约束：`EventBus::publish` 加主线程 assert；提供 `post_from_any_thread`（MPSC，帧首合并）
-      ⏸ **推迟到 M7**：与线程模型、TSan 一起做；单线程契约目前只写在头文件/架构注释里，不加 assert
+      ⏸ **推迟到 M10**：与线程模型、TSan 一起做；单线程契约目前只写在头文件/架构注释里，不加 assert
 - [ ] 把 `Object::notification()` 与 EventBus 的分工想清楚（notification = 定向、沿继承链传播；event = 广播、跨模块），结论写进两者的头文件注释
       ⏸ 随 `Object::notification` 本身（M4 的 Node 生命周期通知）一起做
 - [x] 测试：§4.5 表格里那三条语义各一个用例；1000 事件/帧的压力测试；订阅者抛异常/退订其他订阅者的边界测试；确定性重放 ✅ 2026-10-08
@@ -226,13 +226,13 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 - [x] §4.5 三条语义测试全绿（**这三条是模块的真正交付物**）✅ 2026-10-08
 - [x] `Subscription` 析构后不再收到事件（RAII 测试）✅
 - [x] 同一帧内事件派发顺序确定（同样输入两次运行完整回调日志逐项相同，使用局部 EventBus，不依赖全局残留）✅ 2026-10-08
-- [ ] TSan preset 下 `post_from_any_thread` + 主线程 flush 无竞争报告 ⏸ 推迟到 M7
+- [ ] TSan preset 下 `post_from_any_thread` + 主线程 flush 无竞争报告 ⏸ 推迟到 M10
 
 **产出物**：确定性重放测试（同输入两次运行完整回调日志逐项相同）✅ 2026-10-08。
-**学习点**：`std::function` 的堆分配与小对象优化、重入与迭代器失效、RAII 句柄（已覆盖）；变参模板、MPSC 队列随 M7 一起补。
+**学习点**：`std::function` 的堆分配与小对象优化、重入与迭代器失效、RAII 句柄（已覆盖）；变参模板、MPSC 队列随 M10 一起补。
 **常见坑**：① `std::function` 捕获大对象导致每次订阅都堆分配（性能实验推迟，非阻塞）；② 事件类型用 `typeid` 做 key 的 RTTI 开销与跨 TU 一致性（当前保留 `type_index`，理解代价即可）；③ flush 中 post 导致死循环（双缓冲已解决，递归 flush 有 assert）。
 **Godot 对照**：`core/object/object.h` 的 signal（`connect`/`emit_signal`/`Callable`）；`core/object/message_queue.h/.cpp` 与 `core/object/callable_mp.h` 推迟到 MessageQueue 解禁后再精读。
-**降级方案**：`post_from_any_thread` 推到 M7（已执行）；`MessageQueue` 整体推迟到方法绑定 + `MainLoop` 安全点具备后（已执行）。
+**降级方案**：`post_from_any_thread` 推到 M10（已执行）；`MessageQueue` 整体推迟到方法绑定 + `MainLoop` 安全点具备后（已执行）。
 
 ---
 
@@ -247,7 +247,7 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 | 子阶段 | 唯一新概念 | 交付物 | 独立验收点 | 状态 |
 |---|---|---|---|---|
 | **Node-1** | 父子关系与所有权 | `yr/scene/node.h` + `src/node.cpp` + `tests/scene/test_node.cpp` | 单父不变量：不能加自己 / 多父 / 成环；`addChild` 转移所有权、`removeChild` 交出所有权 | ✅ 已完成（2026-10-12） |
-| **Node-2** | SceneTree 内状态与生命周期传播 | `enter` / `ready` / `exit` 派发 | 三层树断言：enter 前序（父先子）、ready 后序（子先父）且只一次、exit 后序 | ⬜ |
+| **Node-2** | SceneTree 内状态与生命周期传播 | `enter` / `ready` / `exit` 派发 | 三层树断言：enter 前序（父先子）、ready 后序（子先父）且只一次、exit 后序 | 🔨 enter/exit 已完成（2026-10-13）；ready 未完成 |
 | **Node-3** | 延迟删除 | `queueFree` + `ObjectID` 删除队列 + 显式 `flushDeletions` 安全点 | 自己 / 父 / 子 / 兄弟四种删除场景不 double free；父先删则子 ID 解析失效 | ⬜ |
 | **Node-4** | process 遍历 | 注册列表快照遍历 | 回调中新增节点本帧不 process（与 Godot 一致） | ⬜ |
 
@@ -258,6 +258,12 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 
 > Node-1 已落地 `yr/scene/node.h`（`yr_scene` target）+ `YrTests_scene`；生命周期/更新回调仅占位 no-op。
 > Node-2 动笔前读 `01-architecture.md` §4.6 与 `04-godot-study.md` 的 "Node 生命周期" 行。
+>
+> **Node-2 进度（2026-10-13）**：enter/exit 子步骤已完成，落地 `scene_tree.h/.cpp` +
+> `test_scene_tree.cpp` + `test_lifecycle.cpp`。`Node::setTree/propagateEnterTree/propagateExitTree`
+> 为私有传播函数（`friend SceneTree`）；`SceneTree::setRoot/clearRoot/析构`、`Node::addChild/removeChild/detach`
+> 已接线。**ready（双状态：entered/ready_requested + 后序且只一次）尚未实现，也未接线 `onReady()`** ——
+> 这是 Node-2 的下一步唯一新概念。回调中修改树结构的完整重入保护（blocked）同样未做。
 
 - [ ] **（从 M1 推来）** `yr/core/math.h`：只做 Transform 需要的部分（`Vec3` + `Mat4` + TRS 合成 + 求逆）；不要一次写全（D4）
 - [ ] **（从 M1 推来，可选）** `yr/core/sparse_set.h`：**只在 S3（ECS 数据层）真要做时才写**。Transform 用普通 SoA 数组就够，不必先造 SparseSet
@@ -265,7 +271,7 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 - [ ] `yr/scene/node.h/.cpp`：`Node`（父子关系、`add_child`/`remove_child`、`queue_free`、`is_inside_tree`、`get_node(path)`、名字唯一性）
 - [ ] 生命周期通知：`kEnterTree` / `kReady`（后序）/ `kProcess`（前序）/ `kPhysicsProcess` / `kExitTree`，顺序写进文档并用测试锁定
 - [ ] `yr/scene/scene_tree.h/.cpp`：`SceneTree`（拥有 root、遍历派发、待处理队列、`flush_deletions`、`SceneTreeTimer`）
-- [ ] Transform 层级：`local_transform` + `global_transform`，脏标记 + 向下传播；**平行 SoA 数组**（为 M7 并行与 M9 快照抽取铺路）
+- [ ] Transform 层级：`local_transform` + `global_transform`，脏标记 + 向下传播；**平行 SoA 数组**（为 M10 并行与 M5 快照抽取铺路）
 - [ ] `yr/engine/main_loop.h/.cpp`：按 §5 的 14 个阶段实现（本阶段只填 0/2/3/5/7/9/13，其余留空钩子）
 - [ ] 固定步长累加器 + spiral-of-death 保护（单帧最多 N 次 physics step）+ `time_scale` + `paused`
 - [ ] `yr/engine/engine.h/.cpp`：`Engine`（装配、显式启停顺序、`FrameStats`）
@@ -289,14 +295,105 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 
 ---
 
-## M5 · 序列化与场景资源（3~4 周）★ 最难讲清也最出彩
+## M5 · 渲染契约与 NullBackend（2 周）★ 解耦的那条线
+
+**目标**：定义 Runtime 与 Renderer 之间那条线，并用一个什么都不画的后端验证它。本阶段只做 **renderer-neutral 数据契约**，不碰任何图形 API；真正的画面留到 M6/M7。
+
+- [ ] `yr/render/snapshot.h`：`RenderSnapshot` 及全部 POD 类型（§4.11），**每个字段的单位/坐标系/矩阵序都写注释**
+- [ ] `yr/render/backend.h`：`RendererBackend` 接口 + `BackendConfig` + `BackendStats`
+- [ ] `yr/render/asset_handle.h`：**强类型** `AssetHandle`（默认构造 = 无效；后端可有内建 triangle / default material 的临时 ID，正式 `AssetUID` 在 M9 替换）
+- [ ] `yr/engine/render_extract.h/.cpp`：`RenderExtractSystem`（遍历 SceneTree → 可见性 → 生成 DrawItem/Camera/Light；本阶段全量抽取，**不做剔除**）
+- [ ] 排序键：`sort_key = (pipeline << 48) | (material << 24) | depth`（对照 Yo_Renderer roadmap §2.1）
+- [ ] `yr_render_null`：`NullBackend`（统计 draw call / 三角形数 / 快照字节数，校验快照合法性）
+- [ ] **快照重放**：`--dump-snapshot f.bin` 把快照写文件，`--replay-snapshot f.bin` 直接喂给 Backend（**验证契约完备性的杀手级测试**）
+- [ ] 把 `01-architecture.md` §7 的三个解耦层次逐条对应到代码：哪一行实现了**数据解耦**、哪一行是**生命周期解耦**、哪一行是**时间解耦**（写在 `yr/render/snapshot.h` 的头注释里）
+- [ ] CI 检查：`grep` 确保 `engine/`（除 `render/vulkan/`）零 `vulkan`/`GLFW` include
+- [ ] 测试：快照 dump→replay 逐字节一致；`NullBackend` 在 10000 帧 headless simulation 里统计数字稳定
+
+**验收标准**
+- headless + `NullBackend` 跑 headless scene simulation 1000 帧，快照统计正常，CI 全绿。
+- 快照 dump/replay round-trip 一致，**且统计确定**（同输入两次逐字节相同）。
+- `yr_render_iface` 的头文件**只 include `yr/core/*` 与 std**（CI 检查 include 列表）。
+- `DrawItem` 中**禁止**出现 `Object*` / `Mesh*` / `Ref<Mesh>` / `Vk*`；`AssetHandle` 是强类型，且"未就绪资源本帧跳过"写进契约。
+- 能回答："如果换一个 OpenGL 后端，需要改 Runtime 的哪一行代码？"（答案必须是 0 行）
+
+**产出物**：快照重放 demo。**这个主题面试高频，值得写成博客**（见 `07-portfolio.md` §4）。
+**学习点**：数据契约设计、POD 与 ABI、Server 模式、可重放性作为设计验证手段。
+**常见坑**：① 快照里偷偷放了 `Object*`（"就这一次"）→ 解耦崩塌，CI 必须挡住；② 矩阵行列主序/坐标系（Y-up vs Z-up）没写清 → 后面画面全错且极难查，**现在就把注释写死**；③ 资源上传请求的时序（Backend 还没加载完 mesh，DrawItem 已经引用它）→ 契约里要规定"未就绪的资源本帧跳过"；④ 把临时 triangle / default material ID 当成正式资源系统 → 正式 `AssetUID` / `AssetDatabase` 必须等 M9。
+**Godot 对照**：`servers/rendering/rendering_server.h`（Server 命令接口）、`servers/server_wrap_mt_common.h`（选读：Server 如何包装）、`core/templates/command_queue_mt.h`。
+**降级方案**：不做快照重放（只做 dump 用于人工检查）。**但"Runtime 侧零 vulkan include"与"AssetHandle 强类型"不能降级。**
+
+---
+
+## M6 · 最小 Vulkan Bootstrap（2~3 周）★ 第一次有画面，但还不是作品
+
+**目标**：把窗口 + 设备 + swapchain + 帧同步这条**纯渲染器工程链路**独立跑通，清屏并画一个硬编码三角形。**不接场景树、不消费快照**（最多只做最小桥接），以免绕过 M4 的 Node 生命周期、延迟删除与帧阶段。
+
+**Yo_Renderer 复用边界（审计结论，必须遵守）**：以**最小 Vulkan backend 重写为主**，选择性借鉴 / 逐文件搬底层机制为辅；**不把整个 Yo_Renderer 作为 subdirectory，也不整体搬迁**。
+
+- [ ] 策略写进 ADR（D19）：哪些**重写**、哪些**逐文件借鉴**，落进 `engine/render/vulkan/` 并适配 YRuntime 命名 / `Handle` / CMake 分层
+- [ ] 可借鉴 / 可能搬迁（逐个 review 后适配）：`platform/VulkanContext`、`Swapchain`、`SyncObjects` / `FrameSync`、`rhi/command/CommandRecorder`、`render/VulkanResourceTable`
+- [ ] **不搬**：`app/*`、`framework/*`、`system/*`、`ui/*`、`core/ObjectDB/Ref/Handle/TextureCache`、现有 `RenderServer`、`asset/GltfLoader` 全链路（存在反向依赖、`void*`、场景 / GPU 生命周期耦合或与 YRuntime 重复）
+- [ ] `yr_render_vulkan` target（CMake option `YR_BUILD_VULKAN_BACKEND`，默认 OFF）：GLFW 窗口 + Vulkan instance/device/queue + swapchain + frame sync
+- [ ] 清屏 + 硬编码三角形（顶点 / 着色器写死在 backend 内），validation layer 零 error
+- [ ] `VulkanBackend : RendererBackend` 骨架（`initialize`/`shutdown`/`present` 可为空实现或只画上面那一帧）；本阶段**不要求**消费真实 `RenderSnapshot`
+- [ ] 明确**不做**：PBR、IBL、shadow、glTF、ImGui、ECS、异步加载、JobSystem、独立渲染线程、视锥剔除
+- [ ] CI / 工程：`engine/` 除 `engine/render/vulkan/` 外零 Vulkan/GLFW include；`YR_BUILD_VULKAN_BACKEND=OFF` 时 CI 仍全绿（无 GPU 不构建该 target）
+- [ ] 借鉴 / 搬迁时遇到的**耦合点逐条记进 commit message 正文**
+
+**验收标准**
+- 能打开窗口、清屏并画出硬编码三角形；validation layer 零 error。
+- 反复 resize / 最小化后不崩溃；连续运行 10 分钟无泄漏。
+- `engine/`（除 `engine/render/vulkan/`）零 Vulkan/GLFW include；`YR_BUILD_VULKAN_BACKEND=OFF` 构建与 CI 全绿。
+- 能回答："这块三角形为什么还没有经过 `RenderSnapshot`？"（答案：为了先把渲染器工程链路与契约接入**分开验证**）
+
+**产出物**：窗口 + 三角形截图 / GIF。**注意：本阶段只是 bootstrap，首个作品节点在 M7。**
+**学习点**：Vulkan 初始化与 frame-in-flight 的工程顺序、swapchain 重建、validation layer 使用、最小可重写面 vs 可借鉴底层机制的边界。
+**常见坑**：① 想"顺便把快照 / 场景接进来"→ 范围爆炸，本阶段只验证渲染器链路；② 直接把 Yo_Renderer 的 `RenderServer` / ECS 拖进来 → 反向依赖与场景假设回归；③ swapchain 重建时旧资源释放顺序；④ 借来的代码带着 `void*` / 旧 Handle → 适配时统一到 `yr::render::vk` 与 YRuntime 类型的桥接层。
+**Godot 对照**：`drivers/vulkan/`（Vulkan 驱动的初始化与 context 组织）、`servers/display/display_server.h`（display/headless 边界）。
+**降级方案**：只做清屏不做三角形；窗口事件只处理 close。**"validation layer 零 error 且 Runtime 侧零 include"不能降级。**
+
+---
+
+## M7 · Snapshot 驱动画面（3~4 周）★★ 首个主要作品节点
+
+**目标**：`VulkanBackend` 真正消费 M5 的 `RenderSnapshot`，形成 `游戏状态 → Runtime → RenderSnapshot → RendererBackend → GPU` 的完整链路。**Runtime 里移动一个 Node，画面同步变化**——这是本项目第一个主要作品节点。
+
+- [ ] `VulkanBackend` 完整实现 `RendererBackend`：`present(snapshot)` → DrawItem / Camera / Light 转为 GPU 提交
+- [ ] **AssetHandle → GPU 桥接（临时版）**：先用 backend 内建 triangle / default material ID 响应 `AssetHandle`；正式 `AssetUID` / `AssetDatabase` 到 M9 再接
+- [ ] 相机 / 光照从快照取，删掉 Backend 内部对"场景"的假设（Backend 不得持有 `SceneTree*`）
+- [ ] 快照传递引入双 / 三缓冲（落实 §4.11 的"时间解耦"），frame index 单调递增
+- [ ] `apps/render_demo`：Runtime 里搭一个场景（几个带 Transform 的 Node + Camera Node + Light Node），键盘控制 Node → 画面变化
+- [ ] validation layer 零 error；`--dump-snapshot` + `--replay-snapshot` 在真后端也能跑，且与实时运行一致
+- [ ] `RenderSnapshot` 结构自 M5 起**未因后端需要而修改**（若改了 → 写 ADR 复盘，这本身是有价值的产出）
+- [ ] 帧时间统计：CPU 侧 extract / GPU 侧 present 分别可见
+- [ ] 录屏 + 截图进 `doc/media/`，README 更新架构图
+- [ ] 明确**不做**：视锥剔除、PBR、IBL、shadow、glTF、ImGui、独立渲染线程（都列入 stretch）
+
+**验收标准**
+- `apps/render_demo` 运行：键盘移动一个 Node → 画面同步变化；validation layer 零 error；连续跑 10 分钟无崩溃无泄漏。
+- **`engine/` 目录（除 `render/vulkan/`）零 Vulkan/GLFW include**（CI 硬门禁）。
+- 快照重放：把 M5 dump 的快照喂给 `VulkanBackend`，画面与实时运行一致。
+- Runtime 侧（`render_demo` 的游戏逻辑）只通过 Node / SceneTree 的 public API 驱动画面，不直接碰 Vulkan。
+
+**Stretch（做完上面才考虑）**：独立渲染线程（Runtime 主线程写快照，渲染线程消费，对照 `server_wrap_mt_common.h`）；视锥剔除放进 `RenderExtractSystem`；ImGui 只读检视器；阴影 / IBL 接回。
+
+**产出物**：**可视化 Demo + 录屏 + 更新后的架构图**。简历第一条能写的东西。
+**学习点**：数据契约如何真正被消费、GPU 资源生命周期与延迟销毁、frame-in-flight、命令录制、Backend 不回调 Runtime 的约束。
+**常见坑**：① Backend 想回调 Runtime 拿数据（"就一个 getter"）→ 破坏解耦，改成快照字段；② 资源加载与帧循环竞争（上传时机）；③ GLFW / 窗口事件与 Runtime 输入系统的职责划分；④ 借来的旧代码 `ObjectDB` / `Ref` 与 YRuntime 版本冲突 → 统一到 `yr::render::vk` 命名空间。
+**Godot 对照**：`servers/rendering/rendering_server_default.h`、`drivers/vulkan/`、`servers/display/display_server_wrapper.h`。
+**降级方案**：不做双缓冲、场景只用 3 个立方体 + 一个相机。**"Runtime 驱动画面"这一条不能降级**，它是本阶段全部意义。
+
+---
+
+## M8 · 序列化与场景资源（3~4 周）★ 最难讲清也最出彩
 
 **目标**：世界可以变成文件，文件可以变回世界，且**文件是人类可读可手写的**。
 
 - [ ] `yr/serialize/writer.h` / `reader.h`：`IWriter`/`IReader` 抽象（结构化 begin/end + 错误位置报告）
 - [ ] `TextWriter`/`TextReader`：自定义 `.yrscn`。**先把格式写下来再写解析器**（在对话里过一遍：段结构、引用怎么表达、错误怎么报），格式定稿后写进 `yr/serialize/` 的头注释
 - [ ] `BinaryWriter`/`BinaryReader`：`.yrscnb`（magic + version + 长度前缀；处理对齐与字节序，写 `static_assert(sizeof(...))`）
-- [ ] `JsonWriter`：调试导出（用 nlohmann_json，M5 起才引入 third_party）
+- [ ] `JsonWriter`：调试导出（用 nlohmann_json，M8 起才引入 third_party）
 - [ ] `VariantCodec`：Variant ↔ 文本/二进制（含 Vector3 等类型的字面量语法）
 - [ ] 属性级序列化：遍历 `ClassInfo` 属性表，只序列化 `kSerialized` 且**与默认值不同**的属性（省空间 + diff 干净）
 - [ ] 引用解析：ExtResource（外部资源，存 path/UID）/ SubResource（内嵌子资源）/ NodeRef（同场景节点，存 node index）
@@ -307,7 +404,7 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 - [ ] 把 M4 的 `tick_sandbox` 场景改成从 `.yrscn` 加载
 
 **验收标准**
-- **确定性 round-trip**：`yr_scene_conv a.yrscn → a.yrscnb → b.yrscn`，`diff a.yrscn b.yrscn` 为空。（这条最难，也最能证明设计正确）
+- **确定性 round-trip**：`yr_scene_conv a.yrscn → a.yrscnb → b.yrscn`，`diff a.yrscn b.yrscn` 为空；`save→load→save` 逐字节一致。（这条最难，也最能证明设计正确）
 - 手写一个 20 行的 `.yrscn`（不经工具生成）能被正确加载。
 - 加载一个含未知属性/未知类的文件 → 不崩溃，warnings 列表准确指出行号与内容。
 - v0 文件经 migrator 后能被当前版本加载（测试）。
@@ -316,25 +413,26 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 **产出物**：`yr_scene_conv` + round-trip 测试 + **格式规范**（写在 `yr/serialize/` 的头文件注释或 `assets/README.md` 里，不单独建文档）。**这是面试里最容易讲出深度的模块**（引用/版本/循环三大难题）。
 **学习点**：格式设计、visitor 模式、token 解析（手写 lexer/parser，不用 lex/yacc）、二进制布局与对齐、版本迁移策略、确定性输出（保序容器、浮点格式化）。
 **常见坑**：① 浮点数文本化精度丢失（用 `%.17g` 或直接存十六进制位模式）；② `Dict` 用 `unordered_map` 导致输出顺序不定 → §4.3 已规定用保序 vector；③ 节点 index 与父子关系混在一起导致解析要两遍（就是要两遍，别抗拒）；④ 字符串转义（`\n`、引号、UTF-8）；⑤ 文件路径平台分隔符。
-**Godot 对照**：`scene/resources/resource_format_text.cpp/.h`（`.tscn` 的完整读写实现，**M5 精读，对照你的格式设计**）、`core/io/resource_format_binary.cpp`（`.res` 二进制 + 版本兼容处理）、`scene/resources/packed_scene.h/.cpp`（`PackedScene::instantiate` 的 node data / connection / edit state 三张表）、`tests/core/io/test_scenes.cpp`（Godot 怎么测场景存读档）、`core/variant/variant_parser.h`。
+**Godot 对照**：`scene/resources/resource_format_text.cpp/.h`（`.tscn` 的完整读写实现，**M8 精读，对照你的格式设计**）、`core/io/resource_format_binary.cpp`（`.res` 二进制 + 版本兼容处理）、`scene/resources/packed_scene.h/.cpp`（`PackedScene::instantiate` 的 node data / connection / edit state 三张表）、`tests/core/io/test_scenes.cpp`（Godot 怎么测场景存读档）、`core/variant/variant_parser.h`。
 **降级方案**：二进制格式推到 M11（先只做文本）；`PackedScene` 先做扁平版（不支持内嵌子资源与场景嵌套实例化）；migrator 只留接口不实现链。
 
 ---
 
-## M6 · 资源系统（2~3 周）
+## M9 · 资源系统（2~3 周）★ 资源有身份、有引用计数、能异步、能释放
 
-**目标**：资源有身份（UID）、有注册表、有引用计数、能异步加载不卡帧、能自动卸载。
+**目标**：资源有身份（UID）、有注册表、有引用计数、能异步加载不卡帧、能自动卸载；并用**正式 `AssetUID`/`AssetDatabase` 替换 M5 的临时内建 triangle/default material 注册表**，正式完成 `AssetHandle → GPU` 资源桥接。
 
 - [ ] `yr/asset/asset_uid.h`：`AssetUID`（内容哈希或稳定 ID）+ `path ↔ uid` 映射表（对照 Godot `resource_uid.h`）
 - [ ] `yr/asset/resource.h`：`Resource : RefCounted`（source_path / uid / 加载状态 / 元数据）
 - [ ] `yr/asset/file_access.h`：`IFileAccess` 抽象 + `DiskFileAccess` + **`MemoryFileAccess`（测试用，见原则 P5）**
-- [ ] `yr/asset/format_loader.h`：`IResourceFormatLoader` + 按扩展名分派注册表；实现 `.yrres`（M5 的二进制/文本资源）、`.json`、`.txt`（M8 剧情用）
+- [ ] `yr/asset/format_loader.h`：`IResourceFormatLoader` + 按扩展名分派注册表；实现 `.yrres`（M8 的二进制/文本资源）、`.json`、`.txt`、`.yrscn`
 - [ ] `yr/asset/asset_database.h/.cpp`：`AssetDatabase`（同步 `load<T>`、异步 `request_load`、in-flight 合并、`pump()`、`collect_garbage()`、`AssetStats`）
-- [ ] 异步加载：**先做单线程版**（`request_load` 只是入队，`pump()` 里同步执行），M7 再换成 job；这个"错的但能跑的"版本要记进 ADR
+- [ ] 异步加载：**先做单线程版**（`request_load` 只是入队，`pump()` 里同步执行），M10 再换成 job；这个"错的但能跑的"版本要记进 ADR
 - [ ] 慢 IO 模拟：`ThrottledFileAccess`（每次读 sleep N ms），用来**证明异步加载不卡帧**（这是本里程碑的核心测试）
 - [ ] 卸载：帧末 `collect_garbage()`（refcount==1 即只有 DB 持有）+ 手动 `evict(uid)` + 统计
+- [ ] **AssetHandle 正式接入**：用真实 `AssetUID`/`AssetDatabase` 替换 M5 的临时注册表；Runtime 侧只发 upload/release 请求，Backend 侧按 generation 延迟销毁 GPU 资源
 - [ ] 接到 `MainLoop` 阶段 4（`pump_assets`）与阶段 12（`collect_garbage`）
-- [ ] 把 M5 的 ExtResource 解析接到 AssetDatabase（场景加载 = 递归资源加载，**注意加载顺序与循环依赖检测**）
+- [ ] 把 M8 的 ExtResource 解析接到 AssetDatabase（场景加载 = 递归资源加载，**注意加载顺序与循环依赖检测**）
 - [ ] 测试：in-flight 合并（同一资源并发请求 10 次只加载一次）、失败路径（文件不存在/格式错误）、卸载后 handle 失效、慢 IO 下主循环帧时间不受影响
 
 **验收标准**
@@ -342,26 +440,27 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 - 同一资源被 5 处引用 → 内存里只有一份（测试用 ObjectDB 计数验证）。
 - 全部引用释放后下一帧 GC → 资源被卸载，`resident_count` 归零。
 - 循环依赖（A 引用 B，B 引用 A）→ 检测到并报错，不死循环。
+- `render_demo` 用真实 `AssetUID` 加载资源，临时 `AssetHandle` 注册表被删除。
 - 所有测试用 `MemoryFileAccess`，**不碰真实磁盘**（可在 CI 跑）。
 
 **产出物**：`AssetStats` 输出（驻留数/命中率/加载字节）。
 **学习点**：异步状态机、future/promise vs 回调、引用计数与 GC 的边界、内容寻址、IO 抽象与依赖注入（测试友好设计）。
-**常见坑**：① 在工作线程构造 Object → 违反 §6 铁律（M7 要特别小心）；② GC 时机与 `Ref` 临时对象（一个表达式里的临时 `Ref` 会让 refcount 短暂 >1，导致该帧不卸载 —— 这是正常行为，别"修"它）；③ 加载失败后 in-flight 条目没清理 → 永久卡住；④ 场景递归加载的深度与栈溢出。
-**Godot 对照**：`core/io/resource.h`、`core/io/resource_loader.h/.cpp`（**精读 `ThreadLoadTask` 结构与 `load_threaded_request`/`load_threaded_get_status`，这是 M6+M7 的最佳参考**）、`core/io/resource_uid.h/.cpp`、`core/io/file_access.h` + `file_access_memory.h`（内存 FS）、`file_access_pack.h`（PCK，M11 用）、`tests/core/io/test_resource.cpp` + `test_resource_uid.cpp`。
+**常见坑**：① 在工作线程构造 Object → 违反 §6 铁律（M10 要特别小心）；② GC 时机与 `Ref` 临时对象（一个表达式里的临时 `Ref` 会让 refcount 短暂 >1，导致该帧不卸载 —— 这是正常行为，别"修"它）；③ 加载失败后 in-flight 条目没清理 → 永久卡住；④ 场景递归加载的深度与栈溢出。
+**Godot 对照**：`core/io/resource.h`、`core/io/resource_loader.h/.cpp`（**精读 `ThreadLoadTask` 结构与 `load_threaded_request`/`load_threaded_get_status`，这是 M9+M10 的最佳参考**）、`core/io/resource_uid.h/.cpp`、`core/io/file_access.h` + `file_access_memory.h`（内存 FS）、`file_access_pack.h`（PCK，M11 用）、`tests/core/io/test_resource.cpp` + `test_resource_uid.cpp`。
 **降级方案**：不做 UID（只用 path）；GC 只做手动 `evict`；异步只做"入队 + pump 执行"不做真线程。
 
 ---
 
-## M7 · 任务系统（3~4 周）★★ 最容易翻车，务必按三步走
+## M10 · 任务系统（3~4 周）★★ 最容易翻车，务必按三步走
 
-**目标**：把 M6 的"假异步"变成真并行，并让 Transform 更新、资源解码、（M9 的）剔除能跑在多核上——**同时不引入不可复现的 bug**。
+**目标**：把 M9 的"假异步"变成真并行，并让 Transform 更新、资源解码能跑在多核上——**同时不引入不可复现的 bug**。
 
-- [ ] **M7-a 线程池**：`yr/job/job_system.h`：N 个 worker + `MtQueue`（吸收 yo_lib `yo_mtqueue.h` 并重构：加 `try_pop`、`stop()` 幂等、避免 busy wait）+ `submit` + `wait_all` + 优雅停机
+- [ ] **M10-a 线程池**：`yr/job/job_system.h`：N 个 worker + `MtQueue`（吸收 yo_lib `yo_mtqueue.h` 并重构：加 `try_pop`、`stop()` 幂等、避免 busy wait）+ `submit` + `wait_all` + 优雅停机
 - [ ] `TaskHandle`：`ready()` / `wait()`；主线程 `wait` 时**帮忙执行任务**而不是 sleep（对照 Godot）
 - [ ] 把 `AssetDatabase` 的 IO+解码搬到 worker，构造仍回主线程（`pump()`）——**验证 §6 铁律**
-- [ ] **M7-b 依赖图**：`submit(fn, deps)`（依赖计数 + 就绪队列）；`parallel_for(n, batch, fn)`
+- [ ] **M10-b 依赖图**：`submit(fn, deps)`（依赖计数 + 就绪队列）；`parallel_for(n, batch, fn)`
 - [ ] Transform 层级并行刷新：按"脏根"分片，保证同一子树不并行（写清楚分片策略）
-- [ ] **M7-c（可选）work stealing**：每线程本地双端队列 + 随机偷取；此时才深入 memory order
+- [ ] **M10-c（可选）work stealing**：每线程本地双端队列 + 随机偷取；此时才深入 memory order
 - [ ] `JobStats`：每线程独立 cacheline（`alignas(64)`）避免 false sharing；统计队列深度/等待/窃取次数
 - [ ] **确定性保证**：并行任务的**结果**必须与串行一致（浮点求和顺序！`parallel_for` 里禁止做非结合性归约，或提供确定性归约接口）——写测试证明
 - [ ] 线程安全审计：给所有"仅主线程"的 API 加 `YR_ASSERT(on_main_thread())`
@@ -379,106 +478,8 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 **产出物**：benchmark 报告 + 内存序决策表 + TSan 报告截图。
 **学习点**：C++ 内存模型、`memory_order_relaxed/acquire/release/acq_rel/seq_cst` 的实际差别、false sharing、work stealing、任务粒度、`std::atomic_flag`/futex、条件变量的 lost wakeup。
 **常见坑**：① 条件变量 `wait` 忘 predicate → lost wakeup 死锁；② `wait_all` 在 worker 线程调用 → 死锁（必须 assert）；③ 任务里捕获 `this` 而对象已析构 → 用 handle + 生存期保证；④ 析构顺序：JobSystem 必须在 AssetDatabase 之后销毁（否则任务回调访问死对象）—— 写进 `Engine::shutdown` 的顺序文档；⑤ 浮点归约顺序导致不可复现；⑥ 过度并行（任务太小，锁开销 > 收益）。
-**Godot 对照**：`core/object/worker_thread_pool.h/.cpp`（**精读**：task group、`wait_for_task_completion`、主线程帮忙执行的逻辑）、`core/templates/command_queue_mt.h`（跨线程命令队列）、`core/io/resource_loader.cpp` 的 threaded load 部分（真实项目里"IO 并行 + 主线程收尾"的完整范例）、`servers/server_wrap_mt_common.h`（M10 会用）。
-**降级方案**：只做 M7-a（线程池 + `wait_all`）；`parallel_for` 用 `std::async` 顶替；work stealing 直接砍掉列入 stretch。**M7 砍范围是完全可接受的**，确定性比性能重要。
-
----
-
-## M8 · 文字冒险 Demo（2~3 周）★ 作品节点 1
-
-**目标**：**证明 Runtime 真的能承载游戏**。这个 Demo 是本项目第一个可以拿去给别人看的东西，也是检验前 7 个里程碑的试金石——如果做起来处处别扭，说明 Runtime 设计有问题，**要回头改 Runtime，而不是在 Demo 里绕过去**。
-
-- [ ] 游戏设计先想清楚再动手：世界观、房间图、动词表（look/go/take/use/talk/inventory）、胜利条件、≥10 分钟内容量（写在 `apps/text_adventure/README.md` 里）
-- [ ] 数据驱动：房间/物品/对话全部放 `assets/`（`.yrscn` 场景 + `.json`/`.yrdlg` 文本），**代码里不写死内容**
-- [ ] `apps/text_adventure`：用 Node 组织世界（`World/Rooms/Room1/...`、`Player`、`Inventory`、`DialogueRunner`、`CommandParser`、`SaveGameManager`）
-- [ ] 命令解析：tokenizer + 动词/名词匹配 + 同义词表 + 错误提示（**用 EventBus 解耦**：`CommandParsed` → 各系统响应）
-- [ ] 交互系统：`Interactive` 组件 + `on_use` 指向 NodePath（**用 M5 的 NodeRef 序列化**）
-- [ ] 对话系统：`Dialogue` 资源（异步加载，**用 M6**）+ 分支 + 打字机效果（**用 M4 的 SceneTreeTimer / kProcess**）
-- [ ] 存档/读档：整个 `World` 子树 → `.yrscn`（**用 M5**），读档时资源引用正确复原（**用 M6**）
-- [ ] 触发器/脚本化事件：进入房间触发剧情（`AreaTrigger` 节点 + 事件），定时事件（`SceneTreeTimer`）
-- [ ] headless 自动化游玩测试：一个"机器人脚本"执行 200 条命令通关 → CI 里跑（**这是最有说服力的集成测试**）
-- [ ] 终端体验：ANSI 颜色、房间描述、`help`、`--seed`、命令历史
-- [ ] README（apps/text_adventure/）：截图 + 玩法 + 用到的 Runtime 特性对照表
-- [ ] 录屏（asciinema 或 mp4）放进 `doc/media/`
-
-**验收标准**
-- 从零开始可玩通 ≥10 分钟内容并达成结局；存档→重启→读档后状态一致（含背包、已触发剧情、房间状态）。
-- **游戏逻辑代码零直接 Runtime 内部访问**：只用 `Node`/`EventBus`/`AssetDatabase`/`SceneTree` 的 public API（证明 API 设计够用）。
-- CI 里自动通关测试通过（headless，无 tty 依赖）。
-- 新增一个房间 + 一件物品**只需改 assets/ 文件，不需要改 C++ 代码**（数据驱动的硬指标）。
-- ASan+UBSan 干净跑完整局。
-
-**产出物**：**可玩 Demo + 录屏 + README + 自动通关测试**。这是简历上第一条能写的东西。
-**学习点**：用引擎做游戏（视角切换：从"造引擎"到"用引擎"，会暴露 API 设计问题）、数据驱动设计、内容组织、玩法迭代。
-**常见坑**：① 内容量低估（10 分钟内容 ≈ 15 个房间 + 30 件物品 + 500 行对话，写内容比写代码慢）；② 为了赶 Demo 在 Node 里塞硬编码逻辑 → 违反数据驱动，坚决不加；③ 存档包含运行时状态（如 timer 剩余时间）导致语义混乱 → 明确"哪些是可序列化的游戏状态"；④ 命令解析用大量 if-else → 用表驱动。
-**Godot 对照**：`modules/`（Godot 的模块如何注册类型与场景）、随便找一个 Godot 开源文字冒险 demo 看它怎么组织场景树（对照你的 Node 划分）。
-**降级方案**：内容量砍到 5 分钟 / 5 个房间；对话系统砍分支只留线性；触发器砍掉只做手动命令。**但存档/读档和数据驱动不能砍**——那才是 Runtime 的展示点。
-
----
-
-## M9 · 渲染契约与 NullBackend（2 周）
-
-**目标**：定义 Runtime 与 Renderer 之间那条线，并用一个什么都不画的后端验证它。
-
-- [ ] `yr/render/snapshot.h`：`RenderSnapshot` 及全部 POD 类型（§4.11），**每个字段的单位/坐标系/矩阵序都写注释**
-- [ ] `yr/render/backend.h`：`RendererBackend` 接口 + `BackendConfig` + `BackendStats`
-- [ ] `yr/render/asset_handle.h`：`AssetHandle`（Runtime 的资源 UID → Backend 的 GPU 资源 ID 的映射键）
-- [ ] `yr/engine/render_extract.h/.cpp`：`RenderExtractSystem`（遍历 SceneTree → 可见性 → 生成 DrawItem/Camera/Light；M9 先做全量，M10 加视锥剔除）
-- [ ] 排序键：`sort_key = (pipeline << 48) | (material << 24) | depth`（对照 Yo_Renderer roadmap §2.1）
-- [ ] `yr_render_null`：`NullBackend`（统计 draw call / 三角形数 / 快照字节数，校验快照合法性）
-- [ ] 双缓冲：快照写入 buffer[i]，Backend 读 buffer[i^1]，frame index 单调递增
-- [ ] **快照重放**：`--dump-snapshot f.bin` 把快照写文件，`--replay-snapshot f.bin` 直接喂给 Backend（**验证契约完备性的杀手级测试**）
-- [ ] 把 `01-architecture.md` §7 的三个解耦层次逐条对应到代码：哪一行实现了**数据解耦**、哪一行是**生命周期解耦**、哪一行是**时间解耦**（写在 `yr/render/snapshot.h` 的头注释里）
-- [ ] CI 检查：`grep` 确保 `engine/`（除 `render/vulkan/`）零 `vulkan`/`GLFW` include
-- [ ] 测试：快照 dump→replay 逐字节一致；NullBackend 在 10000 帧集成测试里统计数字稳定
-
-**验收标准**
-- headless + NullBackend 跑 M8 的文字游戏 1000 帧，快照统计正常，CI 全绿。
-- 快照 dump/replay round-trip 一致。
-- `yr_render_iface` 的头文件**只 include `yr/core/*` 与 std**（CI 检查 include 列表）。
-- 能回答："如果换一个 OpenGL 后端，需要改 Runtime 的哪一行代码？"（答案必须是 0 行）
-
-**产出物**：快照重放 demo。**这个主题面试高频，值得写成博客**（见 `07-portfolio.md` §4）。
-**学习点**：数据契约设计、POD 与 ABI、双缓冲与 frame-in-flight、Server 模式、可重放性作为设计验证手段。
-**常见坑**：① 快照里偷偷放了 `Object*`（"就这一次"）→ 解耦崩塌，CI 必须挡住；② 矩阵行列主序/坐标系（Y-up vs Z-up）没写清 → M10 画面全错且极难查，**现在就把注释写死**；③ 资源上传请求的时序（Backend 还没加载完 mesh，DrawItem 已经引用它）→ 契约里要规定"未就绪的资源本帧跳过"。
-**Godot 对照**：`servers/rendering/rendering_server.h`（Server 命令接口）、`servers/server_wrap_mt_common.h`（**精读**：如何把一个 Server 自动包装成多线程版本）、`core/templates/command_queue_mt.h`。
-**降级方案**：不做双缓冲（单缓冲 + 同线程）；不做快照重放（只做 dump 用于人工检查）。**但"Runtime 侧零 vulkan include"不能降级。**
-
----
-
-## M10 · Vulkan 后端接入（4~6 周）★★ 作品节点 2
-
-**目标**：把 Yo_Renderer 的成果接进来，形成 `游戏状态 → Runtime → Renderer → GPU` 的完整链路，并**顺手解决 Yo_Renderer 遗留的反向依赖问题**。
-
-- [ ] 前置阅读：重读 `Yo_Renderer/doc/modularization-plan.md`（V1~V12 清单）与 `learning-roadmap.md` §1.3
-- [ ] 搬迁策略决定并写 ADR：哪些目录搬（`platform/window`、`rhi/*`、`render/*`、`asset/gltf`），哪些**不搬**（`framework/*`、`system/*`、`ui/*` —— 这些被 Runtime 取代）
-- [ ] `yr_render_vulkan` target：GLFW 窗口 + VulkanContext + Swapchain（直接搬 `platform/`）
-- [ ] RHI 层搬入（`ResourceFactory`/`PipelineCache`/`DescriptorAllocator`/`UploadSession`/`ShaderLibrary`/`CommandRecorder`），**保持原样先跑通**，重构留到后面
-- [ ] `VulkanBackend : RendererBackend`：`present(snapshot)` → 把 DrawItem 转成原来的 BatchSystem 输出 → RenderServer 录制
-- [ ] **资源桥接**：`AssetHandle`（Runtime UID）→ GPU 资源；Backend 侧维护 `uploads` 队列 + generation 延迟销毁（复用 `VulkanResourceTable`）
-- [ ] 相机/光照从快照取，删掉 Backend 内部对"场景"的假设
-- [ ] `apps/render_demo`：Runtime 里搭一个场景（几个带 Transform 的 Node + Camera Node + Light Node），键盘控制 Node → 画面变化
-- [ ] 视锥剔除放进 `RenderExtractSystem`（可在 job 里并行，**用 M7**）
-- [ ] 修 Yo_Renderer 遗留问题：V5（光照布局三份副本 → 单一 `GpuLayouts.h`）、V6（`const void*` → 快照，天然解决）
-- [ ] 独立渲染线程（stretch，见下）
-- [ ] 搬迁时遇到的**耦合点逐条记进 commit message 正文**（这是唯一的高频记录载体，见 `START-HERE.md` §6）
-- [ ] validation layer 零 error；`--dump-snapshot` + `--replay-snapshot` 在真后端也能跑
-- [ ] 录屏 + 截图进 `doc/media/`，README 更新架构图
-
-**验收标准**
-- `apps/render_demo` 运行：键盘移动一个 Node → 画面同步变化；validation layer 零 error；连续跑 10 分钟无崩溃无泄漏。
-- **`engine/` 目录（除 `render/vulkan/`）零 Vulkan/GLFW include**（CI 硬门禁）。
-- 快照重放：把 M9 dump 的快照喂给 VulkanBackend，画面与实时运行一致。
-- `RenderSnapshot` 结构自 M9 起**未因后端需要而修改**（若改了，说明契约设计有问题 → 写 ADR 复盘，这本身就是有价值的产出）。
-- 帧时间统计：CPU 侧 extract / GPU 侧 present 分别可见（复用 Yo_Renderer 的 DebugStats）。
-
-**Stretch（做完上面才考虑）**：独立渲染线程（Runtime 主线程写快照，渲染线程消费，对照 `server_wrap_mt_common.h`）；ImGui 只读检视器（显示 SceneTree + FrameStats）；阴影/IBL 接回。
-
-**产出物**：**可视化 Demo + 录屏 + 更新后的架构图**。简历第二条。
-**学习点**：图形 API 与引擎的边界、GPU 资源生命周期与延迟销毁、frame-in-flight、命令录制、（stretch）渲染线程同步。
-**常见坑**：① 想"顺便重构 Yo_Renderer"导致范围爆炸 → **先原样搬通，再重构**，两件事分开 commit；② Backend 想回调 Runtime 拿数据（"就一个 getter"）→ 破坏解耦，改成快照字段；③ 资源加载与帧循环竞争（上传时机）；④ GLFW/窗口事件与 Runtime 输入系统的职责划分；⑤ 旧代码的 `ObjectDB`/`Ref` 与 YRuntime 版本冲突（同名不同类型）→ 搬入时统一改名到 `yr::render::vk` 命名空间。
-**Godot 对照**：`servers/rendering/rendering_server_default.h`、`drivers/vulkan/`（Godot 的 Vulkan 驱动如何组织 RenderingDevice）、`servers/display/display_server_wrapper.h`。
-**降级方案**：不做剔除、不做独立渲染线程、场景只用 3 个立方体 + 一个相机。**"Runtime 驱动画面"这一条不能降级**，它是本阶段的全部意义。
+**Godot 对照**：`core/object/worker_thread_pool.h/.cpp`（**精读**：task group、`wait_for_task_completion`、主线程帮忙执行的逻辑）、`core/templates/command_queue_mt.h`（跨线程命令队列）、`core/io/resource_loader.cpp` 的 threaded load 部分（真实项目里"IO 并行 + 主线程收尾"的完整范例）、`servers/server_wrap_mt_common.h`（stretch 独立渲染线程会用）。
+**降级方案**：只做 M10-a（线程池 + `wait_all`）；`parallel_for` 用 `std::async` 顶替；work stealing 直接砍掉列入 stretch。**M10 砍范围是完全可接受的**，确定性比性能重要。
 
 ---
 
@@ -487,7 +488,7 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 **目标**：让项目从"一堆 C++ 代码"变成"有开发流程的引擎环境"，并完成作品包装。
 
 - [ ] `tools/yr_pack`：`assets/` → `.yrpak`（manifest(JSON/二进制) + blob 区 + 内容哈希 + 版本号）；对照 Godot PCK
-- [ ] `PakFileAccess`：Runtime 从 `.yrpak` 加载；`--pak` 启动参数；验证 M8 的游戏能完全从 pak 跑起来
+- [ ] `PakFileAccess`：Runtime 从 `.yrpak` 加载；`--pak` 启动参数；验证 `tick_sandbox` / `render_demo` 能完全从 pak 跑起来
 - [ ] 资源导入管线雏形：`assets_src/`（源）→ `yr_pack` 转换/压缩 → `assets/`（cooked），写清"为什么需要 cook"
 - [ ] 性能：接入 `perf` 工作流文档 + 可选 Tracy（submodule）；FrameStats 导出 CSV + 一个 Python 绘图脚本
 - [ ] 调试文档：`.gdbinit`、常用断点配方、core dump 分析、ASan 报告解读、Catch2 `--break`
@@ -499,9 +500,9 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 - [ ] （可选）热重载：`.yrscn` 文件变更 → 自动重载场景（inotify），演示效果极好
 
 **验收标准**
-- `apps/text_adventure --pak game.yrpak` 完全从 pak 启动运行，`assets/` 目录不存在也能跑。
+- `apps/render_demo --pak game.yrpak` 完全从 pak 启动运行，`assets/` 目录不存在也能跑。
 - CI：build + ctest + format + 架构门禁全绿。（clang-tidy / 覆盖率若做了就加上，没做不阻塞）
-- 一个完全陌生的开发者按 README 能在 15 分钟内构建并跑起两个 Demo（**找人实测一次**）。
+- 一个完全陌生的开发者按 README 能在 15 分钟内构建并跑起两个可运行物（`tick_sandbox` / `render_demo`）（**找人实测一次**）。
 - `doc/` 与代码一致：架构图是最新的、`06-decisions.md` 收录了全部架构级取舍、`benchmarks/README.md` 有数据。
 
 **产出物**：完整可展示仓库 + 工具（+ 你想写的博客）。
@@ -518,14 +519,14 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 | S2 | `YR_BIND_METHOD` 方法绑定 + 从脚本调用 | M2 | ★★★★ | 对照 Godot `method_bind.h` |
 | S3 | ECS 数据层：把 Component 数据搬进 SparseSet/Archetype，与 Object 树并存 | M4 | ★★★★★ | 对照 EnTT/flecs；写 benchmark 说明两种范式适用场景 |
 | S4 | `IPhysicsBackend` + 玩具 AABB/扫掠实现 + 固定步长插值 | M4 | ★★★ | 理解"物理作为 Server" |
-| S5 | 独立渲染线程 + command queue | M10 | ★★★★ | 对照 `server_wrap_mt_common.h` |
-| S6 | 迷你 Frame Graph（pass 声明读写 → 自动 barrier） | M10 | ★★★★★ | Yo_Renderer roadmap §1.3 的延续 |
+| S5 | 独立渲染线程 + command queue | M7 | ★★★★ | 对照 `server_wrap_mt_common.h` |
+| S6 | 迷你 Frame Graph（pass 声明读写 → 自动 barrier） | M7 | ★★★★★ | Yo_Renderer roadmap §1.3 的延续 |
 | S7 | 热重载（场景/资源/代码） | M11 | ★★★ | 演示效果极佳 |
 | S8 | ImGui 编辑器（Hierarchy/Inspector 可编辑 + undo/redo） | M11 | ★★★ | 对照 `core/object/undo_redo.h` |
 | S9 | 内存：自定义 allocator / pool / 分配统计 | M1 | ★★★ | 对照 `core/os/memory.h` |
 | S10 | Profiler：内建采样 profiler + 火焰图导出 | M4 | ★★★★ | 对照 `core/debugger/engine_profiler.h` |
-| S11 | 网络：确定性锁步或状态同步（用 M8 的游戏做 demo） | M8 | ★★★ | 会倒逼"确定性"设计 |
-| S12 | Windows 移植 | M10 | ★★ | 工程体检 |
+| S11 | 网络：确定性锁步或状态同步（用 headless simulation 做 demo） | M4 | ★★★ | 会倒逼"确定性"设计 |
+| S12 | Windows 移植 | M7 | ★★ | 工程体检 |
 
 ---
 
@@ -546,5 +547,5 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 - [ ] 对着架构图能脱稿讲清这个里程碑新增的模块：为什么存在、和谁协作、失败模式是什么
 - [ ] `00-vision.md` §4 成功判据里相关条目打勾
 - [ ] 新增/推翻的决策写进 `06-decisions.md`
-- [ ] `07-portfolio.md` 更新（这个里程碑能往简历/博客里写什么）—— M8 之前可以跳过
+- [ ] `07-portfolio.md` 更新（这个里程碑能往简历/博客里写什么）—— M7（首个视觉节点）之前可以跳过
 - [ ] git tag：`v0.M?`

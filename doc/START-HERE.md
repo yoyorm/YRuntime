@@ -13,8 +13,10 @@
 | **M1 句柄、容器、时间、字符串** | ✅ 核心完成 —— Handle/SlotMap/ScopeTimer/StringId/ObjectID 完成；E1 perf 结论未做（非阻塞） |
 | **M2 反射与对象模型** | ✅ 核心完成 —— Object/ObjectDB/Variant（10 tag）/PropertyInfo/ClassInfo/ClassDB 完成；`yr_inspect`、注册宏延后 |
 | **M3 单线程 EventBus** | ✅ 已完成 / 收口（2026-10-08） |
-| **M4 场景树与主循环** | 🔨 **下一主线** |
+| **M4 场景树与主循环** | 🔨 **下一主线**（Node-1/Node-2 enter/exit 已完成，下一步 ready） |
 | M5 ~ M11 | ⬜ 未开始 |
+
+**远期方向一句话**（现在不要跳过去）：M4 最小闭环 → M5 渲染契约 + NullBackend → M6 最小 Vulkan bootstrap → M7 Snapshot 驱动画面（首个主要作品节点）→ M8 序列化 → M9 资源系统 → M10 任务系统 → M11 工具链打磨。**当前唯一任务仍是 M4。**
 
 进度**只在两处维护**：根 `README.md` 的里程碑表（对外）+ `02-roadmap.md` 的 checkbox（对内）。
 别的地方不要重复记录，否则一定会漂移。
@@ -35,10 +37,10 @@
 
 - **`MessageQueue`**：`ObjectID + StringId method + vector<Variant>` 的延迟调用。它依赖尚未实现的**方法绑定**
   与未来 `MainLoop` 的**安全 flush 点**（帧阶段 2），**不是纯多线程功能**；两样具备后再做
-- **`post_from_any_thread` / MPSC / TSan 验证**：推迟到 **M7**
+- **`post_from_any_thread` / MPSC / TSan 验证**：推迟到 **M10**
 - 事件追踪日志、`std::function` 性能实验：非阻塞优化，不阻塞主线
 
-### M4 当前第一步：Node-2 设计（Node-1 已完成）
+### M4 当前进度：Node-2 enter/exit 已完成，下一步 ready
 
 M4 按 `02-roadmap.md` 拆成 Node-1 → Node-2 → Node-3 → Node-4 四步。
 
@@ -48,9 +50,17 @@ M4 按 `02-roadmap.md` 拆成 Node-1 → Node-2 → Node-3 → Node-4 四步。
 `removeChild` 交出所有权；生命周期/更新回调只占位 no-op。空 / 自己 / 多父 / 成环四项验收、
 父析构级联 + ObjectDB 注销均有测试，Debug/Release/ASan 全绿。
 
-**下一步 Node-2：SceneTree 内状态与生命周期传播**。本步**只做** `enter` / `ready` / `exit` 派发，
-验收：三层树断言 enter 前序（父先子）、ready 后序（子先父）且只一次、exit 后序。
-**不写**延迟删除（Node-3）与 process 遍历（Node-4）。
+**Node-2 的 enter/exit 子步骤 ✅ 已完成（2026-10-13）**：
+`SceneTree` 落地 root 所有权与 `setRoot` / `clearRoot` / 析构；
+`Node` 私有 `setTree` / `propagateEnterTree`（前序、父先子）/ `propagateExitTree`（后序、子节点倒序）
+维护 `tree_` 并调用受保护的 `onEnterTree` / `onExitTree`；
+`addChild` / `removeChild` / `detach` 已接线（新子树只 enter 一次、摘下的子树只 exit 一次）。
+测试在 `tests/scene/test_scene_tree.cpp` + `test_lifecycle.cpp`，Debug/Release/ASan 全绿。
+回调契约：不得抛异常、不得修改树结构（blocked 重入保护尚未实现）。
+
+**下一步：Node-2 的 `ready` 子步骤（只学这一个新概念）**。ready 是双状态
+（`entered` + `ready_requested`）+ 后序且默认只一次；重新进树会重新 enter/exit，但不自动再次 ready。
+本步**只做** ready，**不写**延迟删除（Node-3）与 process 遍历（Node-4）。
 
 **动笔前读**：`01-architecture.md` §4.6（Node 生命周期顺序）与
 `04-godot-study.md` 的 "Node 生命周期" 行。
@@ -130,7 +140,7 @@ Day 3b→3c 就是这个模式：先硬编码 flag 亲眼看 ASan 抓 bug，再�
 | `00-vision.md` | 怀疑方向、或想砍功能时 |
 | `03-learning-map.md` | 卡住、需要补知识时 |
 | `06-decisions.md` | 要做取舍前，先查有没有已经定过的 |
-| `07-portfolio.md` | M8 之后再修订，现在不用看 |
+| `07-portfolio.md` | 首个视觉节点（M7）之后再修订，现在不用看 |
 | `HANDOFF.md`（根目录） | 交给新的 AI 会话时先读：项目概况、约束、当前上下文、下一步 |
 
 > **一次开工实际需要的阅读量 ≈ 30 行。** 如果你发现自己在一次读 500 行文档，停下来 ——

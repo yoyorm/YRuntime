@@ -4,7 +4,7 @@
 
 ## 一句话定位
 
-用 C++ 从零实现一个 **headless-first 的游戏 Runtime**：先把运行时核心（对象模型、场景树、资源、序列化、事件、任务调度、主循环）搭起来并跑通一个文字游戏，再把已有的 Vulkan 渲染器作为 **Renderer Backend** 接入，形成 `游戏状态 → Runtime → Renderer → GPU` 的完整链路。
+用 C++ 从零实现一个 **headless-first 的游戏 Runtime**：先把运行时核心（对象模型、场景树、事件、主循环）搭成可 tick 的世界，再定义 renderer-neutral 的 **RenderSnapshot / RendererBackend** 契约与 NullBackend，然后接入最小 Vulkan backend，最终由 Runtime 驱动画面，形成 `游戏状态 → Runtime → RenderSnapshot → Renderer → GPU` 的完整链路。
 
 ## 索引
 

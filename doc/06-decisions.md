@@ -17,18 +17,19 @@
 | D4 | 自研最小数学库，GLM 只在 Vulkan 后端用 | 暂定 | M4（原定 M1，2026-09-26 推迟） |
 | D5 | Variant 精简实现（9 种类型），Dict 保序 | 暂定 | M2 |
 | D6 | 反射注册宏限制在 3 个以内，先手写后宏化 | 暂定 | M2 |
-| D7 | 渲染解耦 = POD 快照契约 + 单向抽取 + 零回调 | 暂定 | M9~M10 |
-| D8 | 线程模型：逻辑单线程，工作线程只碰 POD 与不可变数据 | 暂定 | M6~M7 |
-| D9 | 序列化格式自研 `.yrscn`（文本）+ `.yrscnb`（二进制），JSON 仅调试 | 暂定 | M5 |
+| D7 | 渲染解耦 = POD 快照契约 + 单向抽取 + 零回调 | 暂定 | M5/M7 |
+| D8 | 线程模型：逻辑单线程，工作线程只碰 POD 与不可变数据 | 暂定 | M9~M10 |
+| D9 | 序列化格式自研 `.yrscn`（文本）+ `.yrscnb`（二进制），JSON 仅调试 | 暂定 | M8 |
 | D10 | 场景结构修改收敛到帧阶段 9，其余阶段只改数据 | 暂定 | M4 |
 | D11 | 分层 = 分层 CMake target，依赖方向由构建系统与 CI 强制 | 暂定 | M0 |
 | D12 | Linux-first，平台层保留薄抽象但不移植 | 暂定 | 全程 |
 | D13 | 测试用 Catch2（系统包优先 + FetchContent 回退），benchmark 独立且不进 CI | 暂定（09-22 复盘修订） | M0 |
 | D14 | 不使用异常做控制流；错误经返回值 + 日志上报 | 暂定 | 全程 |
-| D15 | Vulkan 后端由 Yo_Renderer 搬入并改名空间，而非 submodule 引用 | 暂定 | M10 |
+| D15 | Vulkan 后端由 Yo_Renderer 搬入并改名空间，而非 submodule 引用 | **已推翻（被 D19 取代）** | M10（→ D19） |
 | D16 | Sanitizer 与 Debug 构建分离，而不是合并 | 暂定 | M0 |
 | D17 | 仓库内不产出笔记文件，记录只靠 commit message + ADR + checkbox | **已确认** | M0 |
 | D18 | 检验标准是"能否讲清楚"，不是"能否自证"（删除全部证据链要求） | **已确认** | M0 |
+| D19 | 删除文字冒险；M4 后 Contract/Null → Vulkan Bootstrap → Snapshot；Yo_Renderer 只选择性借鉴；快照数据式契约 | 暂定 | M4~M7 |
 
 ---
 
@@ -69,17 +70,17 @@
 **背景**：Yo_Renderer 用了 ECS（SparseSet 组件池），Godot/Unity 传统是 Object 树 + 组件组合。两种范式必须选一个为主。
 
 **决策**：**Object 树 + 反射为主体**（`Node` 继承 `Object`，属性经 `ClassDB` 暴露），
-在三处使用 SoA/紧凑数组：① Transform 世界矩阵平行数组（M4）② `RenderSnapshot::items`（M9）③ 若做 stretch S3，渲染实例数据整体入 SparseSet。
+在三处使用 SoA/紧凑数组：① Transform 世界矩阵平行数组（M4）② `RenderSnapshot::items`（M5）③ 若做 stretch S3，渲染实例数据整体入 SparseSet。
 **边界规则**：逻辑身份用 Object，批量数据用 SoA；**Object 持有 index 指向 SoA 行，SoA 不持有 Object 指针**。
 
-**理由**：项目目标是理解 Runtime 与工具链，而序列化（M5）、检视器（M2）、事件（M3）、场景层级（M4）、未来脚本绑定（S1）**全部依赖反射**；
+**理由**：项目目标是理解 Runtime 与工具链，而序列化（M8）、检视器（M2）、事件（M3）、场景层级（M4）、未来脚本绑定（S1）**全部依赖反射**；
 纯 ECS 会让这些功能都要额外造一套元数据。同时你的 Yo_Renderer 已经练过 ECS，重复投入价值低——但"两种范式的边界"恰恰是最有面试价值的认知（见 `03-learning-map.md` §5）。
 
 **备选与否决理由**：*纯 ECS*（EnTT 风格）：并行化更容易、性能更好，但序列化/编辑器/层级表达成本极高，且与"对标 Godot 的学习目标"偏离。
 
-**后果**：+ 工具链与序列化天然顺；− 大批量同质实体性能不如 ECS（本项目没有这种场景，文字游戏 + 简单渲染 demo）；− 需要在文档里反复讲清边界，否则代码会长成两不像。
+**后果**：+ 工具链与序列化天然顺；− 大批量同质实体性能不如 ECS（本项目没有这种场景，headless simulation + 简单 render sandbox）；− 需要在文档里反复讲清边界，否则代码会长成两不像。
 
-**什么情况下改回来**：如果 M8/M10 的 Demo 需要上万同质实体（弹幕/群体 AI），则把该类实体整体迁到 SoA 层（S3）。
+**什么情况下改回来**：如果 M4/M7 的场景需要上万同质实体（弹幕/群体 AI），则把该类实体整体迁到 SoA 层（S3）。
 
 ---
 
@@ -113,7 +114,7 @@ GLM 只出现在 `engine/render/vulkan/` 与 `apps/render_demo`，在快照边�
 
 **备选**：*直接用 GLM*（省 1 周，但失去学习价值且引入编译期依赖）；*用 Eigen*（过重）。
 
-**后果**：− M4 多花约 3~5 天；− M10 需要 `Mat4 ↔ glm::mat4` 转换函数（写一次，加测试）；+ Runtime 编译更快、依赖更少。
+**后果**：− M4 多花约 3~5 天；− M6/M7 需要 `Mat4 ↔ glm::mat4` 转换函数（写一次，加测试）；+ Runtime 编译更快、依赖更少。
 
 **范围控制**：只做引擎必需的操作（加减乘、normalize、cross/dot、lookAt、perspective/ortho、TRS 合成、求逆）。
 **不做**：SIMD 优化、双精度、几何算法库。这些是 stretch 都算不上的时间黑洞。
@@ -126,7 +127,7 @@ GLM 只出现在 `engine/render/vulkan/` 与 `apps/render_demo`，在快照边�
 **决策**：第一版只支持 `kNull/kBool/kInt/kFloat/kString/kStringId/kVec3/kArray/kDict/kObjectID`（含 kStringId/kObjectID 共 10 个 tag，9 种"值类型"）。
 `Dict` 用**保序 `vector<pair<StringId, Variant>>`**，不用 `unordered_map`。先不做 COW，`Array/Dict` 直接深拷贝。
 
-**理由**：保序是"序列化输出逐字节可复现"的前提（M5 的确定性 round-trip 验收标准依赖它）；
+**理由**：保序是"序列化输出逐字节可复现"的前提（M8 的确定性 round-trip 验收标准依赖它）；
 COW 是优化，应该等 E6 实验测出拷贝成本确实成问题后再做（先测量后优化）。
 
 **后果**：+ 实现量可控（Variant 是很容易失控的模块，Godot 的 `variant.h` 三千多行）；− 深层嵌套 Dict 拷贝慢 → 用 E6 量化，必要时加 `SharedPtr` 语义。
@@ -150,14 +151,14 @@ COW 是优化，应该等 E6 实验测出拷贝成本确实成问题后再做（
 ---
 
 ## D7 · 渲染解耦 = POD 快照契约 + 单向抽取 + 零回调
-**状态**：暂定 · **里程碑**：M9~M10
+**状态**：暂定 · **里程碑**：M5/M7
 
 **决策**：见 `01-architecture.md` §4.11 与 §7。四条硬规则：
 ① 快照内禁止出现 `yr::scene::*` / `Object*`；② 唯一耦合点是 `yr_engine` 里的 `RenderExtractSystem`（SceneTree → Snapshot，单向）；
 ③ Backend 禁止回调 Runtime、禁止持有 `SceneTree*`；④ Runtime 侧禁止 include `<vulkan/*>` / `<GLFW/*>`。
 `yr_render_iface` 只依赖 `yr_core`，使 ①④ 由构建系统物理保证。
 
-**理由**：这是本项目 M9/M10 的全部学习目标。Yo_Renderer 的现状（`render(items, vp, cameraPos, const void* lightsData, count, frame)`，即 V6）
+**理由**：这是本项目 M5/M6/M7 的全部学习目标。Yo_Renderer 的现状（`render(items, vp, cameraPos, const void* lightsData, count, frame)`，即 V6）
 是"没有契约的契约"——`void*` 让类型安全消失、参数列表让扩展必须改签名。快照结构体解决了这两点。
 
 **验证手段**（比声明更重要）：NullBackend 在无 GPU CI 上跑全部测试；快照 dump → replay 逐字节一致；grep 门禁。
@@ -169,7 +170,7 @@ COW 是优化，应该等 E6 实验测出拷贝成本确实成问题后再做（
 ---
 
 ## D8 · 线程模型：逻辑单线程，工作线程只碰 POD 与不可变数据
-**状态**：暂定 · **里程碑**：M6~M7
+**状态**：暂定 · **里程碑**：M9~M10
 
 **决策**：铁律——**任何 `Object` 的构造与析构、任何 `SceneTree`/`ObjectDB`/`ClassDB` 的写操作，只发生在主线程。**
 工作线程只能：读不可变数据、处理 POD、做 IO 与解码。跨边界方式只有两种：任务（`JobSystem`）与快照（`RenderSnapshot`）。
@@ -180,12 +181,12 @@ COW 是优化，应该等 E6 实验测出拷贝成本确实成问题后再做（
 
 **后果**：− 无法把游戏逻辑本身并行化（本项目不需要）；− 异步加载的"最后一公里"必须在 `pump()` 里同步执行，可能产生帧尖峰（用 E10 量化，必要时分帧摊销）。
 
-**演进路径**：M6 先做"假异步"（入队 + pump 同步执行）→ M7 换真线程 → M10 考虑独立渲染线程（S5）。每次演进写新 ADR。
+**演进路径**：M9 先做"假异步"（入队 + pump 同步执行）→ M10 换真线程 → M7 之后考虑独立渲染线程（S5）。每次演进写新 ADR。
 
 ---
 
 ## D9 · 序列化格式自研 `.yrscn`（文本）+ `.yrscnb`（二进制），JSON 仅调试
-**状态**：暂定（对应 Q4）· **里程碑**：M5
+**状态**：暂定（对应 Q4）· **里程碑**：M8
 
 **决策**：文本格式自研（类 `.tscn` 结构：段头 + key = value，见 `01-architecture.md` §4.9 样例）；二进制格式 `.yrscnb`（magic + version + 长度前缀）；JSON 仅作导出/调试。
 **先把格式写下来**（在对话里过一遍：段结构、引用怎么表达、错误怎么报），定稿后写进 `yr/serialize/` 的头注释，**再写解析器**。
@@ -194,7 +195,7 @@ COW 是优化，应该等 E6 实验测出拷贝成本确实成问题后再做（
 
 **备选**：*直接用 JSON*（省 1~2 周，但失去手写 lexer/parser 与格式设计的练习，且 JSON 表达"引用/子资源"很别扭）；*用 Protobuf/FlatBuffers*（引入依赖与代码生成，且看不到内部机制）。
 
-**后果**：− M5 是全部里程碑里最容易超期的一个（已在 roadmap 给降级方案：二进制推到 M11）；+ 格式完全可控，round-trip 确定性可达成。
+**后果**：− M8 是全部里程碑里最容易超期的一个（已在 roadmap 给降级方案：二进制推到 M11）；+ 格式完全可控，round-trip 确定性可达成。
 
 ---
 
@@ -225,7 +226,7 @@ COW 是优化，应该等 E6 实验测出拷贝成本确实成问题后再做（
 ## D12 · Linux-first，平台层保留薄抽象但不移植
 **状态**：暂定 · **里程碑**：全程
 
-**决策**：只在 Linux（本机 **Linux Mint 22.3 "Zena"**，基座 Ubuntu 24.04 noble / GCC 13 / Clang 18）开发与测试。平台相关代码集中在 `yr/platform/`（headless 实现 + M10 的 GLFW/Xlib 实现），但不做 Windows/macOS 移植（列入 S12）。
+**决策**：只在 Linux（本机 **Linux Mint 22.3 "Zena"**，基座 Ubuntu 24.04 noble / GCC 13 / Clang 18）开发与测试。平台相关代码集中在 `yr/platform/`（headless 实现 + 新 M6 的 GLFW/Xlib 实现），但不做 Windows/macOS 移植（列入 S12）。
 
 **理由**：移植的学习价值远低于同等时间投入在 Runtime 核心上；且 Yo_Renderer 已标注"当前仅支持 Linux"。
 
@@ -276,9 +277,12 @@ CI 首次运行时 `apt-get install libcatch2-dev` 退出码 100，job 失败。
 ---
 
 ## D15 · Vulkan 后端由 Yo_Renderer 搬入并改名空间，而非 submodule 引用
-**状态**：暂定（前置假设 A3）· **里程碑**：M10
+**状态**：**已推翻（被 D19 取代）** · **里程碑**：M10（历史；新方案见 D19，落在 M6/M7）
 
-**决策**：M10 时把 Yo_Renderer 的 `platform/`（窗口+Vulkan context+swapchain）、`rhi/`、`render/`、`asset/`(gltf/hdr loader) 搬进 `engine/render/vulkan/`，
+> **2026-10-13 被 D19 取代**：Vulkan backend 改为**最小重写为主 + 选择性借鉴底层机制**，
+> 不再整体搬入 `rhi/` + `render/`。保留原文作为当时的考虑记录。
+
+**决策**（已推翻）：M10 时把 Yo_Renderer 的 `platform/`（窗口+Vulkan context+swapchain）、`rhi/`、`render/`、`asset/`(gltf/hdr loader) 搬进 `engine/render/vulkan/`，
 统一放入 `yr::render::vk` 命名空间，并**先原样跑通再重构**。
 **不搬**：`framework/`（Level/Entity/Component）、`system/`（Transform/Camera/Batch/Light）、`ui/`（ImGui panels）、`core/`（Ref/Handle/SparseSet/ObjectDB）——这些由 YRuntime 的对应层取代。
 
@@ -303,14 +307,14 @@ CI 首次运行时 `apt-get install libcatch2-dev` 退出码 100，job 失败。
 **Debug 构建（`-O0 -g`）的目的是"让调试器看得清"，sanitizer 的目的是"让隐藏错误显形"**——两件不同的事，只是都在开发期用。
 
 **决策**：保持分离。`debug` preset 不含 sanitizer；`asan` preset = Debug + `YR_ENABLE_SANITIZERS=ON`。
-工作流：写代码用 `debug` → **提交前**跑 `asan` → 测性能用 `release` → M7 起查竞争用 `tsan`。
+工作流：写代码用 `debug` → **提交前**跑 `asan` → 测性能用 `release` → M10 起查竞争用 `tsan`。
 
 **理由**（按对本项目的实际影响排序）
 1. **benchmark 会失效**：ASan 的 redzone 与插桩开销约 2 倍且**不均匀**，会掩盖 `03-learning-map.md` E1~E16 想测量的 cache 行为与内存布局差异。M1 就要跑 E1，必须有干净的 Debug。
 2. **干扰 gdb**：ASan 拦截 `malloc/free`、安装自己的信号处理器、改变内存布局 → 单步会跳进 sanitizer 内部、watchpoint 异常、崩溃点定位需要额外配 `ASAN_OPTIONS=abort_on_error=1`。
 3. **拖慢迭代**：插桩增加编译时间，链接多链 `libasan`。项目变大后（M4 起）日常反馈回路明显变长。
 4. **第三方噪音**：LeakSanitizer 会报告修不了的泄漏（Catch2 内部、将来的 GLFW/Vulkan 驱动），只能 suppress；噪音过多会让人对真报告麻木，比没有 sanitizer 更糟。
-5. **TSan 与 ASan 互斥**：分离的 preset 天然容纳 M7 的 TSan；若 debug 默认开 ASan，反而要多做一个"关 ASan"的开关。
+5. **TSan 与 ASan 互斥**：分离的 preset 天然容纳 M10 的 TSan；若 debug 默认开 ASan，反而要多做一个"关 ASan"的开关。
 6. **CI 矩阵需要两者**：`debug`（快，覆盖逻辑）与 `asan`（慢，覆盖内存）各是一个 job。
 
 **备选与否决理由**
@@ -389,6 +393,40 @@ CI 首次运行时 `apt-get install libcatch2-dev` 退出码 100，job 失败。
 
 **什么情况下改回来**：如果要正式投递实习/求职且需要对外材料，
 再按目标岗位的要求单独准备一份**作品说明**（不在本仓库的日常流程里）。
+
+---
+
+## D19 · 删除文字冒险；M4 后依次 Contract/Null → Vulkan Bootstrap → Snapshot；Yo_Renderer 只选择性借鉴；快照数据式契约
+**状态**：暂定 · **里程碑**：M4~M7
+
+**背景**：规划期把"10 分钟文字冒险 Demo"当作第一个作品节点，并计划在 M10 整体搬入 Yo_Renderer 的 `rhi/`+`render/`。重新评估后有三个问题：
+① 文字冒险会引入房间图 / 命令解析 / 对话 / 自动通关等大量**内容工作**，与"理解 Runtime"的学习目标弱相关；
+② 渲染不能绕过 M4 的 Node 生命周期、延迟删除、process/Transform 与最小帧阶段，否则 Runtime 会退化成渲染胶水；
+③ 整体搬迁 Yo_Renderer 会把反向依赖、`void*`、场景 / GPU 生命周期耦合与重复类型带回 YRuntime。
+
+**决策**：
+1. **删除**原"文字冒险 Demo"里程碑及其内容项（房间 / 命令解析 / 对话 / 自动通关），不保留旧"作品节点 1/2"编号。
+2. M4 最小闭环之后，渲染主线按 **M5 渲染契约 + NullBackend → M6 最小 Vulkan Bootstrap → M7 Snapshot 驱动画面** 推进；M7 的 Snapshot 驱动 Vulkan render sandbox 是**首个主要作品节点**（可保留 headless `tick_sandbox` 作为阶段产物）。
+3. **Yo_Renderer 不整体引入、不作 subdirectory**：Vulkan backend 以最小重写为主，只选择性借鉴 / 逐文件搬
+   `platform/VulkanContext`、`Swapchain`、`SyncObjects`/`FrameSync`、`rhi/command/CommandRecorder`、`render/VulkanResourceTable`，
+   并适配 YRuntime 命名 / Handle / CMake 分层；**不搬** `app/*`、`framework/*`、`system/*`、`ui/*`、
+   `core/ObjectDB/Ref/Handle/TextureCache`、现有 `RenderServer`、`asset/GltfLoader` 全链路。
+4. 保持 **RenderSnapshot 数据式契约**（POD + 单向抽取 + 零回调），不照搬 Godot 命令式 `RenderingServer`；
+   初期 `AssetHandle` 必须强类型，正式 `AssetUID`/`AssetDatabase` 到 M9 替换临时内建 triangle/default material 注册表；
+   `DrawItem` 中禁止 `Object*`/`Mesh*`/`Ref<Mesh>`/`Vk*`。
+5. **删除内容量 ≠ 删除 Runtime 验证**：保留三项验证——headless scene simulation 10000 帧（ObjectDB 归零、ASan 干净）、
+   RenderSnapshot + NullBackend dump/replay 确定性统计、序列化 save→load→save 逐字节 round-trip。
+
+**备选与否决理由**：
+- *保留文字冒险但缩小到 5 分钟*：内容工作仍与 Runtime 目标弱相关，且挤占 M5~M7 的可视化链路时间。
+- *继续整体搬入 Yo_Renderer 的 `rhi/`+`render/`*：会带回旧反向依赖与 `void*`、场景假设，违反 P1/P3，并让 Runtime 无法保持 renderer-neutral。
+- *照搬 Godot 命令式 RenderingServer*：当前规模下命令流难以 dump/replay，验证成本高；数据式快照更适合"无 GPU CI + 可重放"。
+
+**后果**：+ 渲染主线顺序与模块边界清晰，Runtime 不退化；+ 无内容量负担，验证可自动化；+ 复用 Yo_Renderer 的风险受控。
+− 失去"用引擎做完整游戏"的展示（改用 render sandbox + simulation 传达 Runtime 价值）；− M6 需要自己重写较多 Vulkan 初始化代码。
+
+**什么情况下改回来**：若后续想验证"Runtime 承载完整玩法"，把它作为 stretch 或新的独立里程碑重新立项，
+并明确它是**内容 Demo** 而非 Runtime 学习目标。
 
 ---
 

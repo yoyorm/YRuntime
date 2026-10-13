@@ -20,8 +20,10 @@
 
 **定位一句话（可直接用于简历/自我介绍）**：
 > 独立设计并实现了一个 C++20 游戏运行时（YRuntime）：从零实现句柄/反射/事件/场景树/序列化/异步资源/任务调度/主循环等模块，
-> 用分层 CMake target + CI 强制依赖方向，Catch2 + ASan/TSan 覆盖核心逻辑，并以此为基底跑通一个数据驱动的文字冒险 Demo，
-> 最后将自研 Vulkan PBR 渲染器作为可替换 Backend 接入，实现 `游戏状态 → Runtime → Renderer → GPU` 的完整链路；
+> 用分层 CMake target + CI 强制依赖方向，Catch2 + ASan/TSan 覆盖核心逻辑，并以此为基底跑通 headless scene simulation、
+> renderer-neutral 快照 dump/replay 与场景序列化 round-trip；
+> 最后以最小重写 + 选择性借鉴自研 Vulkan PBR 渲染器底层机制的方式接入可替换 Backend，实现
+> `游戏状态 → Runtime → RenderSnapshot → Renderer → GPU` 的完整链路；
 > 全程以 Godot 4.x 源码为参照系，能说清每个模块"Godot 怎么做 / 我怎么做 / 为什么不同"。
 
 （把 LOC、测试数等占位符在项目后期填成真实数字。**不要写没有证据支撑的形容词**，比如"高性能""工业级"。）
@@ -71,12 +73,12 @@
 | M2 | `yr_inspect` 反射查看器 | 终端截图 + GIF | `doc/media/` |
 | M3 | 事件确定性重放测试 | 测试代码 + 日志对比 | `tests/event/` |
 | M4 | headless 世界 tick 10000 帧 | **asciinema 录屏** + FrameStats CSV + p50/p95/max 表 | `doc/media/` |
-| M5 | 手写 `.yrscn` + round-trip diff 为空 | 截图 + 格式规范（写进 `yr/serialize/` 头注释） | `doc/media/` |
-| M6 | 慢 IO 下异步加载不卡帧（E10） | 帧时间曲线图（Python 画） | `benchmarks/README.md` |
-| M7 | 并行加速比曲线 + false sharing 实测（E11/E12） | 数据表 + 图 | `benchmarks/README.md` |
-| **M8** | **可玩文字冒险 Demo** | **录屏（mp4/GIF）+ 玩法 README + 自动通关 CI** | `apps/text_adventure/` + `doc/media/` |
-| M9 | 快照 dump/replay + 渲染解耦 | 博客素材 | `doc/media/` |
-| **M10** | **Runtime 驱动的 Vulkan 画面** | **GIF + 截图 + 架构图** | `doc/media/` |
+| M5 | renderer-neutral 快照 dump/replay + 渲染解耦 | 博客素材 | `doc/media/` |
+| M6 | 最小 Vulkan bootstrap（窗口 + 清屏 + 硬编码三角形） | 截图 / GIF | `doc/media/` |
+| **M7** | **Runtime 驱动的 Vulkan 画面** ← 首个主要视觉作品节点 | **GIF + 截图 + 架构图** | `doc/media/` |
+| M8 | 手写 `.yrscn` + save→load→save round-trip | 截图 + 格式规范（写进 `yr/serialize/` 头注释） | `doc/media/` |
+| M9 | 慢 IO 下异步加载不卡帧（E10）+ AssetHandle→GPU 桥接 | 帧时间曲线图（Python 画） | `benchmarks/README.md` |
+| M10 | 并行加速比曲线 + false sharing 实测（E11/E12） | 数据表 + 图 | `benchmarks/README.md` |
 | M11 | `.yrpak` 打包 + 完整文档（覆盖率徽章可选） | README + CI | 根目录 |
 
 **视觉素材规范**
@@ -100,12 +102,12 @@
 | 2 | 句柄与 generation：游戏引擎里最便宜的安全网 | M1 | index+generation 如何用 8 字节解决悬垂与 ABA，附 benchmark |
 | 3 | 用 300 行宏换来一个反射系统（以及我为此付出的调试代价） | M2 | 宏工程的收益/代价权衡，附 `clang -E` 展开分析 |
 | 4 | 一帧里的 14 件事：为什么顺序就是正确性 | M4 | 帧阶段设计 + 结构修改收敛到单一阶段如何消灭一整类 bug |
-| 5 | 自己设计一种场景文件格式：引用、版本与循环三大难题 | M5 | 从 `.tscn` 学到的与我最终选择的格式 |
-| 6 | 异步资源加载：为什么"最后一公里"必须回主线程 | M6~M7 | 线程边界画在数据上而不是函数上，附 Godot `ThreadLoadTask` 对照 |
-| 7 | 我给游戏运行时加线程池踩的 6 个坑 | M7 | TSan/内存序/false sharing/停机死锁/浮点归约确定性 |
-| 8 | 逻辑与渲染之间那条线：POD 快照契约 | M9~M10 | 为什么传对象指针的解耦都是假解耦，附"快照可重放"验证法 |
+| 5 | 自己设计一种场景文件格式：引用、版本与循环三大难题 | M8 | 从 `.tscn` 学到的与我最终选择的格式 |
+| 6 | 异步资源加载：为什么"最后一公里"必须回主线程 | M9~M10 | 线程边界画在数据上而不是函数上，附 Godot `ThreadLoadTask` 对照 |
+| 7 | 我给游戏运行时加线程池踩的 6 个坑 | M10 | TSan/内存序/false sharing/停机死锁/浮点归约确定性 |
+| 8 | 逻辑与渲染之间那条线：POD 快照契约 | M5~M7 | 为什么传对象指针的解耦都是假解耦，附"快照可重放"验证法 |
 | 9 | 读 Godot 源码 8 个月，我改变了哪些设计判断 | 全程 | 三段式对照方法 + 具体被推翻的 ADR |
-| 10 |（可选）从 8000 行 Vulkan 渲染器到可替换 Backend：一次搬迁复盘 | M10 | 搬迁时暴露的耦合点清单 |
+| 10 |（可选）从 8000 行 Vulkan 渲染器到最小 backend：选择性借鉴复盘 | M6~M7 | 哪些底层机制值得借、哪些耦合必须丢 |
 
 **写作纪律**：① 每篇必须有一个**自己测出来的数据**或**自己踩出来的坑**，否则不写（写不出来说明还没到能写的阶段，正常）；
 ② 引用 Godot 源码时给文件路径（不给行号，版本会漂）；③ 结尾写"如果重做一次"。
@@ -140,7 +142,7 @@
 14. 一帧里的 14 个阶段，为什么 `pump_assets` 在 `process` 之前而不是之后？为什么 GC 在最后？
 15. Transform 层级的脏标记怎么传播？向上还是向下？多线程下会遇到什么问题？（附 E8 数据）
 
-### 序列化与资源（M5~M6）
+### 序列化与资源（M8~M9）
 16. 你的场景格式如何处理"两个节点引用同一个资源"？外部资源与内嵌子资源的区别？
 17. 循环引用（A→B→A）怎么序列化？为什么必须两遍法？
 18. 老版本存档在新版本打不开，你的兼容策略是什么？未知属性和缺失属性分别怎么处理？
@@ -151,7 +153,7 @@
 23. 同一个资源被并发请求 5 次会发生什么？加载中被请求卸载呢？加载失败后 in-flight 条目怎么清理？
 24. 资源什么时候卸载？refcount==1 的 GC 为什么会有"临时 Ref 导致本帧不卸载"的现象，这是 bug 吗？
 
-### 并发（M7）
+### 并发（M10）
 25. 你的任务依赖是怎么调度的？主线程在 `wait` 时做什么？为什么不能 sleep？
 26. `memory_order_acquire/release` 在你的队列里具体保护什么？哪些地方可以用 relaxed，为什么？
 27. false sharing 是什么？你在哪里遇到过、怎么发现的、怎么解决的？（附 E12 数据）
@@ -159,7 +161,7 @@
 29. `~JobSystem()` 的停机流程？如果还有任务在跑、有任务在等待别的任务，怎么避免死锁？
 30. TSan 报了一个你认为是误报的竞争，你怎么处理？（*要点*：先假设不是误报；suppress 文件要写理由）
 
-### 渲染解耦与工程（M9~M11）
+### 渲染解耦与工程（M5~M11）
 31. Runtime 与 Renderer 的边界你画在哪里？为什么是快照而不是接口回调？
 32. 如果换成 OpenGL 后端，Runtime 需要改几行代码？你怎么**证明**这一点？（*要点*：CI grep 门禁 + NullBackend 跑全部测试 + 快照可重放）
 33. Backend 里的 GPU 资源生命周期怎么管？Runtime 卸载资源时 GPU 侧正在用怎么办？
@@ -200,7 +202,7 @@
 - [ ] 第三方归属：`third_party/` 各库的 LICENSE 保留；README 有"依赖与致谢"小节列出 nlohmann_json / GLM / Catch2 / GLFW / Vulkan SDK / ImGui（若用）。
 - [ ] 引用 Godot：README 与博客里明确"本项目以 Godot Engine 源码为学习参照系，非官方关联，Godot 采用 MIT 许可"。
   **不要复制 Godot 代码**（哪怕它是 MIT，也要注明出处；最好只借鉴思路，自己写）。
-- [ ] 资源素材：文字游戏的文本自己写或用 CC0 素材；M10 的模型/贴图沿用 Yo_Renderer 的（已确认授权）并注明来源。
+- [ ] 资源素材：M6/M7 的模型/贴图沿用 Yo_Renderer 的（已确认授权）并注明来源；其余示例资源自己写或用 CC0 素材。
 - [ ] 仓库整洁：无 build 产物、无大二进制、无 `.vscode` 个人配置（或只留 `settings.json`/`launch.json` 模板）、无空目录。
 - [ ] README 有"如何在 15 分钟内跑起来"，并**找一个真实的人实测一次**（`02-roadmap.md` M11 验收项）。
 
@@ -213,8 +215,8 @@
 | 每个 M 收口 | 按 `02-roadmap.md` 的"里程碑收口 checklist"走（含 §2 的五个自检问题） |
 | 每个 M 收口 | 存可运行物的录屏/截图 → 更新根 README 里程碑表 |
 | 每 2~3 个 M | 想写博客就写（§4）；**写不出来说明还没懂，不是欠债** |
-| M8 完成 | **第一个可运行节点**：文字冒险能玩 → 顺手更新简历条目初稿 |
-| M10 完成 | **第二个可运行节点**：画面由 Runtime 驱动 → 架构图定稿、README 重写 |
+| M5 完成 | 渲染契约 dump/replay 可用 → 博客素材；更新简历条目初稿 |
+| M7 完成 | **首个主要视觉作品节点**：画面由 Runtime 驱动 → 架构图定稿、README 重写 |
 | M11 完成 | 打磨：文档一致性、README 实测、简历终稿、§5 题库能自问自答 |
 
 **关于公开**：仓库从第一天就 public，这样 commit 历史是自然形成的资产，不需要额外"留证"。

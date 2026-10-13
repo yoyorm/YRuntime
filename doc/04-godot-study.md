@@ -50,8 +50,8 @@ git log -p -S "flush_transform_notifications" -- scene/main/scene_tree.cpp | hea
 > `tests/core/io/test_resource.cpp` 直接告诉你"语义边界在哪"，比自己猜准。
 
 ### 1.3 要不要自己编译 Godot？
-- **M0~M6：不需要。** 只读源码 + `doc/classes/*.xml` 足够，编译一次要 30~60 分钟且占几十 GB。
-- **M7 之后建议编译一次 Debug 版**（`scons platform=linuxbsd target=editor dev_build=yes -j$(nproc)`），
+- **M0~M3：不需要。** 只读源码 + `doc/classes/*.xml` 足够，编译一次要 30~60 分钟且占几十 GB。
+- **M4 之后建议编译一次 Debug 版**（`scons platform=linuxbsd target=editor dev_build=yes -j$(nproc)`），
   用途是**用 gdb 单步跟一帧**：在 `Main::iteration()` 下断点，看真实的调用栈——这是理解主循环最有效的方式，
   比读 100 页文档都强。同时在 `SceneTree::process`、`MessageQueue::flush`、`ResourceLoader::load` 下断点观察。
 - 编译产物别提交进 YRuntime 仓库（不同仓库，且 `.gitignore` 已覆盖 Godot 自己的 `bin/`）。
@@ -104,7 +104,7 @@ git log -p -S "flush_transform_notifications" -- scene/main/scene_tree.cpp | hea
 | Transform 传播 | `scene/main/canvas_item.h`、`scene/3d/node_3d.h` + `.cpp` | ★★ | 世界变换的脏标记如何向上传/向下传？通知 `NOTIFICATION_TRANSFORM_CHANGED` 的作用？ |
 | 固定步长插值（进阶） | `scene/main/scene_tree_fti.h/.cpp`、`scene_tree_fti_tests.cpp` | ★ | 渲染插值怎么解决物理/渲染频率不一致的抖动？（M4 降级可跳过，S4 时精读） |
 
-### M5 · 序列化与场景格式
+### M8 · 序列化与场景格式
 | 主题 | 文件 | 程度 | 要回答的问题 |
 |---|---|---|---|
 | **.tscn 文本格式** | `scene/resources/resource_format_text.cpp` + `.h` | ★★★ | `[gd_scene load_steps= format= uid=]` / `[ext_resource]` / `[sub_resource]` / `[node]` / `[connection]` 各段如何解析？节点引用（`NodePath(".")`、`NodeID`）怎么表达？格式版本号如何影响解析？ |
@@ -115,7 +115,7 @@ git log -p -S "flush_transform_notifications" -- scene/main/scene_tree.cpp | hea
 | 场景相关测试 | `tests/core/io/test_scenes.cpp`、`test_resource.cpp` | ★★ | Godot 如何测存读档 round-trip？ |
 | 兼容层 | `core/object/object.compat.inc`、`core/variant/*.compat.inc`（grep `compat`） | ★ | 大型项目如何处理"旧存档兼容"？（对照我的 migrator 链设计） |
 
-### M6 · 资源系统
+### M9 · 资源系统
 | 主题 | 文件 | 程度 | 要回答的问题 |
 |---|---|---|---|
 | Resource 基类 | `core/io/resource.h` + `.cpp` | ★★★ | `Resource` 与 `RefCounted` 的关系？`resource_local_to_scene`/`duplicate` 的语义？为什么要有 UID？ |
@@ -125,15 +125,15 @@ git log -p -S "flush_transform_notifications" -- scene/main/scene_tree.cpp | hea
 | 文件抽象 | `core/io/file_access.h`、`file_access_memory.h`、`file_access_compressed.h` | ★★ | 为什么所有 IO 都走抽象接口？内存实现如何让测试脱离磁盘？ |
 | 资源测试 | `tests/core/io/test_resource.cpp`、`test_file_access.cpp` | ★★ | 有哪些边界用例值得抄？ |
 
-### M7 · 并发
+### M10 · 并发
 | 主题 | 文件 | 程度 | 要回答的问题 |
 |---|---|---|---|
 | WorkerThreadPool | `core/object/worker_thread_pool.h` + `.cpp` | ★★★ | 线程数如何决定？task group 与单任务的区别？**主线程等待时是否帮忙执行任务**（找到那段代码）？`wait_for_task_completion` 的死锁防护？ |
-| 跨线程命令队列 | `core/templates/command_queue_mt.h` | ★★★ | 无锁/有锁环形队列怎么实现？`push` 与 `flush` 的内存序选择？（M9/M10 渲染线程直接复用这个思路） |
+| 跨线程命令队列 | `core/templates/command_queue_mt.h` | ★★★ | 无锁/有锁环形队列怎么实现？`push` 与 `flush` 的内存序选择？（M5/M7 的渲染契约与后端消费会复用这个思路） |
 | 安全容器 | `core/templates/safe_list.h`、`safe_refcount.h`、`core/templates/ring_buffer.h` | ★★ | "safe" 系列解决了什么并发问题？ |
-| 资源加载的线程实现 | `core/io/resource_loader.cpp` 的 threaded 部分（M6 已读一遍，这次专看线程） | ★★★ | 哪些数据被锁保护？锁粒度多大？如何用 TSan 类工具验证（Godot 有 `dev_build` + sanitize 选项）？ |
+| 资源加载的线程实现 | `core/io/resource_loader.cpp` 的 threaded 部分（M9 已读一遍，这次专看线程） | ★★★ | 哪些数据被锁保护？锁粒度多大？如何用 TSan 类工具验证（Godot 有 `dev_build` + sanitize 选项）？ |
 
-### M9 / M10 · Server 模式与渲染解耦
+### M5 / M6 / M7 · 渲染契约、Vulkan 与 Server 模式
 | 主题 | 文件 | 程度 | 要回答的问题 |
 |---|---|---|---|
 | Server 抽象 | `servers/rendering/rendering_server.h` | ★★★ | RenderingServer 的 API 是"命令式"还是"对象式"？为什么场景侧只持 `RID` 而不持渲染对象？这样做换来了什么？ |
@@ -183,7 +183,7 @@ git log -p -S "<某段代码>" -- <文件> | head -100            # 找引入这
 |---|---|
 | Node 生命周期与 `_ready` 时机的多次改动 | 生命周期语义极难一次设计对，看它如何演进 |
 | Fixed timestep interpolation（`scene_tree_fti.*`）落地过程 | 一个功能从提案到合入的完整工程过程 |
-| RenderingDevice / Vulkan 驱动重构 | RHI 层抽象如何在真实项目中演化（对你 M10 直接有用） |
+| RenderingDevice / Vulkan 驱动重构 | RHI 层抽象如何在真实项目中演化（对你 M6/M7 直接有用） |
 | `WorkerThreadPool` 的引入与调整 | 引擎级线程池的设计权衡 |
 | Typed Dictionary / Variant 类型系统演进 | 动态类型系统的工程代价（你本机 `GodotDev/typed_dict_review.markdown` 已经在跟这条线） |
 | 构建系统（SCons → 是否换 CMake 的长期讨论） | 大型 C++ 项目构建系统的真实痛点，对你 M0/M11 有用 |

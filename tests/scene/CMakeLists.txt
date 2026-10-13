@@ -1,5 +1,7 @@
 add_executable(YrTests_scene
-    test_node.cpp)
+    test_node.cpp
+    test_scene_tree.cpp
+    test_lifecycle.cpp)
 
 target_link_libraries(YrTests_scene PRIVATE
     yr::scene

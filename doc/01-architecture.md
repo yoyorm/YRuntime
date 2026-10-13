@@ -1,7 +1,7 @@
 # 01 · 目标架构
 
 > 生成于 2026-09-19。**开工前必读，每个里程碑开工前重读一遍。**
-> 本文描述的是**目标形态**（约 M10 时的样子）。架构不是一次成型的，§10 给出每个阶段的实际形状。
+> 本文描述的是**目标形态**（约 M11 时的样子）。架构不是一次成型的，§10 给出每个阶段的实际形状。
 >
 > ⚠️ 本文里的 C++ 片段全部是**接口契约草案（只有签名，没有实现）**，用来固定模块边界与命名，
 > 不是让你照抄的代码。实现必须自己写——见 `05-engineering.md` §9。
@@ -42,9 +42,9 @@ graph TD
     ENG["yr_engine<br/><i>yr::engine</i><br/>Engine·MainLoop·World·FrameStats·RenderExtract"]
 
     RNULL["yr_render_null"]
-    RVK["yr_render_vulkan<br/>移植 Yo_Renderer rhi + render"]
+    RVK["yr_render_vulkan<br/>最小重写 + 选择性借鉴 Yo_Renderer 底层"]
 
-    APPS["apps/text_adventure<br/>apps/render_demo"]
+    APPS["apps/tick_sandbox<br/>apps/render_demo"]
     TOOLS["tools/yr_pack · yr_scene_conv · yr_inspect"]
     TESTS["tests/ 每层一个 Catch2 target"]
 
@@ -70,16 +70,16 @@ graph TD
 | target | namespace | 依赖 | 一句话职责 | 里程碑 |
 |---|---|---|---|---|
 | `yr_core` | `yr::core` | 仅 std | 句柄、容器、字符串驻留、日志、断言、时间 | M0~M1 |
-| `yr_job` | `yr::job` | core | 线程池 + 任务依赖图 | M7 |
+| `yr_job` | `yr::job` | core | 线程池 + 任务依赖图 | M10 |
 | `yr_object` | `yr::obj` | core | 对象模型 + 反射 + 动态值 | M1~M2 |
 | `yr_event` | `yr::evt` | object | 类型化同步事件总线（单线程）；延迟调用队列推迟 | M3 |
-| `yr_serialize` | `yr::ser` | object | 值/属性的编解码与格式后端 | M5 |
-| `yr_asset` | `yr::asset` | object, job | 资源注册、加载、卸载、pak | M6 |
-| `yr_scene` | `yr::scene` | object, event, serialize, asset | 节点树 + 场景树 + 场景存读档 | M4~M5 |
-| `yr_engine` | `yr::engine` | 以上全部 + render_iface | 主循环、世界、帧统计、快照抽取 | M4, M9 |
-| `yr_render_iface` | `yr::render` | core | 渲染契约（**这是解耦的关键层**） | M9 |
-| `yr_render_null` | `yr::render` | iface | 空后端，CI/测试用 | M9 |
-| `yr_render_vulkan` | `yr::render::vk` | iface (+Vulkan SDK) | Vulkan 后端 | M10 |
+| `yr_serialize` | `yr::ser` | object | 值/属性的编解码与格式后端 | M8 |
+| `yr_asset` | `yr::asset` | object, job | 资源注册、加载、卸载、pak | M9 |
+| `yr_scene` | `yr::scene` | object, event, serialize, asset | 节点树 + 场景树 + 场景存读档 | M4, M8 |
+| `yr_engine` | `yr::engine` | 以上全部 + render_iface | 主循环、世界、帧统计、快照抽取 | M4, M5/M7 |
+| `yr_render_iface` | `yr::render` | core | 渲染契约（**这是解耦的关键层**） | M5 |
+| `yr_render_null` | `yr::render` | iface | 空后端，CI/测试用 | M5 |
+| `yr_render_vulkan` | `yr::render::vk` | iface (+Vulkan SDK) | Vulkan 后端（bootstrap 与快照接入分两步） | M6/M7 |
 
 > **关键设计**：`yr_render_iface` 只依赖 `yr_core`，**不依赖 `yr_scene`/`yr_engine`**。
 > 于是"Runtime 侧零 `#include <vulkan/...>`"和"Backend 侧零 `#include <yr/scene/...>`"
@@ -112,8 +112,8 @@ YRuntime/
 │       ├── null/
 │       └── vulkan/
 ├── apps/
-│   ├── text_adventure/         # M8：可玩的非图形 Demo（作品节点 1）
-│   └── render_demo/            # M10：Runtime 驱动的画面（作品节点 2）
+│   ├── tick_sandbox/           # M4：headless 世界 tick 10000 帧
+│   └── render_demo/            # M7：Runtime 驱动的画面（首个主要作品节点）
 ├── tools/
 │   ├── yr_pack/                # assets/ → .yrpak
 │   ├── yr_scene_conv/          # 文本场景 ↔ 二进制场景
@@ -121,8 +121,8 @@ YRuntime/
 ├── tests/
 │   ├── core/  object/  event/  serialize/  asset/  scene/  engine/  render/
 │   └── CMakeLists.txt          # 每层一个 Catch2 target，全部注册到 ctest
-├── third_party/                # nlohmann_json（M5 前期用）、GLM、Catch2（若不用系统包）
-├── assets/                     # 源资源（示例剧情、模型、贴图）
+├── third_party/                # nlohmann_json（M8 前期用）、GLM、Catch2（若不用系统包）
+├── assets/                     # 源资源（示例场景、模型、贴图）
 ├── doc/                        # 本目录
 ├── .clang-format  .clang-tidy  .gitignore  .editorconfig
 └── .github/workflows/ci.yml
@@ -258,7 +258,7 @@ class Variant {                                   // tag + union，POD 可拷贝
   template <typename T> [[nodiscard]] std::optional<T> try_as() const;
   bool operator==(const Variant&) const;
 };
-using Array = std::vector<Variant>;               // 先不写 COW，M5 之后再考虑
+using Array = std::vector<Variant>;               // 先不写 COW，M8 之后再考虑
 using Dict  = std::vector<std::pair<StringId, Variant>>;  // 保序！序列化需要确定性
 }
 ```
@@ -272,7 +272,7 @@ using Dict  = std::vector<std::pair<StringId, Variant>>;  // 保序！序列化�
 
 ### 4.4 `RefCounted` / `Ref<T>` —— 共享所有权
 
-**为什么存在**：资源（贴图、网格、剧情数据）天然是"多方共享、最后一个用完就释放"。手写引用计数会漏，`shared_ptr` 的控制块分离 + 无法侵入对象内部。
+**为什么存在**：资源（贴图、网格、场景数据）天然是"多方共享、最后一个用完就释放"。手写引用计数会漏，`shared_ptr` 的控制块分离 + 无法侵入对象内部。
 
 ```cpp
 namespace yr::obj {
@@ -289,7 +289,7 @@ template <typename T, typename... A> Ref<T> make_ref(A&&...);
 
 **必须显式处理的三件事**（这也是面试高频题）：
 1. **循环引用**：父子互指 → 用 `WeakRef<T>`（持 `ObjectID`，用时查 ObjectDB）。`SceneTree` 的 parent 指针**不是** Ref，是裸指针 + 明确所有权规则。
-2. **跨线程计数**：计数用 `std::atomic<uint32_t>`，`memory_order_acq_rel`。M7 之前单线程可用 relaxed，但要留注释。
+2. **跨线程计数**：计数用 `std::atomic<uint32_t>`，`memory_order_acq_rel`。M10 之前单线程可用 relaxed，但要留注释。
 3. **析构时机不可预测**：资源的 GPU 句柄不能在任意线程的析构里释放 → 归零时投递到"延迟销毁队列"，主循环帧末统一处理（Yo_Renderer 的 `VulkanResourceTable` 已经踩过这个坑）。
 
 **Godot 对照**：`core/object/ref_counted.h`（`class Ref` 在 **第 59 行**，`RefCounted`/`WeakRef` 同文件）。
@@ -325,7 +325,7 @@ class MessageQueue {                                     // 延迟调用：任�
 > **实现状态（2026-10-08）**：`EventBus` / `Subscription` 已按下方三条语义实现（**单线程**）。
 > `MessageQueue` **尚未实现**：它的 `(ObjectID, StringId method, vector<Variant>)` 依赖尚未具备的**方法绑定**，
 > 且需要一个**未来 `MainLoop` 的安全 flush 点**（帧阶段 2，见 §5）。这与多线程无关，方法绑定与 MainLoop
-> 就位后再做；`post_from_any_thread` / MPSC 明确推迟到 **M7**（线程模型）。
+> 就位后再做；`post_from_any_thread` / MPSC 明确推迟到 **M10**（线程模型）。
 
 **进程级入口**：与 `ClassDB` / `ObjectDB` 一致，提供 `[[nodiscard]] EventBus& yr::evt::globalEventBus() noexcept;`
 作为默认公共入口（函数内 static）。`EventBus` 仍允许公开构造，测试/需要隔离的场景可使用局部实例；
@@ -338,7 +338,7 @@ class MessageQueue {                                     // 延迟调用：任�
 | `publish` 期间订阅者再 `publish` 同一事件 | 允许，但同步 publish 调用栈深度上限 8（总线级，不按事件类型分别计数）；第 9 层视为编程错误：Debug assert，所有构建都拒绝本次发布 | 防止无限递归；`publish(const E&)` 无法统一把 move-only 事件转入 `post`，故不实现"超限转 post" |
 | `flush` 期间 `post` 新消息 | 进**下一帧**队列（双缓冲） | 保证一帧内事件集合确定，可复现 |
 
-**线程约束**：`EventBus` 默认**仅主线程**。工作线程要发事件 → 通过 `JobSystem` 把"发布"本身作为任务投回主线程，或用一个 MPSC 队列在帧首合并。这条规则要在 M7 明确写下来并加 assert。
+**线程约束**：`EventBus` 默认**仅主线程**。工作线程要发事件 → 通过 `JobSystem` 把"发布"本身作为任务投回主线程，或用一个 MPSC 队列在帧首合并。这条规则要在 M10 明确写下来并加 assert。
 **Godot 对照**：signal 机制在 `core/object/object.h`（`connect`/`emit_signal`）；延迟调用在 `core/object/message_queue.h`（Godot 的 `MessageQueue` 就是双缓冲 + flush）。
 **学习点**：`std::function` 的堆分配成本、变参模板、重入安全、MPSC 队列。
 **yo_lib 起点**：`include/yo/yo_eventsys.h`（`type_index → vector<CallBack>` + `lastMsg_` 缓存）。
@@ -488,7 +488,7 @@ class PakFileAccess : public IFileAccess { /* 从 .yrpak 读，M11 */ };
 4. 失败必须是一等公民：`LoadResult` 带错误码 + 人类可读消息 + 源路径。
 
 **卸载策略**：默认 `collect_garbage()` 在帧末扫 refcount==1 的资源（LRU 见 Godot `core/templates/lru.h`）。
-**Godot 对照**：`core/io/resource.h`、`resource_loader.h`（含 `ResourceLoader::ThreadLoadTask` 异步加载实现，**这是 M6 最值得精读的文件**）、`resource_saver.h`、`resource_uid.h`、`file_access_pack.h`（PCK 格式）、`core/io/file_access.h`。
+**Godot 对照**：`core/io/resource.h`、`resource_loader.h`（含 `ResourceLoader::ThreadLoadTask` 异步加载实现，**这是 M9 最值得精读的文件**）、`resource_saver.h`、`resource_uid.h`、`file_access_pack.h`（PCK 格式）、`core/io/file_access.h`。
 **学习点**：异步状态机、引用计数与 GC 的边界、IO 抽象、内容寻址（UID/hash）。
 
 ### 4.9 序列化 —— 场景与资源的持久化
@@ -518,7 +518,7 @@ class SceneSerializer {
 }
 ```
 
-**三个必须提前想清楚的难题**（面试常问，也是 M5 的真正工作量所在）：
+**三个必须提前想清楚的难题**（面试常问，也是 M8 的真正工作量所在）：
 | 难题 | 方案 |
 |---|---|
 | **引用**：场景里两个节点指向同一个资源，存两份还是存一份？ | 引入 **node index 表**（对照 Godot `.tscn` 的 `[node name=... parent=...]` + `ExtResource(id)` / `SubResource(id)`）。外部资源存路径/UID，内嵌子资源存 ID，节点间引用存 node index。 |
@@ -528,15 +528,15 @@ class SceneSerializer {
 **文本格式长什么样**（先设计格式，再写代码；这一段自己定，别抄 Godot）：
 ```
 [yrscene format=1]
-[ext_resource type="Dialogue" uid="dlg_intro" path="res://assets/intro.yrdlg" id=1]
+[ext_resource type="Material" uid="mat_ground" path="res://assets/ground.yrres" id=1]
 [node name="Root" type="Node"]
-[node name="Room1" parent="." index=0]
+[node name="Player" parent="." index=0]
 prop_int = 42
 prop_vec3 = Vector3(1, 2, 3)
-[node name="Door" parent="Room1" type="Interactive" index=0]
-on_use = NodePath("../Room2")
+[node name="Camera" parent="Player" type="Camera3D" index=0]
+target = NodePath("../Player")
 ```
-**Godot 对照**：`scene/resources/resource_format_text.cpp/.h`（`.tscn` 文本格式读写，**M5 必读**）、`core/io/resource_format_binary.cpp`（`.res` 二进制）、`scene/resources/packed_scene.h/.cpp`（`PackedScene` = 场景的内存中间表示，节点数据 + 连接 + 编辑信息）。
+**Godot 对照**：`scene/resources/resource_format_text.cpp/.h`（`.tscn` 文本格式读写，**M8 必读**）、`core/io/resource_format_binary.cpp`（`.res` 二进制）、`scene/resources/packed_scene.h/.cpp`（`PackedScene` = 场景的内存中间表示，节点数据 + 连接 + 编辑信息）。
 **学习点**：格式设计、visitor 模式、版本迁移、round-trip 测试、字节序与对齐（二进制格式）。
 
 ### 4.10 `JobSystem` —— 并行
@@ -563,13 +563,13 @@ class JobSystem {
 ```
 
 **分三步实现，不要一步到位**：
-1. **M7-a**：`std::thread` 池 + `MtQueue`（yo_lib 已有）+ `submit`/`wait_all`。能跑就够。
-2. **M7-b**：任务依赖（`deps`）→ 拓扑执行。用"依赖计数 + 就绪队列"，不要写调度器框架。
-3. **M7-c**（可选）：work stealing + `parallel_for`。此时才需要碰 atomic memory order 的细节。
+1. **M10-a**：`std::thread` 池 + `MtQueue`（yo_lib 已有）+ `submit`/`wait_all`。能跑就够。
+2. **M10-b**：任务依赖（`deps`）→ 拓扑执行。用"依赖计数 + 就绪队列"，不要写调度器框架。
+3. **M10-c**（可选）：work stealing + `parallel_for`。此时才需要碰 atomic memory order 的细节。
 
 **必须理解的三件事**：任务粒度（太细 → 队列开销 > 计算）、false sharing（`JobStats` 每线程独立 cacheline）、
 主线程在等待时应该**帮忙执行任务**而不是 sleep（对照 Godot `WorkerThreadPool::wait_for_task_completion`）。
-**Godot 对照**：`core/object/worker_thread_pool.h/.cpp`、`core/templates/command_queue_mt.h`（跨线程命令队列，M9/M10 渲染线程会用到）。
+**Godot 对照**：`core/object/worker_thread_pool.h/.cpp`、`core/templates/command_queue_mt.h`（跨线程命令队列，M5/M7 的渲染契约与后端消费会用到）。
 **学习点**：内存模型、`memory_order_*`、无锁队列、TSan、性能测量。
 
 ### 4.11 `RenderSnapshot` / `RendererBackend` —— 解耦的那条线
@@ -619,10 +619,10 @@ std::unique_ptr<RendererBackend> create_null_backend();       // 工厂在各自
 3. Backend **不允许**回调 Runtime（不能持有 `SceneTree*`）。需要交互就返回数据，由 Runtime 下一帧读。
 4. Runtime 侧**不允许** include `<vulkan/...>`、`<GLFW/...>`。
 
-**快照传递**：单缓冲起步（M9），M10 引入双/三缓冲 + Backend 可在独立线程消费（对照 §4.10 的 command queue）。
-**Godot 对照**：`servers/rendering/rendering_server.h`（Server 模式：`RenderingServer` 收命令、场景侧只持 `RID`）、`servers/server_wrap_mt_common.h`（**多线程 Server 包装的宏魔法，M10 精读**）、`core/templates/command_queue_mt.h`。
+**快照传递**：单缓冲起步（M5），M7 引入双/三缓冲 + Backend 可在独立线程消费（对照 §4.10 的 command queue）。
+**Godot 对照**：`servers/rendering/rendering_server.h`（Server 模式：`RenderingServer` 收命令、场景侧只持 `RID`）、`servers/server_wrap_mt_common.h`（**多线程 Server 包装的宏魔法，M7/stretch 精读**）、`core/templates/command_queue_mt.h`。
 **Yo_Renderer 对照**：它现在的 `RenderServer::render(items, vp, cameraPos, const void* lightsData, count, frame)`
-就是"没有契约的契约"（`06-decisions.md` D7 / Yo_Renderer 的 V6）。M10 的任务之一就是把它换成上面的 `RenderSnapshot`。
+就是"没有契约的契约"（`06-decisions.md` D7 / Yo_Renderer 的 V6）。M6/M7 的任务之一就是把它换成上面的 `RenderSnapshot`。
 
 ### 4.12 `Engine` —— 顶层装配
 
@@ -685,7 +685,7 @@ class Engine {                                    // 组装并拥有所有子系
 | `SceneTree` / 所有 `Node` | Engine | 读写 | **禁止访问** | — |
 | `ClassDB` | 进程 | 读（启动时写） | 只读 | 启动后冻结（`freeze()` + assert） |
 | `ObjectDB` | Object | 读写 | **禁止** | — |
-| `EventBus` | 进程（默认 `globalEventBus`）/ Engine | 读写 | 只能 `post` 到 MPSC 队列（M7 起） | 帧首合并 |
+| `EventBus` | 进程（默认 `globalEventBus`）/ Engine | 读写 | 只能 `post` 到 MPSC 队列（M10 起） | 帧首合并 |
 | `AssetDatabase` 索引 | Asset | 读写 | 只读快照 | 加载任务只读路径表 |
 | 资源**原始字节/解码结果** | Job 内部 | 不碰 | 读写 | `pump()` 在主线程构造对象 |
 | `Transform3D` 数组（SoA） | Scene | 读 | **可并行写**（阶段 8） | 索引分片，无重叠 |
@@ -693,11 +693,11 @@ class Engine {                                    // 组装并拥有所有子系
 | `FrameStats` | Engine | 写 | 各线程写自己的槽 | 每线程独立 cacheline |
 
 **一条铁律**：**"工作线程只能碰 POD 和不可变数据；任何 Object 的构造与析构都发生在主线程。"**
-这条规则让 M7 的并行化不至于变成 bug 工厂。Godot 的 `ResourceLoader` 异步加载遵守的正是这条。
+这条规则让 M10 的并行化不至于变成 bug 工厂。Godot 的 `ResourceLoader` 异步加载遵守的正是这条。
 
 ---
 
-## 7. 渲染解耦方案（M9/M10 的设计答案）
+## 7. 渲染解耦方案（M5/M6/M7 的设计答案）
 
 ```mermaid
 sequenceDiagram
@@ -739,7 +739,7 @@ sequenceDiagram
 | CMake target 分层 | `target_link_libraries(yr_scene PUBLIC yr_object yr_event yr_serialize yr_asset)`；不写反向 | 编译期 |
 | include 路径隔离 | 每层只 `target_include_directories` 自己的 `include/`，外部用 `<yr/layer/x.h>` | 编译期 |
 | CI 反向依赖扫描 | `tools/check_deps.py`：解析每个 `.h/.cpp` 的 include，比对允许矩阵，违反则 fail | M0 就加 |
-| CI 禁用符号扫描 | `grep -rn "\bnew\b\|\bdelete\b" engine/` 白名单外报错；`grep vulkan engine/` 限定目录 | M0/M9 |
+| CI 禁用符号扫描 | `grep -rn "\bnew\b\|\bdelete\b" engine/` 白名单外报错；`grep vulkan engine/` 限定目录 | M0/M5 |
 | 头文件自包含检查 | 每个 `.h` 单独编译（CI 里生成一个 TU include 所有头） | M0 |
 
 ---
@@ -773,15 +773,15 @@ sequenceDiagram
 | M2 | + `yr_object` | Object/ClassDB/Variant/PropertyInfo（`Ref`、`yr_inspect`、注册宏延后） |
 | M3 | + `yr_event` | EventBus/Subscription（单线程）；MessageQueue 推迟 |
 | M4 | + `yr_scene`, `yr_engine` | Node/SceneTree/MainLoop，headless tick demo |
-| M5 | + `yr_serialize` | 文本/二进制 + PackedScene + 场景存读档 |
-| M6 | + `yr_asset` | Resource/AssetDatabase/异步加载 |
-| M7 | + `yr_job` | JobSystem，回填到 asset/transform |
-| M8 | + `apps/text_adventure` | **第一个作品节点** |
-| M9 | + `yr_render_iface`, `yr_render_null` | 快照契约 + 空后端 |
-| M10 | + `yr_render_vulkan`, `apps/render_demo` | **第二个作品节点** |
+| M5 | + `yr_render_iface`, `yr_render_null` | 快照契约 + 空后端（renderer-neutral，不碰图形 API） |
+| M6 | + `yr_render_vulkan` | 最小 Vulkan bootstrap（窗口 + 清屏 + 硬编码三角形，不接快照） |
+| M7 | + `apps/render_demo` | **首个主要作品节点**：Snapshot 驱动画面 |
+| M8 | + `yr_serialize` | 文本/二进制 + PackedScene + 场景存读档 |
+| M9 | + `yr_asset` | Resource/AssetDatabase/异步加载 + AssetHandle→GPU 桥接 |
+| M10 | + `yr_job` | JobSystem，回填到 asset/transform |
 | M11 | + `tools/yr_pack`, `yr_scene_conv` | 打包与工具链打磨 |
 
-> `yr_job` 名义上排在 M7，但 **M6 的异步加载会先逼出一个最简版本**（单线程 IO + 回调）。
+> `yr_job` 名义上排在 M10，但 **M9 的异步加载会先逼出一个最简版本**（单线程 IO + 回调）。
 > 这是正常的：先写"错的但能跑的"，再重构。记得在 `06-decisions.md` 记录这次演进。
 
 ---
@@ -790,9 +790,9 @@ sequenceDiagram
 
 | # | 问题 | 触发时机 | 倾向 |
 |---|---|---|---|
-| Q1 | 数学库：GLM vs 自研 `Vec3/Mat4/Transform3D` | M1 | 自研最小 `Vec3/Mat4/Transform3D`（学习价值高，且序列化要对齐），GLM 只在 Vulkan 后端用 |
+| Q1 | 数学库：GLM vs 自研 `Vec3/Mat4/Transform3D` | M4 | 自研最小 `Vec3/Mat4/Transform3D`（学习价值高，且序列化要对齐），GLM 只在 Vulkan 后端用 |
 | Q2 | 属性系统是"每对象存值"还是"成员变量 + 指针适配" | M2 | 后者（零开销、与 C++ 代码自然），前者留给"动态附加属性" stretch |
-| Q3 | 场景树是否引入 ECS/SoA 数据层 | M4/M9 | Transform 用 SoA 平行数组（性能 + 并行），其余保持 Object 树 |
-| Q4 | 文本格式自研 vs JSON | M5 | 自研 `.yrscn`（可 diff、可手写、学习价值），JSON 仅作调试导出 |
+| Q3 | 场景树是否引入 ECS/SoA 数据层 | M4/M5 | Transform 用 SoA 平行数组（性能 + 并行），其余保持 Object 树 |
+| Q4 | 文本格式自研 vs JSON | M8 | 自研 `.yrscn`（可 diff、可手写、学习价值），JSON 仅作调试导出 |
 | Q5 | 是否引入 `ObjectDB`（全局 ID→Object* 表） | M2 | 引入，WeakRef 与 deferred call 都需要它 |
-| Q6 | Backend 是否独立线程 | M10 | 先同线程跑通，再上独立线程（对照 Godot `server_wrap_mt_common.h`） |
+| Q6 | Backend 是否独立线程 | M7 | 先同线程跑通，再上独立线程（对照 Godot `server_wrap_mt_common.h`） |
