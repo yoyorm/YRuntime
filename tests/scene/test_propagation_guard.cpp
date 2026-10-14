@@ -7,6 +7,7 @@
 #include <functional>
 #include <memory>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -322,4 +323,255 @@ TEST_CASE("propagation guard: after a rejected callback, depth returns to zero a
   CHECK(removed.get() == rawChild);
   CHECK(rawChild->parent() == nullptr);
   CHECK_FALSE(rawChild->isInsideTree());
+}
+
+// ---------------------------------------------------------------------------
+// 结构锁（Node-3.5）：removeChild / addChild 在入口 propagationDepth_ 检查之后
+// 立即对接收者 this 加 guard，冻结 this 的 children_ 覆盖整个结构操作。下面
+// 的用例在 exit / enter 回调里尝试修改正在被操作的那个 parent，验证一律被拒，
+// 且外层操作正常完成、结构正确、无迭代器失效 / UAF（ASan 验证）。
+// ---------------------------------------------------------------------------
+
+TEST_CASE("structure lock: exit callback removing an EARLIER sibling is rejected; outer removal completes",
+          "[scene][propagation][guard][reject][structure]") {
+  ScopedContinueAssertHandler handler;
+
+  auto root = std::make_unique<HookNode>();
+  auto before = std::make_unique<HookNode>();
+  auto target = std::make_unique<HookNode>();
+  HookNode* const rawRoot = root.get();
+  HookNode* const rawBefore = before.get();
+  HookNode* const rawTarget = target.get();
+  REQUIRE(rawRoot->addChild(std::move(before))); // index 0
+  REQUIRE(rawRoot->addChild(std::move(target))); // index 1
+
+  // target 退出时删它之前的兄弟：若不冻结，erase(index 0) 会让外层指向 target 的
+  // 迭代器整体前移，随后的 move/erase 就是 UB。
+  bool tried = false;
+  std::unique_ptr<yr::scene::Node> nested;
+  rawTarget->onExit = [&](HookNode&) {
+    tried = true;
+    nested = rawRoot->removeChild(rawBefore);
+  };
+
+  yr::scene::SceneTree tree;
+  REQUIRE(tree.setRoot(std::move(root)));
+
+  std::unique_ptr<yr::scene::Node> removed = rawRoot->removeChild(rawTarget);
+
+  CHECK(tried);
+  CHECK(nested == nullptr);
+  REQUIRE(removed.get() == rawTarget);
+  CHECK(rawTarget->parent() == nullptr);
+  CHECK_FALSE(rawTarget->isInsideTree());
+  CHECK(rawRoot->childCount() == 1);
+  CHECK(rawRoot->childAt(0) == rawBefore);
+  CHECK(rawBefore->parent() == rawRoot);
+  CHECK(rawBefore->isInsideTree());
+
+#if YR_ENABLE_ASSERTS
+  CHECK(g_assertCount >= 1);
+#endif
+}
+
+TEST_CASE("structure lock: exit callback removing a LATER sibling is also rejected (uniform contract)",
+          "[scene][propagation][guard][reject][structure]") {
+  ScopedContinueAssertHandler handler;
+
+  auto root = std::make_unique<HookNode>();
+  auto target = std::make_unique<HookNode>();
+  auto after = std::make_unique<HookNode>();
+  HookNode* const rawRoot = root.get();
+  HookNode* const rawTarget = target.get();
+  HookNode* const rawAfter = after.get();
+  REQUIRE(rawRoot->addChild(std::move(target))); // index 0
+  REQUIRE(rawRoot->addChild(std::move(after)));  // index 1
+
+  // 删后面的兄弟当前恰好不会使迭代器失效，但契约是"结构操作期间冻结接收者"，
+  // 一律拒绝，而不是只挡会崩的路径。
+  bool tried = false;
+  std::unique_ptr<yr::scene::Node> nested;
+  rawTarget->onExit = [&](HookNode&) {
+    tried = true;
+    nested = rawRoot->removeChild(rawAfter);
+  };
+
+  yr::scene::SceneTree tree;
+  REQUIRE(tree.setRoot(std::move(root)));
+
+  std::unique_ptr<yr::scene::Node> removed = rawRoot->removeChild(rawTarget);
+
+  CHECK(tried);
+  CHECK(nested == nullptr);
+  REQUIRE(removed.get() == rawTarget);
+  CHECK(rawRoot->childCount() == 1);
+  CHECK(rawRoot->childAt(0) == rawAfter);
+  CHECK(rawAfter->parent() == rawRoot);
+  CHECK(rawAfter->isInsideTree());
+
+#if YR_ENABLE_ASSERTS
+  CHECK(g_assertCount >= 1);
+#endif
+}
+
+TEST_CASE("structure lock: exit callback detaching itself is rejected; outer removal completes",
+          "[scene][propagation][guard][reject][structure]") {
+  ScopedContinueAssertHandler handler;
+
+  auto root = std::make_unique<HookNode>();
+  auto target = std::make_unique<HookNode>();
+  HookNode* const rawRoot = root.get();
+  HookNode* const rawTarget = target.get();
+  REQUIRE(rawRoot->addChild(std::move(target)));
+
+  bool tried = false;
+  std::unique_ptr<yr::scene::Node> nested;
+  rawTarget->onExit = [&](HookNode& self) {
+    tried = true;
+    nested = self.detach(); // 转发 parent->removeChild(this)
+  };
+
+  yr::scene::SceneTree tree;
+  REQUIRE(tree.setRoot(std::move(root)));
+
+  std::unique_ptr<yr::scene::Node> removed = rawRoot->removeChild(rawTarget);
+
+  CHECK(tried);
+  CHECK(nested == nullptr);
+  REQUIRE(removed.get() == rawTarget);
+  CHECK(rawRoot->childCount() == 0);
+  CHECK(rawTarget->parent() == nullptr);
+  CHECK_FALSE(rawTarget->isInsideTree());
+
+#if YR_ENABLE_ASSERTS
+  CHECK(g_assertCount >= 1);
+#endif
+}
+
+TEST_CASE("structure lock: exit callback addChild at full capacity is rejected without consuming",
+          "[scene][propagation][guard][reject][structure]") {
+  ScopedContinueAssertHandler handler;
+
+  auto root = std::make_unique<HookNode>();
+  HookNode* const rawRoot = root.get();
+  std::vector<HookNode*> children;
+  // 连续 push_back：容量按 1/2/4/8 增长，加满 8 个后 size == capacity。
+  // 此刻若结构锁失效，回调里的 push_back 会扩容并使外层迭代器失效。
+  for (int i = 0; i < 8; ++i) {
+    auto child = std::make_unique<HookNode>();
+    children.push_back(child.get());
+    REQUIRE(rawRoot->addChild(std::move(child)));
+  }
+  HookNode* const rawTarget = children.back();
+
+  // 用基类 unique_ptr 传参，失败路径不会在调用点产生派生→基类转换临时对象。
+  std::unique_ptr<yr::scene::Node> pending = std::make_unique<yr::scene::Node>();
+  yr::scene::Node* const rawPending = pending.get();
+  bool tried = false;
+  bool added = true;
+  rawTarget->onExit = [&](HookNode&) {
+    tried = true;
+    added = rawRoot->addChild(std::move(pending));
+  };
+
+  yr::scene::SceneTree tree;
+  REQUIRE(tree.setRoot(std::move(root)));
+
+  std::unique_ptr<yr::scene::Node> removed = rawRoot->removeChild(rawTarget);
+
+  CHECK(tried);
+  CHECK_FALSE(added);
+  REQUIRE(pending != nullptr); // 失败不消费
+  CHECK(pending.get() == rawPending);
+  CHECK(rawPending->parent() == nullptr);
+  CHECK_FALSE(rawPending->isInsideTree());
+  REQUIRE(removed.get() == rawTarget);
+  CHECK(rawRoot->childCount() == 7);
+  CHECK(rawTarget->parent() == nullptr);
+  CHECK_FALSE(rawTarget->isInsideTree());
+
+#if YR_ENABLE_ASSERTS
+  CHECK(g_assertCount >= 1);
+#endif
+}
+
+TEST_CASE("structure lock: new child detaching itself in onEnterTree is rejected; addChild completes",
+          "[scene][propagation][guard][reject][structure]") {
+  ScopedContinueAssertHandler handler;
+
+  auto root = std::make_unique<HookNode>();
+  HookNode* const rawRoot = root.get();
+  yr::scene::SceneTree tree;
+  REQUIRE(tree.setRoot(std::move(root)));
+
+  auto pending = std::make_unique<HookNode>();
+  HookNode* const rawPending = pending.get();
+  bool tried = false;
+  std::unique_ptr<yr::scene::Node> detached;
+  rawPending->onEnter = [&](HookNode& self) {
+    tried = true;
+    detached = self.detach();
+  };
+
+  bool added = rawRoot->addChild(std::move(pending));
+
+  CHECK(tried);
+  CHECK(detached == nullptr); // 被拒：detach 返回 nullptr
+
+  // addChild 正常完成，节点正确留在树内（不会被自己的 onEnterTree 摘掉）。
+  CHECK(added);
+  REQUIRE(pending == nullptr);
+  CHECK(rawRoot->childCount() == 1);
+  CHECK(rawRoot->childAt(0) == rawPending);
+  CHECK(rawPending->parent() == rawRoot);
+  CHECK(rawPending->isInsideTree());
+  CHECK(rawPending->tree() == &tree);
+  CHECK(rawPending->enterCount == 1);
+  CHECK(rawPending->readyCount == 1); // 父已 ready，新 child enter 后立即 ready
+
+#if YR_ENABLE_ASSERTS
+  CHECK(g_assertCount >= 1);
+#endif
+}
+
+TEST_CASE("structure lock: after rejections depth returns to zero and normal add/remove succeed",
+          "[scene][propagation][guard][recovery][structure]") {
+  ScopedContinueAssertHandler handler;
+
+  auto root = std::make_unique<HookNode>();
+  auto target = std::make_unique<HookNode>();
+  HookNode* const rawRoot = root.get();
+  HookNode* const rawTarget = target.get();
+  REQUIRE(rawRoot->addChild(std::move(target)));
+
+  // target 退出时试图 detach 自己：被拒。
+  bool tried = false;
+  std::unique_ptr<yr::scene::Node> nested;
+  rawTarget->onExit = [&](HookNode& self) {
+    tried = true;
+    nested = self.detach();
+  };
+
+  yr::scene::SceneTree tree;
+  REQUIRE(tree.setRoot(std::move(root)));
+
+  std::unique_ptr<yr::scene::Node> removed = rawRoot->removeChild(rawTarget);
+  CHECK(tried);
+  CHECK(nested == nullptr);
+  REQUIRE(removed.get() == rawTarget);
+
+  // 传播已结束：propagationDepth_ 应回到 0，普通结构操作继续成功。
+  auto later = std::make_unique<HookNode>();
+  HookNode* const rawLater = later.get();
+  REQUIRE(rawRoot->addChild(std::move(later)));
+  CHECK(later == nullptr);
+  CHECK(rawLater->parent() == rawRoot);
+  CHECK(rawLater->isInsideTree());
+  CHECK(rawLater->enterCount == 1);
+  CHECK(rawLater->readyCount == 1);
+
+  std::unique_ptr<yr::scene::Node> removedAgain = rawRoot->removeChild(rawLater);
+  CHECK(removedAgain.get() == rawLater);
+  CHECK(rawLater->parent() == nullptr);
+  CHECK_FALSE(rawLater->isInsideTree());
 }

@@ -22,9 +22,12 @@ namespace yr::scene {
   // 生命周期：
   //   - enter 前序（父先子），ready 后序（子先父）且默认一生只回调一次，exit 后序且子节点倒序；
   //   - enter/ready 回调中允许当前节点添加自己的 child，但不得修改正在传播的 parent；
-  //   - exit 传播期间当前节点的结构冻结。
+  //   - exit 传播期间当前节点的结构冻结；
+  //   - addChild/removeChild/detach 是结构操作，期间接收者自身的 children_ 被冻结：
+  //     操作触发的回调里对该接收者的任何增删子节点都会被拒（断言 + 返回失败），
+  //     从而保证外层遍历 / 迭代器始终有效。exit 的 parent()/isInsideTree() 语义不变。
   //
-  // TODO(Node-3): queueFree + 延迟删除；TODO(Node-4): process 遍历。
+  // TODO(Node-4): process 遍历。
   // TODO: name 目前只读，名字唯一性尚未实现。
 
   class Node : public yr::obj::Object {
@@ -58,6 +61,12 @@ namespace yr::scene {
     // 返回被摘下子树的所有权。
     [[nodiscard]] std::unique_ptr<Node> detach();
 
+    [[nodiscard]] bool isQueuedForDeletion() const noexcept { return queuedForDeletion_; }
+
+    // 延迟删除：只置标记并把自己的 ObjectID 交给所属 SceneTree，不触发回调、不改结构。
+    // 不在树内是编程错误（所有权在外部），Debug 断言、所有构建安全返回；重复调用幂等。
+    void queueFree();
+
   protected:
     // 生命周期 / 更新钩子：只处理当前节点，不负责递归；由私有传播函数在正确的
     // tree_ 状态下调用。回调契约：
@@ -88,9 +97,12 @@ namespace yr::scene {
     std::vector<std::unique_ptr<Node>> children_;
     // 一生只 ready 一次的标记；detach/exit 不重置，重新入树只重新 enter。
     bool everReady_ = false;
-    // 遍历自身 children_ 的传播深度。用计数而非 bool：嵌套传播时内层 guard
-    // 不能提前解除外层的结构冻结。
+    // 本节点 children_ 的传播 / 结构修改冻结深度：>0 时本节点的 addChild /
+    // removeChild / detach 一律被拒。用计数而非 bool：嵌套 guard 不能提前解除
+    // 外层的冻结。
     std::uint32_t propagationDepth_ = 0;
+    // 已入删除队列的标记；只在 queueFree 成功入队时置位，节点销毁时随之消失。
+    bool queuedForDeletion_ = false;
   };
 
 } // namespace yr::scene

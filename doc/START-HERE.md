@@ -13,7 +13,7 @@
 | **M1 句柄、容器、时间、字符串** | ✅ 核心完成 —— Handle/SlotMap/ScopeTimer/StringId/ObjectID 完成；E1 perf 结论未做（非阻塞） |
 | **M2 反射与对象模型** | ✅ 核心完成 —— Object/ObjectDB/Variant（10 tag）/PropertyInfo/ClassInfo/ClassDB 完成；`yr_inspect`、注册宏延后 |
 | **M3 单线程 EventBus** | ✅ 已完成 / 收口（2026-10-08） |
-| **M4 场景树与主循环** | 🔨 **下一主线**（Node-1 完成；Node-2 生命周期完成，下一步 Node-3 延迟删除） |
+| **M4 场景树与主循环** | 🔨 **下一主线**（Node-1/2/3 完成；下一步 Node-4 process 遍历） |
 | M5 ~ M11 | ⬜ 未开始 |
 
 **远期方向一句话**（现在不要跳过去）：M4 最小闭环 → M5 渲染契约 + NullBackend → M6 最小 Vulkan bootstrap → M7 Snapshot 驱动画面（首个主要作品节点）→ M8 序列化 → M9 资源系统 → M10 任务系统 → M11 工具链打磨。**当前唯一任务仍是 M4。**
@@ -40,7 +40,7 @@
 - **`post_from_any_thread` / MPSC / TSan 验证**：推迟到 **M10**
 - 事件追踪日志、`std::function` 性能实验：非阻塞优化，不阻塞主线
 
-### M4 当前进度：Node-2 生命周期完成，下一步 Node-3 延迟删除
+### M4 当前进度：Node-3 延迟删除（含 Node-3.5 结构锁收尾）完成，下一步 Node-4
 
 M4 按 `02-roadmap.md` 拆成 Node-1 → Node-2 → Node-3 → Node-4 四步。
 
@@ -72,8 +72,22 @@ Debug/Release/ASan 全绿。
 正在被遍历的 parent（`parent->addChild/removeChild`、经 `detach` 修改 parent）会被拒绝；
 `onExitTree` 期间当前节点结构冻结。测试在 `test_propagation_guard.cpp`，Debug/Release/ASan 全绿。
 
-**下一步：Node-3 延迟删除（只学这一个新概念）**：`queueFree` + `ObjectID` 删除队列 +
-显式 `flushDeletions` 安全点。本步**不写** `requestReady()` 与 process 遍历（Node-4）。
+**Node-3 延迟删除 ✅ 已完成（2026-10-14）**：`Node::queueFree`（重复调用幂等；非树内 Debug 断言 +
+所有构建安全返回、不置标记、不入队）+ `SceneTree` 的 `ObjectID` 删除队列 + 显式 `flushDeletions`
+（开始时把队列 swap 到局部实现快照语义、重入防护；子 / root / 孤儿三分支，孤儿断言跳过不删除）。
+测试 `test_queue_free.cpp`：自己 / 父 / 子 / 兄弟四种删除场景不 double free（ASan 验证）、
+父子同帧两种入队顺序、flush 中 exit 回调再 queueFree 延后一批、非树内 queueFree 与孤儿跳过；
+Debug/Release/ASan 全绿。
+
+**Node-3.5 结构锁收尾 ✅ 已完成（2026-10-14）**：修掉 `removeChild` 在持有 `children_` 迭代器
+期间派发 exit 回调、回调改同一 parent 导致迭代器失效的隐患。`addChild`/`removeChild` 在入口
+`propagationDepth_` 检查通过后立即对接收者 this 加 RAII 结构锁，冻结其 `children_` 覆盖整个结构
+操作；回调中对同一 parent 的 addChild/removeChild/detach 一律被拒（断言 + 返回失败，不消费）。
+手动摘除（removeChild/detach）复位 `queuedForDeletion_` = 取消删除意图。`test_propagation_guard.cpp`
+补结构锁 / 恢复性用例，`test_queue_free.cpp` 补重排队回归；Debug/Release/ASan 全绿（ASan 验证
+迭代器失效与 UAF）。
+
+**下一步：Node-4 process 遍历**（注册列表快照遍历，回调中新增节点本帧不 process，与 Godot 一致）。
 
 **动笔前读**：`01-architecture.md` §4.6（Node 生命周期顺序）与
 `04-godot-study.md` 的 "Node 生命周期" 行。

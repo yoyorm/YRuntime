@@ -1,9 +1,8 @@
-#include <yr/scene/node.h>
-
 #include <algorithm>
 #include <cstdint>
-
 #include <yr/core/assert.h>
+#include <yr/scene/node.h>
+#include <yr/scene/scene_tree.h>
 
 namespace yr::scene {
 
@@ -61,6 +60,8 @@ namespace yr::scene {
 
     // 父已在树内：只让新加入的子树 enter，已有节点不重复 enter。
     if (tree_ != nullptr) {
+      // 冻结本节点 children_，覆盖会触发回调的 enter
+      const PropagationGuard guard(propagationDepth_);
       raw->setTree(tree_);
       // 父已 ready：新子树 enter 完毕后立即 ready。
       if (everReady_) {
@@ -84,6 +85,8 @@ namespace yr::scene {
       YR_ASSERT_MSG(false, "Node::removeChild: cannot modify children while this node's children are being propagated");
       return nullptr;
     }
+    // 冻结本节点 children_，覆盖会触发回调的 exit
+    const PropagationGuard guard(propagationDepth_);
 
     if (child == nullptr) {
       YR_ASSERT_MSG(false, "Node::removeChild: child is null");
@@ -97,7 +100,7 @@ namespace yr::scene {
       return nullptr;
     }
 
-    // 在 move/erase/清 parent_ 之前派发 exit，让回调看到完整的父子关系。
+    // 在 move/erase/清 parent_ 之前派发 exit
     Node* const raw = it->get();
     if (raw->tree_ != nullptr) {
       raw->setTree(nullptr);
@@ -107,6 +110,7 @@ namespace yr::scene {
     std::unique_ptr<Node> owned = std::move(*it);
     children_.erase(it);
     owned->parent_ = nullptr;
+    owned->queuedForDeletion_ = false; // 交还所有权后不再排队删除
     return owned;
   }
 
@@ -185,6 +189,19 @@ namespace yr::scene {
         onReady();
       }
     }
+  }
+
+  void Node::queueFree() {
+    if (queuedForDeletion_) {
+      return; // 幂等：已入队就不再重复入队
+    }
+    // 非树内节点所有权在外部，SceneTree 无权销毁；断言后安全返回，不置标记、不入队。
+    YR_ASSERT_MSG(tree_ != nullptr, "Node::queueFree: node is not inside a tree");
+    if (tree_ == nullptr) {
+      return;
+    }
+    queuedForDeletion_ = true;
+    tree_->enqueueDeletion(id());
   }
 
   void Node::onEnterTree() {}

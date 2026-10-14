@@ -3,7 +3,8 @@ add_executable(YrTests_scene
     test_scene_tree.cpp
     test_lifecycle.cpp
     test_ready.cpp
-    test_propagation_guard.cpp)
+    test_propagation_guard.cpp
+    test_queue_free.cpp)
 
 target_link_libraries(YrTests_scene PRIVATE
     yr::scene

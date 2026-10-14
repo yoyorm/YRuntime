@@ -248,7 +248,7 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 |---|---|---|---|---|
 | **Node-1** | 父子关系与所有权 | `yr/scene/node.h` + `src/node.cpp` + `tests/scene/test_node.cpp` | 单父不变量：不能加自己 / 多父 / 成环；`addChild` 转移所有权、`removeChild` 交出所有权 | ✅ 已完成（2026-10-12） |
 | **Node-2** | SceneTree 内状态与生命周期传播 | `enter` / `ready` / `exit` 派发 + selective propagation guard | 三层树断言：enter 前序（父先子）、ready 后序（子先父）且只一次、exit 后序；回调中越界修改被拒 | ✅ 已完成（2026-10-13） |
-| **Node-3** | 延迟删除 | `queueFree` + `ObjectID` 删除队列 + 显式 `flushDeletions` 安全点 | 自己 / 父 / 子 / 兄弟四种删除场景不 double free；父先删则子 ID 解析失效 | ⬜ |
+| **Node-3** | 延迟删除 | `queueFree` + `ObjectID` 删除队列 + 显式 `flushDeletions` 安全点 | 自己 / 父 / 子 / 兄弟四种删除场景不 double free；父先删则子 ID 解析失效 | ✅ 已完成（2026-10-14） |
 | **Node-4** | process 遍历 | 注册列表快照遍历 | 回调中新增节点本帧不 process（与 Godot 一致） | ⬜ |
 
 **Node-1 已决策（2026-10-12，详见 `START-HERE.md` §2）**：
@@ -269,7 +269,18 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 > propagation guard 采用**私有传播深度计数 `propagationDepth_` + 最小 RAII guard**（不是 bool）：
 > 只冻结“正在被遍历的节点自身 children_”——enter/ready 中允许修改自己的 children，禁止 child 回调修改
 > 正在被遍历的 parent，exit 期间冻结当前节点结构；`requestReady()` 不实现。
-> **Node-2 已完成，下一步 Node-3（`queueFree` + `ObjectID` 删除队列 + 显式 `flushDeletions` 延迟删除）**。
+> **Node-3 延迟删除已完成（2026-10-14）**：`Node::queueFree`（重复调用幂等；非树内 Debug 断言 +
+> 所有构建安全返回、不置标记）+ `SceneTree` 的 `ObjectID` 删除队列 + `flushDeletions`
+> （开始时 swap 快照、重入防护，子 / root / 孤儿三分支，孤儿断言跳过不删除）。测试
+> `test_queue_free.cpp`：自己 / 父 / 子 / 兄弟四种场景不 double free（ASan 验证）、父子同帧两种
+> 入队顺序、flush 中 exit 回调再 queueFree 延后一批、非树内 queueFree 与孤儿跳过。
+> **Node-3.5 收尾已完成（2026-10-14）**：`addChild`/`removeChild` 在入口 `propagationDepth_`
+> 检查后立即对接收者 this 加 RAII 结构锁，冻结其 `children_` 覆盖整个结构操作——removeChild
+> 覆盖 find_if → `setTree(nullptr)`（整棵被摘子树 exit 回调）→ move/erase → 清 parent_；
+> addChild 覆盖树内分支的 `setTree` 与 `propagateReady`。回调中对同一 parent 的
+> addChild/removeChild/detach 一律被拒（断言 + 返回失败，不消费）。手动摘除复位
+> `queuedForDeletion_`（取消删除意图，可重新 queueFree）。测试补结构锁 / 恢复性 / 重排队用例，
+> Debug/Release/ASan 全绿。下一步 Node-4 process。
 
 - [ ] **（从 M1 推来）** `yr/core/math.h`：只做 Transform 需要的部分（`Vec3` + `Mat4` + TRS 合成 + 求逆）；不要一次写全（D4）
 - [ ] **（从 M1 推来，可选）** `yr/core/sparse_set.h`：**只在 S3（ECS 数据层）真要做时才写**。Transform 用普通 SoA 数组就够，不必先造 SparseSet
