@@ -394,8 +394,11 @@ Godot 的 `queue_free()` 不立即删除，只把 `ObjectID` 放进 `SceneTree` 
 父子同帧排队时，父先删使子的 ID 解析失效，从而天然避免 double free。
 YRuntime 第一版据此做：`queueFree()` + `ObjectID` 删除队列 + 显式 `flushDeletions()`，且 `flushDeletions()` **必须在遍历之外执行**。
 
-**遍历策略**（要写测试锁定顺序）：`_process` 是**前序**（父先于子）。
-Godot 的 `process` **不每帧遍历全树**，而是遍历注册列表的快照；回调中新增的节点本帧不 `process`（Node-4 照此实现）。
+**遍历策略**（已用测试锁定顺序，Node-4）：`_process` 是**前序**（父先于子、兄弟按 children 顺序）。
+Godot 的 `process` **不每帧遍历全树**，而是遍历 process group / 注册列表的快照，以避免全树遍历。
+YRuntime 第一版**采用全树方案 A**：`SceneTree::process` 开始时**前序收集整棵子树的 `ObjectID` 快照**，
+派发阶段逐个经 `ObjectDB` 重解析（解析失败或已离树则跳过）。同样保证"回调中新增的节点本帧不 process"
+（快照已定），但代价是每帧遍历全树。注册列表分组、`setProcess` 开关与 priority 排序留待后续真正需要时再做。
 
 **第一版明确不搬 Godot 的复杂度**：`owner`（编辑器归属）、internal child、groups、multiplayer、
 editor 相关逻辑、process thread groups、physics interpolation 均不进入 YRuntime 第一版。

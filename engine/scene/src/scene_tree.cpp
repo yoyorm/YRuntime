@@ -47,8 +47,13 @@ namespace yr::scene {
     if (flushing_) {
       return;
     }
+    // process 期间不得 flush
+    YR_ASSERT_MSG(!processing_, "SceneTree::flushDeletions: cannot flush while processing");
+    if (processing_) {
+      return;
+    }
 
-    // RAII 恢复 flushing_，回调若违约抛异常也不会卡住标志。
+    // RAII 恢复 flushing_
     struct FlushGuard {
       bool& flag;
       explicit FlushGuard(bool& value) noexcept : flag(value) { flag = true; }
@@ -88,6 +93,49 @@ namespace yr::scene {
         YR_ASSERT_MSG(false, "SceneTree::flushDeletions: queued node is detached and not the root; skipping");
         node->queuedForDeletion_ = false;
       }
+    }
+    (void)guard;
+  }
+
+  void SceneTree::collectPreorder(const Node& node, std::vector<core::ObjectID>& out) {
+    out.push_back(node.id());
+    for (const std::unique_ptr<Node>& child : node.children_) {
+      collectPreorder(*child, out);
+    }
+  }
+
+  void SceneTree::process(float deltaTime) {
+    // 重入：回调里再调 process 会让同一帧重复派发；与 flushDeletions 一致，断言 + 早退。
+    YR_ASSERT_MSG(!processing_, "SceneTree::process: recursive process is not allowed");
+    if (processing_) {
+      return;
+    }
+
+    // RAII 恢复 processing_，回调若违约抛异常也不会卡住标志。
+    struct ProcessGuard {
+      bool& flag;
+      explicit ProcessGuard(bool& value) noexcept : flag(value) { flag = true; }
+      ~ProcessGuard() { flag = false; }
+    };
+    ProcessGuard guard(processing_);
+
+    if (root_ == nullptr) {
+      return; // 空树安全 no-op
+    }
+
+    // 快照：本帧开始时一次性前序收集整棵子树
+    std::vector<core::ObjectID> snapshot;
+    collectPreorder(*root_, snapshot);
+
+    for (const core::ObjectID& id : snapshot) {
+      Node* node = static_cast<Node*>(obj::globalObjectDB().get(id));
+      if (node == nullptr) {
+        continue;
+      }
+      if (!node->isInsideTree()) {
+        continue;
+      }
+      node->onUpdate(deltaTime);
     }
     (void)guard;
   }

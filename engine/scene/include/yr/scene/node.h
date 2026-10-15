@@ -27,7 +27,6 @@ namespace yr::scene {
   //     操作触发的回调里对该接收者的任何增删子节点都会被拒（断言 + 返回失败），
   //     从而保证外层遍历 / 迭代器始终有效。exit 的 parent()/isInsideTree() 语义不变。
   //
-  // TODO(Node-4): process 遍历。
   // TODO: name 目前只读，名字唯一性尚未实现。
 
   class Node : public yr::obj::Object {
@@ -73,7 +72,8 @@ namespace yr::scene {
     //   - 不得抛异常；
     //   - onEnterTree / onReady 可以修改自己的 children，但不得修改正在传播的 parent；
     //   - onExitTree 期间结构冻结，不得增删子节点。
-    // onUpdate 当前仍是占位 no-op。
+    // onUpdate 由 SceneTree::process 前序派发（父先子、兄弟按 children 顺序），
+    // 回调中允许 addChild / removeChild / queueFree，安全由 ObjectID 快照重解析保证。
     virtual void onEnterTree();
     virtual void onReady();
     virtual void onUpdate(float deltaTime);

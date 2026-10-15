@@ -249,7 +249,7 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 | **Node-1** | 父子关系与所有权 | `yr/scene/node.h` + `src/node.cpp` + `tests/scene/test_node.cpp` | 单父不变量：不能加自己 / 多父 / 成环；`addChild` 转移所有权、`removeChild` 交出所有权 | ✅ 已完成（2026-10-12） |
 | **Node-2** | SceneTree 内状态与生命周期传播 | `enter` / `ready` / `exit` 派发 + selective propagation guard | 三层树断言：enter 前序（父先子）、ready 后序（子先父）且只一次、exit 后序；回调中越界修改被拒 | ✅ 已完成（2026-10-13） |
 | **Node-3** | 延迟删除 | `queueFree` + `ObjectID` 删除队列 + 显式 `flushDeletions` 安全点 | 自己 / 父 / 子 / 兄弟四种删除场景不 double free；父先删则子 ID 解析失效 | ✅ 已完成（2026-10-14） |
-| **Node-4** | process 遍历 | 注册列表快照遍历 | 回调中新增节点本帧不 process（与 Godot 一致） | ⬜ |
+| **Node-4** | process 前序遍历 | `SceneTree::process(dt)`：**全树前序 `ObjectID` 快照** + 逐个经 `ObjectDB` 重解析派发 `onUpdate` | 前序顺序（父先子、兄弟按 children 顺序）；回调中新增本帧不 process；回调中删除靠 ID 失效容忍；重入拒绝 | ✅ 已完成（2026-10-15） |
 
 **Node-1 已决策（2026-10-12，详见 `START-HERE.md` §2）**：
 ① 父拥有子用 `std::unique_ptr<Node>`（旧草图的 `Ref<Node>` 未实现，已弃用）；
@@ -280,7 +280,23 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 > addChild 覆盖树内分支的 `setTree` 与 `propagateReady`。回调中对同一 parent 的
 > addChild/removeChild/detach 一律被拒（断言 + 返回失败，不消费）。手动摘除复位
 > `queuedForDeletion_`（取消删除意图，可重新 queueFree）。测试补结构锁 / 恢复性 / 重排队用例，
-> Debug/Release/ASan 全绿。下一步 Node-4 process。
+> Debug/Release/ASan 全绿。
+>
+> **Node-4 process 遍历已完成（2026-10-15）**：`SceneTree::process(float)` 开始时一次性
+> **前序收集整棵子树的 `ObjectID`**（非 `Node*`）到局部快照，派发阶段逐个经
+> `obj::globalObjectDB().get(id)` 重解析：解析失败（节点已级联销毁 / 注销）或解析成功但
+> `!isInsideTree()`（回调中被 detach）一律跳过，其余调用 `onUpdate(deltaTime)`。**采用全树快照
+> 方案 A**（而非 Godot 的注册列表）：第一版所有树内节点都 process，不实现 `setProcess` 开关、
+> priority 排序、暂停、physics process。快照语义使回调中 `addChild` 的新节点本帧不入快照、
+> 下一帧才收集到；回调中 `removeChild`/`detach`（含丢弃所有权立即析构）与 `queueFree` 均安全，
+> 无需冻结结构——这正是选 `ObjectID` 而非 `Node*` 的核心原因（`Node*` 会悬垂）。
+> 重入用 `processing_` + RAII guard 拒绝（`assert` + 早退）；对称地 `flushDeletions` 在
+> `processing_` 期间也被拒，新删除留到下一次 flush；两者分离，由调用方按帧阶段先后调用。
+> 测试 `test_process.cpp` 10 例：前序顺序、快照新增、自己/父 `queueFree`、丢弃所有权立即析构的
+> ASan 用例、detach 保留所有权跳过、重入、process 期间 flush 拒绝、空树、多帧确定性；
+> Debug/Release/ASan 全绿。
+> **Node-4 范围外（= M4 剩余项）**：Transform 层级、`NodePath`、MainLoop 14 阶段、固定步长、
+> headless 平台、`FrameStats`、`tick_sandbox`、10000 帧集成测试，以及 process 分组/`setProcess`/暂停/physics。
 
 - [ ] **（从 M1 推来）** `yr/core/math.h`：只做 Transform 需要的部分（`Vec3` + `Mat4` + TRS 合成 + 求逆）；不要一次写全（D4）
 - [ ] **（从 M1 推来，可选）** `yr/core/sparse_set.h`：**只在 S3（ECS 数据层）真要做时才写**。Transform 用普通 SoA 数组就够，不必先造 SparseSet
@@ -299,8 +315,11 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 
 **验收标准**
 - **生命周期顺序测试**：嵌套 3 层树，`_ready` 后序 / `_process` 前序 / `_exit_tree` 顺序，逐条断言。
+      ✅ `_ready`/`_exit_tree` 由 Node-2（`test_lifecycle.cpp`）锁定，`_process` 前序由 Node-4（`test_process.cpp`）锁定。
 - **删除安全测试**：节点在自己的 `kProcess` 里 `queue_free()` 自己 / 父节点 / 子节点 / 兄弟节点，四种情况都不崩溃（ASan 干净）。这是本里程碑的核心价值。
+      ⚠ 部分：`onUpdate` 中 self / parent 已由 `test_process.cpp` 覆盖（ASan）；child / sibling 的延迟删除语义由 Node-3 `test_queue_free.cpp` 覆盖，尚未在同一条 `kProcess` 用例中同时覆盖四种。
 - **遍历中新增**：`kProcess` 里 `add_child` 的新节点本帧不 process（与 Godot 一致），测试锁定。
+      ✅ Node-4：`test_process.cpp` 的 "a node added during a callback..." 用例。
 - 10000 帧 headless 运行：ASan+UBSan 干净、ObjectDB 归零、帧耗时标准差合理（打印 p50/p95/max）。
 - 固定步长：把 `real_delta` 人为抖动（模拟卡顿），physics 步数依然正确（写测试）。
 

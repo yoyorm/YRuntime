@@ -4,11 +4,9 @@
 
 #include <yr/core/assert.h>
 
-namespace yr::obj {
+namespace yr::core {
 
   // 最小 3D 向量：值语义、constexpr 友好、无动态分配。
-  // 目前只服务 Variant 的 kVec3。等 M4（Transform）/ M9（快照）真正需要时，
-  // 按 D4 迁到 yr/core（render_iface 只能依赖 core），届时是一次机械搬迁。
   struct Vec3 {
     float x = 0.0F;
     float y = 0.0F;
@@ -91,4 +89,4 @@ namespace yr::obj {
     return Vec3{lhs.y * rhs.z - lhs.z * rhs.y, lhs.z * rhs.x - lhs.x * rhs.z, lhs.x * rhs.y - lhs.y * rhs.x};
   }
 
-} // namespace yr::obj
+} // namespace yr::core

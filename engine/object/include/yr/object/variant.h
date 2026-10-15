@@ -10,7 +10,7 @@
 #include <yr/core/assert.h>
 #include <yr/core/object_id.h>
 #include <yr/core/string_id.h>
-#include <yr/object/vec3.h>
+#include <yr/core/vec3.h>
 
 namespace yr::obj {
   class Variant;
@@ -30,7 +30,8 @@ namespace yr::obj::detail {
   inline constexpr bool kSupportedVariantType =
       std::is_same_v<T, bool> || std::is_same_v<T, int64_t> || std::is_same_v<T, double> ||
       std::is_same_v<T, yr::core::StringId> || std::is_same_v<T, yr::core::ObjectID> ||
-      std::is_same_v<T, std::string> || std::is_same_v<T, Array> || std::is_same_v<T, Dict> || std::is_same_v<T, Vec3>;
+      std::is_same_v<T, std::string> || std::is_same_v<T, Array> || std::is_same_v<T, Dict> ||
+      std::is_same_v<T, yr::core::Vec3>;
 
 } // namespace yr::obj::detail
 
@@ -83,7 +84,7 @@ namespace yr::obj {
         return *data_.arr;
       } else if constexpr (std::is_same_v<T, Dict>) {
         return *data_.dict;
-      } else if constexpr (std::is_same_v<T, Vec3>) {
+      } else if constexpr (std::is_same_v<T, yr::core::Vec3>) {
         return data_.v3;
       } else {
         return data_.oid;
@@ -133,7 +134,7 @@ namespace yr::obj {
         std::construct_at(&data_.arr, std::make_unique<Array>(std::move(value)));
       } else if constexpr (std::is_same_v<T, Dict>) {
         std::construct_at(&data_.dict, std::make_unique<Dict>(std::move(value)));
-      } else if constexpr (std::is_same_v<T, Vec3>) {
+      } else if constexpr (std::is_same_v<T, yr::core::Vec3>) {
         data_.v3 = value;
       } else {
         data_.oid = value;
@@ -156,7 +157,7 @@ namespace yr::obj {
         return Type::kArray;
       } else if constexpr (std::is_same_v<T, Dict>) {
         return Type::kDict;
-      } else if constexpr (std::is_same_v<T, Vec3>) {
+      } else if constexpr (std::is_same_v<T, yr::core::Vec3>) {
         return Type::kVec3;
       } else {
         return Type::kObjectID;
@@ -198,7 +199,7 @@ namespace yr::obj {
       std::unique_ptr<std::string> str;
       std::unique_ptr<Array> arr;
       std::unique_ptr<Dict> dict;
-      Vec3 v3;
+      yr::core::Vec3 v3;
     };
     Storage data_;
   };

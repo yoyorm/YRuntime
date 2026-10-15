@@ -6,7 +6,6 @@
 #include <yr/object/object.h>
 #include <yr/object/property_info.h>
 #include <yr/object/variant.h>
-#include <yr/object/vec3.h>
 
 #include <cstdint>
 #include <string>
@@ -15,13 +14,13 @@
 namespace {
 
   using yr::core::StringId;
+  using yr::core::Vec3;
   using yr::obj::Array;
   using yr::obj::ClassInfo;
   using yr::obj::Dict;
   using yr::obj::Object;
   using yr::obj::PropertyInfo;
   using yr::obj::Variant;
-  using yr::obj::Vec3;
 
   StringId nameOf(const char* text) {
     return yr::core::globalStringInterner().intern(text);

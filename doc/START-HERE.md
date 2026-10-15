@@ -13,7 +13,7 @@
 | **M1 句柄、容器、时间、字符串** | ✅ 核心完成 —— Handle/SlotMap/ScopeTimer/StringId/ObjectID 完成；E1 perf 结论未做（非阻塞） |
 | **M2 反射与对象模型** | ✅ 核心完成 —— Object/ObjectDB/Variant（10 tag）/PropertyInfo/ClassInfo/ClassDB 完成；`yr_inspect`、注册宏延后 |
 | **M3 单线程 EventBus** | ✅ 已完成 / 收口（2026-10-08） |
-| **M4 场景树与主循环** | 🔨 **下一主线**（Node-1/2/3 完成；下一步 Node-4 process 遍历） |
+| **M4 场景树与主循环** | 🔨 **下一主线**（Node-1/2/3/4 完成；下一步 M4 剩余：Transform 层级 / MainLoop / headless / `tick_sandbox`） |
 | M5 ~ M11 | ⬜ 未开始 |
 
 **远期方向一句话**（现在不要跳过去）：M4 最小闭环 → M5 渲染契约 + NullBackend → M6 最小 Vulkan bootstrap → M7 Snapshot 驱动画面（首个主要作品节点）→ M8 序列化 → M9 资源系统 → M10 任务系统 → M11 工具链打磨。**当前唯一任务仍是 M4。**
@@ -40,7 +40,7 @@
 - **`post_from_any_thread` / MPSC / TSan 验证**：推迟到 **M10**
 - 事件追踪日志、`std::function` 性能实验：非阻塞优化，不阻塞主线
 
-### M4 当前进度：Node-3 延迟删除（含 Node-3.5 结构锁收尾）完成，下一步 Node-4
+### M4 当前进度：Node-4 process 遍历完成，下一步 M4 剩余项
 
 M4 按 `02-roadmap.md` 拆成 Node-1 → Node-2 → Node-3 → Node-4 四步。
 
@@ -87,10 +87,22 @@ Debug/Release/ASan 全绿。
 补结构锁 / 恢复性用例，`test_queue_free.cpp` 补重排队回归；Debug/Release/ASan 全绿（ASan 验证
 迭代器失效与 UAF）。
 
-**下一步：Node-4 process 遍历**（注册列表快照遍历，回调中新增节点本帧不 process，与 Godot 一致）。
+**Node-4 process 遍历 ✅ 已完成（2026-10-15）**：`SceneTree::process(float)` 开始时一次性
+**前序收集整棵子树的 `ObjectID`** 到局部快照，派发阶段逐个经 `obj::globalObjectDB().get(id)`
+重解析：解析失败（已级联销毁 / 注销）或解析成功但 `!isInsideTree()`（回调中被 detach）跳过，
+其余调用 `onUpdate(deltaTime)`。**方案 A（全树快照）**：第一版所有树内节点都 process，不实现
+`setProcess` 开关、priority、暂停、physics process。快照语义保证回调中 `addChild` 的新节点本帧
+不入快照、下一帧才收集到；回调中 `removeChild`/`detach`（含丢弃所有权立即析构）与 `queueFree`
+都安全，靠 `ObjectID` 重解析容错、不冻结结构。重入用 `processing_` + RAII guard 拒绝；
+`flushDeletions` 在 `processing_` 期间也被拒（对称保护），删除留到下一次 flush；两者分离，
+由调用方按帧阶段先后调用。测试 `test_process.cpp` 10 例，Debug/Release/ASan 全绿。
 
-**动笔前读**：`01-architecture.md` §4.6（Node 生命周期顺序）与
-`04-godot-study.md` 的 "Node 生命周期" 行。
+**下一步：M4 剩余项（按 roadmap 顺序）**：`yr/core/math.h`（Transform 所需子集）→ Transform 层级
+（local/global + 脏标记）→ `NodePath` → `MainLoop` 14 阶段 → 固定步长 → headless 平台 →
+`FrameStats` → `apps/tick_sandbox`（M4 可运行物）→ 10000 帧集成测试；process 分组 / 暂停 /
+physics process 视需要再补。
+
+**动笔前读**：`01-architecture.md` §4.6 / §5（帧阶段）与 `04-godot-study.md` 的 "Node 生命周期" 行。
 
 **Node-1 已决定的接口**（不再重开）：
 
@@ -98,7 +110,8 @@ Debug/Release/ASan 全绿。
 2. `addChild(std::unique_ptr<Node>&&)` 失败时**不消费**参数，所有权归调用者。
 3. `queueFree` 的标志放 `Object` 还是 `Node` 留到 Node-3 决定。
 
-之后按 `02-roadmap.md` M4 的 Node-3/4 逐步推进，**不要一次实现整章**。
+Node-1~4 已收口，之后按 `02-roadmap.md` M4 顶部清单逐项推进（Transform → MainLoop → headless →
+`tick_sandbox`），**不要一次实现整章**。
 
 benchmark 数据和结论统一写到 `benchmarks/README.md`；不要新建额外笔记文件。
 

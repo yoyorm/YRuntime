@@ -51,6 +51,11 @@ static_assert(yr::core::HandleBits::nextGeneration(1) == 2);
 static_assert(yr::core::HandleBits::nextGeneration((uint64_t{1} << 40) - 1) == 1);
 static_assert(yr::core::HandleBits::nextGeneration(0) == 1);
 
+// encode 先掩码再左移：超宽 generation 截断到低 40 位后，与规范值编码结果完全相同
+// （保证 Handle 解码值与 SlotMap 存储值同域，而不是只比较某一个字段）。
+static_assert(yr::core::HandleBits::encode(3, (uint64_t{1} << 40) + 5) == yr::core::HandleBits::encode(3, 5));
+static_assert(yr::core::HandleBits::encode(0, uint64_t{1} << 40) == 0); // 高位被截断
+
 // ============================================================================
 // 无效值语义
 // ============================================================================
