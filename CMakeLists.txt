@@ -24,8 +24,9 @@ target_compile_options(yr_build_flags INTERFACE
     -Wold-style-cast -Wcast-align -Wunused -Woverloaded-virtual
     $<$<BOOL:${YR_WARNINGS_AS_ERRORS}>:-Werror>)
 
-# 子目录 
+# 子目录（按依赖方向排列：core → math → object ...）
 add_subdirectory(engine/core)
+add_subdirectory(engine/math)
 add_subdirectory(engine/object)
 add_subdirectory(engine/event)
 add_subdirectory(engine/scene)

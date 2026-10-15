@@ -30,13 +30,16 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # ============================================================================
 ALLOWED_DEPS: dict[str, set[str]] = {
     "core":          set(),                                        # 叶子：只依赖 std
+    # math：Vec3 / Mat4 独立成层，仍使用 core 的断言宏（YR_ASSERT_MSG），
+    # 故是 core 的直接上层；core 不可反向依赖 math（会成环）。
+    "math":          {"core"},
     "job":           {"core"},
-    "object":        {"core"},
+    "object":        {"core", "math"},
     "render_iface":  {"core"},
-    "event":         {"object", "core"},
+    "event":         {"object", "core", "math"},
     "serialize":     {"object", "core"},
     "asset":         {"object", "job", "core"},
-    "scene":         {"object", "event", "serialize", "asset", "core"},
+    "scene":         {"object", "event", "serialize", "asset", "core", "math"},
     "engine":        {"scene", "asset", "event", "serialize", "object", "job",
                       "render_iface", "core"},
     "render_null":   {"render_iface", "core"},
@@ -46,6 +49,7 @@ ALLOWED_DEPS: dict[str, set[str]] = {
 # 目录 → 层名。engine/ 下按目录分；render 的三个后端在 engine/render/ 下。
 DIR_TO_LAYER: dict[str, str] = {
     "engine/core":          "core",
+    "engine/math":          "math",
     "engine/job":           "job",
     "engine/object":        "object",
     "engine/event":         "event",
@@ -61,6 +65,7 @@ DIR_TO_LAYER: dict[str, str] = {
 # include 前缀 → 层名。<yr/render/...> 归 render_iface（后端不被任何人 include）。
 INCLUDE_TO_LAYER: dict[str, str] = {
     "yr/core":      "core",
+    "yr/math":      "math",
     "yr/job":       "job",
     "yr/object":    "object",
     "yr/event":     "event",

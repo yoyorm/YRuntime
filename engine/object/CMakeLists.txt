@@ -8,6 +8,7 @@ add_library(yr_object
 add_library(yr::object ALIAS yr_object)
 
 target_include_directories(yr_object PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(yr_object PUBLIC yr::core)
+# PUBLIC：variant.h 公开使用 yr::math::Vec3，消费者需要 math 的头文件路径。
+target_link_libraries(yr_object PUBLIC yr::core yr::math)
 
 

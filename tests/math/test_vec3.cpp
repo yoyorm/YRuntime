@@ -1,13 +1,13 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-#include <yr/core/vec3.h>
+#include <yr/math/vec3.h>
 
 #include <type_traits>
 
-using yr::core::cross;
-using yr::core::dot;
-using yr::core::Vec3;
+using yr::math::cross;
+using yr::math::dot;
+using yr::math::Vec3;
 
 static_assert(std::is_trivially_copyable_v<Vec3>);
 static_assert(std::is_default_constructible_v<Vec3>);

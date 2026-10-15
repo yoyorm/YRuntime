@@ -4,7 +4,7 @@
 
 #include <yr/core/assert.h>
 
-namespace yr::core {
+namespace yr::math {
 
   // 最小 3D 向量：值语义、constexpr 友好、无动态分配。
   struct Vec3 {
@@ -89,4 +89,4 @@ namespace yr::core {
     return Vec3{lhs.y * rhs.z - lhs.z * rhs.y, lhs.z * rhs.x - lhs.x * rhs.z, lhs.x * rhs.y - lhs.y * rhs.x};
   }
 
-} // namespace yr::core
+} // namespace yr::math

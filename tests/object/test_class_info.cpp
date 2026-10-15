@@ -14,7 +14,7 @@
 namespace {
 
   using yr::core::StringId;
-  using yr::core::Vec3;
+  using yr::math::Vec3;
   using yr::obj::Array;
   using yr::obj::ClassInfo;
   using yr::obj::Dict;
