@@ -3,13 +3,20 @@
 #include <yr/core/assert.h>
 #include <yr/scene/node.h>
 #include <yr/scene/scene_tree.h>
+#include <yr/scene/transform_store.h>
 
 namespace yr::scene {
 
+  // transform 槽由分配它的 SceneTree 释放；该树必须比本节点活得更久。
+  Node::~Node() {
+    if (transform_.valid() && transformOwner_ != nullptr) {
+      transformOwner_->destroyTransform(transform_);
+    }
+  }
+
   namespace {
 
-    // 只表示"正在遍历某个 Node 自己的 children_"的 RAII 计数：构造递增、析构递减，
-    // 异常展开也安全；只持有计数器引用，无需访问 Node 私有成员。
+    // 表示正在遍历某个 Node 自己的 children_ 的 RAII 计数，异常展开也安全。
     class PropagationGuard {
     public:
       explicit PropagationGuard(std::uint32_t& depth) noexcept : depth_(depth) { ++depth_; }
@@ -47,7 +54,6 @@ namespace yr::scene {
       YR_ASSERT_MSG(false, "Node::addChild: child already has a parent");
       return false;
     }
-    // 沿 parent 链向上检查，防止形成环。
     for (Node* ancestor = this; ancestor != nullptr; ancestor = ancestor->parent_) {
       if (ancestor == raw) {
         YR_ASSERT_MSG(false, "Node::addChild: would create a cycle");
@@ -58,7 +64,7 @@ namespace yr::scene {
     raw->parent_ = this;
     children_.push_back(std::move(child));
 
-    // 父已在树内：只让新加入的子树 enter，已有节点不重复 enter。
+    // 父已在树内：只让新子树 enter，已有节点不重复 enter。
     if (tree_ != nullptr) {
       // 冻结本节点 children_，覆盖会触发回调的 enter
       const PropagationGuard guard(propagationDepth_);
@@ -100,13 +106,13 @@ namespace yr::scene {
       return nullptr;
     }
 
-    // 在 move/erase/清 parent_ 之前派发 exit
+    // 先派发 exit 再解除 parent：让回调期间 parent()/isInsideTree() 仍反映旧位置。
     Node* const raw = it->get();
     if (raw->tree_ != nullptr) {
       raw->setTree(nullptr);
     }
 
-    // 先 move 出拥有关系再 erase，避免在 erase 后访问已释放的 unique_ptr。
+    // 先 move 出拥有关系再 erase，避免 erase 后访问已释放的 unique_ptr。
     std::unique_ptr<Node> owned = std::move(*it);
     children_.erase(it);
     owned->parent_ = nullptr;
@@ -122,7 +128,7 @@ namespace yr::scene {
     return oldParent->removeChild(this);
   }
 
-  // 树内状态的唯一入口：切换 tree_ 前先对旧树做完整 exit（后序、子倒序）。
+  // 树内状态的唯一入口：切换 tree_ 前先对旧树做完整 exit。
   void Node::setTree(SceneTree* tree) {
     if (tree == tree_) {
       return;
@@ -132,12 +138,53 @@ namespace yr::scene {
     }
     tree_ = tree;
     if (tree != nullptr) {
+      // 先备好本节点的 transform 槽，再 enter；分配不触发回调。
+      acquireTransform(tree);
       propagateEnterTree();
     }
   }
 
-  // guard 只包住 children 遍历：自己的 onEnterTree 中仍可 addChild 到 *this，
-  // 但 child 的 enter 回调不能修改正在被遍历的 *this。
+  // 同树重新入树保留原槽也必须标脏，否则旧 global 不是新父链下的正确值。
+  void Node::acquireTransform(SceneTree* tree) {
+    YR_ASSERT_MSG(tree != nullptr, "Node::acquireTransform: tree is null");
+    if (transformOwner_ != tree) {
+      // 跨树重新挂入：先归还旧树的槽，再在新树分配。
+      if (transform_.valid() && transformOwner_ != nullptr) {
+        transformOwner_->destroyTransform(transform_);
+      }
+      transform_ = tree->createTransform();
+      transformOwner_ = tree;
+    }
+    TransformData* const data = tree->transformData(transform_);
+    YR_ASSERT_MSG(data != nullptr, "Node::acquireTransform: transform slot is not resolvable");
+    if (data != nullptr) {
+      data->localDirty = true;
+    }
+  }
+
+  void Node::setPosition(const math::Vec3& position) {
+    position_ = position;
+    // 未入树只改本地；有槽则标脏，交给下一次 refresh。
+    if (transform_.valid() && transformOwner_ != nullptr) {
+      TransformData* const data = transformOwner_->transformData(transform_);
+      if (data != nullptr) {
+        data->localDirty = true;
+      }
+    }
+  }
+
+  math::Mat4 Node::globalTransform() const noexcept {
+    if (transform_.valid() && transformOwner_ != nullptr) {
+      const TransformData* const data = transformOwner_->transformData(transform_);
+      if (data != nullptr) {
+        return data->global;
+      }
+    }
+    return math::Mat4{};
+  }
+
+  // guard 只包住 children 遍历：自己的 onEnterTree 仍可 addChild 到 *this，但 child 的
+  // enter 回调不能修改正在被遍历的 *this。
   void Node::propagateEnterTree() {
     YR_ASSERT_MSG(tree_ != nullptr, "Node::propagateEnterTree: node is not inside a tree");
     onEnterTree();
@@ -147,8 +194,7 @@ namespace yr::scene {
     }
   }
 
-  // guard 覆盖 children 倒序遍历与自身 onExitTree：退出期间 *this 结构被冻结，
-  // this->addChild/removeChild 一律失败。
+  // guard 覆盖 children 倒序遍历与自身 onExitTree：退出期间 *this 结构冻结，增删子节点失败。
   void Node::propagateExitTree() {
     YR_ASSERT_MSG(tree_ != nullptr, "Node::propagateExitTree: node is not inside a tree");
     {
@@ -161,9 +207,8 @@ namespace yr::scene {
     tree_ = nullptr; // 回调与 guard 结束后才离开树
   }
 
-  // 即使 *this 已 ready 也不能提前返回：其下可能挂有离线新增、从未 ready 的后代，
-  // 必须继续递归让它们补上 ready。先置位 everReady_，使子回调里动态挂入的 child
-  // 判断父状态时一致。
+  // 已 ready 也不能提前返回：其下可能挂有离线新增、从未 ready 的后代，必须继续递归。
+  // 先置位 everReady_，使子回调里动态挂入的 child 判断父状态时一致。
   void Node::propagateReady() {
     YR_ASSERT_MSG(tree_ != nullptr, "Node::propagateReady: node is not inside a tree");
     if (tree_ == nullptr) {
@@ -173,8 +218,8 @@ namespace yr::scene {
     const bool shouldNotify = !everReady_;
     everReady_ = true;
 
-    // guard 只包住 children 遍历：child 的 ready 回调不能修改正在被遍历的
-    // *this；guard 结束后自身 onReady() 中才可 addChild。
+    // guard 只包住 children 遍历：child 的 ready 回调不能修改正在被遍历的 *this；
+    // guard 结束后 onReady() 中才可 addChild。
     {
       const PropagationGuard guard(propagationDepth_);
       for (const std::unique_ptr<Node>& child : children_) {
@@ -193,9 +238,9 @@ namespace yr::scene {
 
   void Node::queueFree() {
     if (queuedForDeletion_) {
-      return; // 幂等：已入队就不再重复入队
+      return; // 幂等
     }
-    // 非树内节点所有权在外部，SceneTree 无权销毁；断言后安全返回，不置标记、不入队。
+    // 非树内节点所有权在外部，断言后安全返回，不置标记、不入队。
     YR_ASSERT_MSG(tree_ != nullptr, "Node::queueFree: node is not inside a tree");
     if (tree_ == nullptr) {
       return;

@@ -5,7 +5,8 @@ add_executable(YrTests_scene
     test_ready.cpp
     test_propagation_guard.cpp
     test_queue_free.cpp
-    test_process.cpp)
+    test_process.cpp
+    test_transform.cpp)
 
 target_link_libraries(YrTests_scene PRIVATE
     yr::scene
