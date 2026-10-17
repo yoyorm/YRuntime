@@ -4,7 +4,7 @@
 Runtime，再以 renderer-neutral 的渲染契约把游戏状态接到渲染后端，形成
 `游戏状态 → Runtime → RenderSnapshot → Renderer → GPU` 的链路。
 
-![status](https://img.shields.io/badge/status-M4%20in%20progress-yellow)
+![status](https://img.shields.io/badge/status-M4%20complete-brightgreen)
 ![CI](https://github.com/yoyorm/YRuntime/actions/workflows/ci.yml/badge.svg)
 ![cxx](https://img.shields.io/badge/C%2B%2B-20-00599C?logo=c%2B%2B&logoColor=white)
 ![platform](https://img.shields.io/badge/platform-Linux-lightgrey)
@@ -25,7 +25,7 @@ Runtime，再以 renderer-neutral 的渲染契约把游戏状态接到渲染后�
 | `yr_object` | Object / ObjectDB / Variant / ClassDB |
 | `yr_event` | 单线程 EventBus |
 | `yr_scene` | Node / SceneTree |
-| `yr_engine` | MainLoop / World / RenderExtract |
+| `yr_engine` | Engine / MainLoop / World / RenderExtract |
 | `yr_render_iface` · `yr_render_null` · `yr_render_vulkan` | RenderSnapshot 契约、NullBackend、Vulkan 后端 |
 | `apps/` · `tools/` | demo 与打包 / 查看工具 |
 
@@ -39,7 +39,7 @@ Runtime，再以 renderer-neutral 的渲染契约把游戏状态接到渲染后�
 | M1 句柄、容器、时间、字符串 | 完成 | Handle / SlotMap / Timer / StringId / ObjectID |
 | M2 反射与对象模型 | 完成 | Object / ObjectDB / Variant / ClassInfo / ClassDB |
 | M3 单线程 EventBus | 完成 | subscribe / publish / post+flush、重入与确定性重放 |
-| M4 场景树与主循环 | **进行中** | Node-1 / Node-2 完成，下一步 Node-3 延迟删除；目标 headless 世界 tick 10000 帧 |
+| M4 场景树与主循环 | 完成 | Node / SceneTree / Transform / MainLoop / Clock / FrameStats + Engine + `yr_runtime_headless --frames N` 与 10000 帧集成测试 |
 | M5 渲染契约与 NullBackend | 未开始 | RenderSnapshot + RendererBackend 及 dump/replay |
 | M6 最小 Vulkan Bootstrap | 未开始 | 窗口 + 清屏 + 硬编码三角形 |
 | M7 Snapshot 驱动画面 | 未开始 | Runtime 移动 Node → 画面变化 |

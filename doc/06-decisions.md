@@ -406,7 +406,7 @@ CI 首次运行时 `apt-get install libcatch2-dev` 退出码 100，job 失败。
 
 **决策**：
 1. **删除**原"文字冒险 Demo"里程碑及其内容项（房间 / 命令解析 / 对话 / 自动通关），不保留旧"作品节点 1/2"编号。
-2. M4 最小闭环之后，渲染主线按 **M5 渲染契约 + NullBackend → M6 最小 Vulkan Bootstrap → M7 Snapshot 驱动画面** 推进；M7 的 Snapshot 驱动 Vulkan render sandbox 是**首个主要作品节点**（可保留 headless `tick_sandbox` 作为阶段产物）。
+2. M4 最小闭环之后，渲染主线按 **M5 渲染契约 + NullBackend → M6 最小 Vulkan Bootstrap → M7 Snapshot 驱动画面** 推进；M7 的 Snapshot 驱动 Vulkan render sandbox 是**首个主要作品节点**（历史注：当时计划的 headless 阶段产物 `tick_sandbox` 后来落地为薄 host `apps/runtime_headless`，原 `apps/tick_sandbox` 已随 M4 收口删除）。
 3. **Yo_Renderer 不整体引入、不作 subdirectory**：Vulkan backend 以最小重写为主，只选择性借鉴 / 逐文件搬
    `platform/VulkanContext`、`Swapchain`、`SyncObjects`/`FrameSync`、`rhi/command/CommandRecorder`、`render/VulkanResourceTable`，
    并适配 YRuntime 命名 / Handle / CMake 分层；**不搬** `app/*`、`framework/*`、`system/*`、`ui/*`、

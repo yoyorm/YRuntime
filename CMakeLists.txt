@@ -30,6 +30,10 @@ add_subdirectory(engine/math)
 add_subdirectory(engine/object)
 add_subdirectory(engine/event)
 add_subdirectory(engine/scene)
+add_subdirectory(engine/engine)
+
+# 可运行物（apps 允许依赖任何层）
+add_subdirectory(apps)
 
 if(YR_BUILD_TESTS)
     enable_testing()          # 必须在 add_subdirectory(tests) 之前

@@ -13,17 +13,18 @@
 | **M1 句柄、容器、时间、字符串** | ✅ 核心完成 —— Handle/SlotMap/ScopeTimer/StringId/ObjectID 完成；E1 perf 结论未做（非阻塞） |
 | **M2 反射与对象模型** | ✅ 核心完成 —— Object/ObjectDB/Variant（10 tag）/PropertyInfo/ClassInfo/ClassDB 完成；`yr_inspect`、注册宏延后 |
 | **M3 单线程 EventBus** | ✅ 已完成 / 收口（2026-10-08） |
-| **M4 场景树与主循环** | 🔨 **下一主线**（Node-1/2/3/4 完成；下一步 M4 剩余：Transform 层级 / MainLoop / headless / `tick_sandbox`） |
-| M5 ~ M11 | ⬜ 未开始 |
+| **M4 场景树与主循环** | ✅ 已完成 / 收口（2026-10-17）——Node/SceneTree/Transform/MainLoop/Clock/FrameStats + Engine + `apps/runtime_headless` + 10000 帧集成测试；剩余的 `NodePath`/headless 平台层为非阻塞遗留 |
+| **M5 渲染契约与 NullBackend** | 🔨 **下一主线**（`yr_render_iface` + `yr_render_null` + `render_extract`） |
+| M6 ~ M11 | ⬜ 未开始 |
 
-**远期方向一句话**（现在不要跳过去）：M4 最小闭环 → M5 渲染契约 + NullBackend → M6 最小 Vulkan bootstrap → M7 Snapshot 驱动画面（首个主要作品节点）→ M8 序列化 → M9 资源系统 → M10 任务系统 → M11 工具链打磨。**当前唯一任务仍是 M4。**
+**远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend → M6 最小 Vulkan bootstrap → M7 Snapshot 驱动画面（首个主要作品节点）→ M8 序列化 → M9 资源系统 → M10 任务系统 → M11 工具链打磨。**当前唯一任务：M5。**
 
 进度**只在两处维护**：根 `README.md` 的里程碑表（对外）+ `02-roadmap.md` 的 checkbox（对内）。
 别的地方不要重复记录，否则一定会漂移。
 
 ---
 
-## 2. 下一步：M4 场景树与主循环
+## 2. 下一步：M5 渲染契约与 NullBackend（M4 已完成）
 
 ### M3 已完成：单线程 EventBus（2026-10-08）
 
@@ -40,9 +41,18 @@
 - **`post_from_any_thread` / MPSC / TSan 验证**：推迟到 **M10**
 - 事件追踪日志、`std::function` 性能实验：非阻塞优化，不阻塞主线
 
-### M4 当前进度：Node-4 process 遍历完成，下一步 M4 剩余项
+### M4 已完成（2026-10-17）：Node/SceneTree/Transform/MainLoop/FrameStats + Engine/runtime_headless + 10000 帧集成测试
 
-M4 按 `02-roadmap.md` 拆成 Node-1 → Node-2 → Node-3 → Node-4 四步。
+M4 按 `02-roadmap.md` 拆成 Node-1 → Node-2 → Node-3 → Node-4 四步，之后补齐 Transform 层级、
+`MainLoop` 14 阶段与四安全点接线、`Clock`/累加器/spiral/`timeScale`/`paused`、`FrameStats`、
+`Engine`（组合拥有子系统并驱动 while loop）与极薄 host `apps/runtime_headless`，以及 10000 帧集成测试。
+收口总结见 `02-roadmap.md` 的「M4 收口总结（2026-10-17）」。
+
+**下一步（M5）**：`yr_render_iface`（`RenderSnapshot`/`RendererBackend` 纯 POD 契约）+
+`yr_render_null`（NullBackend + 统计）+ `yr/engine/render_extract`（阶段 10 接 SceneTree → RenderSnapshot），
+以快照 dump/replay 作为契约完备性验收。动笔前读 `01-architecture.md` §4.11 / §7 与 `04-godot-study.md` 的 M5 行。
+
+以下为 Node-1~4 的历史进度记录。
 
 **Node-1（父子关系与所有权）✅ 已完成（2026-10-12）**，落地在 `yr_scene`
 （`engine/scene/include/yr/scene/node.h` + `src/node.cpp`，测试 `YrTests_scene`）：
@@ -97,12 +107,10 @@ Debug/Release/ASan 全绿。
 `flushDeletions` 在 `processing_` 期间也被拒（对称保护），删除留到下一次 flush；两者分离，
 由调用方按帧阶段先后调用。测试 `test_process.cpp` 10 例，Debug/Release/ASan 全绿。
 
-**下一步：M4 剩余项（按 roadmap 顺序）**：`yr/core/math.h`（Transform 所需子集）→ Transform 层级
-（local/global + 脏标记）→ `NodePath` → `MainLoop` 14 阶段 → 固定步长 → headless 平台 →
-`FrameStats` → `apps/tick_sandbox`（M4 可运行物）→ 10000 帧集成测试；process 分组 / 暂停 /
-physics process 视需要再补。
-
-**动笔前读**：`01-architecture.md` §4.6 / §5（帧阶段）与 `04-godot-study.md` 的 "Node 生命周期" 行。
+**M4 已补齐（2026-10-17）**：最小数学库（`yr/math`）→ Transform 层级（position 单一数据源 + 脏标记）
+→ `MainLoop` 14 阶段与四安全点接线 → 固定步长 / spiral / `timeScale` / `paused` →
+`FrameStats` → `Engine` + `apps/runtime_headless`（M4 可运行物）→ 10000 帧集成测试。`NodePath` 与独立
+headless 平台层留作非阻塞遗留；process 分组 / physics process 视需要再补。
 
 **Node-1 已决定的接口**（不再重开）：
 
@@ -110,8 +118,7 @@ physics process 视需要再补。
 2. `addChild(std::unique_ptr<Node>&&)` 失败时**不消费**参数，所有权归调用者。
 3. `queueFree` 的标志放 `Object` 还是 `Node` 留到 Node-3 决定。
 
-Node-1~4 已收口，之后按 `02-roadmap.md` M4 顶部清单逐项推进（Transform → MainLoop → headless →
-`tick_sandbox`），**不要一次实现整章**。
+Node-1~4 已收口，M4 整体也已完成；后续按 `02-roadmap.md` 的 M5 清单推进，**不要一次实现整章**。
 
 benchmark 数据和结论统一写到 `benchmarks/README.md`；不要新建额外笔记文件。
 

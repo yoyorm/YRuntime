@@ -149,7 +149,7 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 | M0~M1 | 3~4 周 | 工程地基、句柄、字符串、时间、性能测量 | `ctest` 全绿 + E1 数据 |
 | M2 | 2~3 周 | ObjectID/ObjectDB、Variant、最小 ClassDB、反射查看 | `yr_inspect --all` |
 | M3 | 1~2 周 | 单线程 EventBus（Subscription/post/flush/重入）；MessageQueue 推迟 | 确定性重放 + 1000 事件测试 |
-| M4 | 3~4 周 | Node、SceneTree、MainLoop、延迟删除、headless tick | 10000 帧 `tick_sandbox` |
+| M4 | 3~4 周 | Node、SceneTree、MainLoop、延迟删除、headless tick | `yr_runtime_headless --frames N` |
 
 按 5~8 小时/周计算，M4 应在项目开始后约第 7~10 周出现，这个位置合理。M2 超过 3 周时，应砍掉方法绑定、复杂 Variant 类型和工具输出细节，而不是继续推迟 M4。
 
@@ -296,22 +296,57 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 > ASan 用例、detach 保留所有权跳过、重入、process 期间 flush 拒绝、空树、多帧确定性；
 > Debug/Release/ASan 全绿。
 > **Node-4 范围外（= M4 剩余项）**：Transform 层级、`NodePath`、MainLoop 14 阶段、固定步长、
-> headless 平台、`FrameStats`、`tick_sandbox`、10000 帧集成测试，以及 process 分组/`setProcess`/暂停/physics。
+> headless 平台、`FrameStats`、Engine/runtime_headless、10000 帧集成测试，以及 process 分组/`setProcess`/暂停/physics。
 
-- [ ] **（从 M1 推来）** `yr/core/math.h`：只做 Transform 需要的部分（`Vec3` + `Mat4` + TRS 合成 + 求逆）；不要一次写全（D4）
+- [x] **（从 M1 推来）** 最小数学库：只做 Transform 需要的部分（`Vec3` + `Mat4` + 平移合成）；实际落在 `yr/math`（`yr::math`，而非 roadmap 早先写的 `yr/core`）✅ 2026-10-16
 - [ ] **（从 M1 推来，可选）** `yr/core/sparse_set.h`：**只在 S3（ECS 数据层）真要做时才写**。Transform 用普通 SoA 数组就够，不必先造 SparseSet
-- [ ] `yr/scene/node_path.h`：`NodePath`（`"Root/Level/Player"` 解析、相对路径 `../`）
-- [ ] `yr/scene/node.h/.cpp`：`Node`（父子关系、`add_child`/`remove_child`、`queue_free`、`is_inside_tree`、`get_node(path)`、名字唯一性）
-- [ ] 生命周期通知：`kEnterTree` / `kReady`（后序）/ `kProcess`（前序）/ `kPhysicsProcess` / `kExitTree`，顺序写进文档并用测试锁定
-- [ ] `yr/scene/scene_tree.h/.cpp`：`SceneTree`（拥有 root、遍历派发、待处理队列、`flush_deletions`、`SceneTreeTimer`）
-- [ ] Transform 层级：`local_transform` + `global_transform`，脏标记 + 向下传播；**平行 SoA 数组**（为 M10 并行与 M5 快照抽取铺路）
-- [ ] `yr/engine/main_loop.h/.cpp`：按 §5 的 14 个阶段实现（本阶段只填 0/2/3/5/7/9/13，其余留空钩子）
-- [ ] 固定步长累加器 + spiral-of-death 保护（单帧最多 N 次 physics step）+ `time_scale` + `paused`
-- [ ] `yr/engine/engine.h/.cpp`：`Engine`（装配、显式启停顺序、`FrameStats`）
-- [ ] `yr/engine/frame_stats.h`：每阶段耗时（`Clock` 采样）+ 每 N 帧打印 + 可导出 CSV
-- [ ] headless 平台层：`yr/platform/headless.h`（无窗口、输入从 stdin/脚本注入、可 `--frames N` 后自动退出）——**这让 CI 能跑集成测试**
-- [ ] `apps/tick_sandbox`：一个 demo，脚本化生成/销毁节点、打印树、跑 N 帧（**M4 的"可运行物"**）
-- [ ] 集成测试：跑 10000 帧 → 断言节点数、事件数、无泄漏、ObjectDB 清空
+- [ ] `yr/scene/node_path.h`：`NodePath`（`"Root/Level/Player"` 解析、相对路径 `../`）——**未做**，非 M4 可运行物阻塞项
+- [x] `yr/scene/node.h/.cpp`：`Node`（父子关系、`addChild`/`removeChild`/`detach`、`queueFree`、`isInsideTree`、`setPosition`）；`get_node(path)` 与名字唯一性未做 ✅ Node-1~4（2026-10-12 ~ 10-15）
+- [x] 生命周期：`onEnterTree`（前序）/ `onReady`（后序、一生一次）/ `onUpdate`（前序）/ `onExitTree`（后序倒序），顺序由测试锁定；用 protected virtual 回调而非 `notification(uint32_t)` 编号 ✅ 2026-10-13 ~ 10-15
+- [x] `yr/scene/scene_tree.h/.cpp`：`SceneTree`（拥有 root、`process` 前序快照、`refreshTransforms`、`flushDeletions`）；`SceneTreeTimer` 推到 M5 ✅
+- [x] Transform 层级：`position` 单一数据源 + `Handle<TransformData>` 槽 + 脏标记向下传播，**降级为仅平移**（roadmap 降级方案）✅ 2026-10-16
+- [x] `yr/engine/main_loop.h/.cpp` + `clock.h`：§5 的 14 个阶段（空钩子保留），tick 编排 + 四安全点接线；`Clock` clamp 在采样侧 ✅ 2026-10-16 ~ 10-17
+- [x] 固定步长累加器 + spiral-of-death 保护（单帧最多 8 步 + fmod 截断 + warn-once）+ `timeScale` + `paused` ✅ 2026-10-17
+- [x] `yr/engine/engine.h/.cpp`：最小 `Engine`——组合拥有 `SceneTree`/`EventBus`/`Clock`/`MainLoop`，`run(maxFrames)` 用真实 `Clock` 驱动 `MainLoop::tick`；帧阶段顺序仍唯一定义在 `MainLoop` ✅ 2026-10-17
+- [x] `yr/engine/frame_stats.h/.cpp`：每阶段耗时（`ScopeTimer`）+ 环形窗口 + 每 N 帧打印 p50/p95/max + 可选极简 CSV ✅ 2026-10-17
+- [x] headless 可运行物：不单独建 `yr/platform/headless.h`，改由 `apps/runtime_headless --frames N` 直接以墙钟 `Clock` 驱动无窗口 tick；输入注入 / 脚本平台层推迟 ✅ 2026-10-17
+- [x] `apps/runtime_headless`：极薄正式 host，解析 `--frames N`，创建 Engine 跑 N 帧并打印 FrameStats 汇总 + ObjectDB 存活数（**M4 的"可运行物"**）✅ 2026-10-17
+- [x] 集成测试：跑 10000 帧（ASan 下 1000）→ 断言帧数、物理步数、事件数、中途删除、Transform 刷新、百分位、无泄漏 ✅ 2026-10-17
+
+### M4 收口总结（2026-10-17）
+
+**已完成（含一句关键决策）**
+
+- **Node-1~4**（`engine/scene/include/yr/scene/node.h`、`scene_tree.h`）：父子所有权用 `std::unique_ptr<Node>`，失败不消费参数；`Handle<TransformData>` 的生命周期 = 首次入树分配 / detach 保留 / Node 析构释放；重入树标脏；`queueFree` 走 `ObjectID` 删除队列，三个安全点（`process` / `refreshTransforms` / `flushDeletions`）互斥且显式由调用方按帧阶段排序。
+- **Transform 层级**：`position_` 是唯一可写数据源（`setPosition` 只标脏），`globalTransform()` 返回上次 `refreshTransforms` 的缓存；本阶段降级为仅平移（无旋转/缩放）。
+- **MainLoop**（`engine/engine/.../main_loop.h`、`clock.h`）：14 阶段骨架，本阶段接线 0/3/6/7/8/9/13（`beginFrame` 计数与累积、`EventBus::flush`、固定物理循环、`SceneTree::process`、`refreshTransforms`、`flushDeletions`、`FrameStats` 汇总）；阶段方法是 `protected virtual`，测试探针可覆写而不侵入生产代码；`Clock` 的 clamp（0.25s）放在采样侧，`tick(double)` 是最终注入点。
+- **时间**：累加器吃**缩放后的 gameDelta**（`timeScale`/`paused` 单规则：`effectiveTimeScale = paused ? 0 : timeScale`）；spiral 保护 = 单帧最多 8 步 + `fmod` 丢弃整步积压 + warn-once。
+- **FrameStats**（`engine/engine/.../frame_stats.h/.cpp`）：MainLoop **组合**持有，`stats()` 访问；`ScopeTimer` 对 14 阶段前后采样，4096 环形窗口，每 1000 帧打印已接线阶段的 p50/p95/max；CSV 极简附加（`frame,total_ns,physics_steps`，默认关闭）。
+- **Engine / runtime_headless**（`engine/engine/.../engine.h/.cpp`、`apps/runtime_headless`）：`Engine` 组合拥有 `SceneTree` + 局部 `EventBus` + `Clock` + `MainLoop`（声明顺序保证 `MainLoop` 最先析构、`SceneTree` 最后析构），`run(maxFrames)` 用真实 `Clock` 驱动 `MainLoop::tick`，到帧数上限或 `shouldQuit()` 退出；host 只解析 `--frames N`、创建 Engine 并报告 FrameStats 汇总，不生成演示场景。**阶段顺序仍唯一定义在 `MainLoop`，Engine 不复制。**
+- **10000 帧集成测试**（`tests/integration`）：固定 `1/60` 确定性推进，一次覆盖帧数 / 物理步数 / 事件顺序 / 中途删除 / Transform 刷新 / FrameStats 百分位 / ObjectDB 归零。
+
+**与 Godot 的对照要点**
+
+- Godot 的 `MainLoop`（`main/main.cpp` 的 `Main::iteration()`）是**帧骨架**，但 YRuntime 不把它当"世界接口"——SceneTree 只经 `process/refreshTransforms/flushDeletions` 三个显式安全点被驱动，没有隐藏的遍历。
+- Godot 把安全点分散在 `SceneTree` 与 `MessageQueue` 内部；YRuntime 把它们**显式写在骨架层**（阶段 2/3/8/9），顺序即正确性。
+- Godot 的 `MainTimerSync`（固定步长 + 追帧上限）对应 YRuntime 的累加器 + spiral 截断；差异是 YRuntime 的累加器消费缩放后 delta，暂停即 timeScale 0。
+
+**测试规模与三配置**
+
+| 配置 | 结果 | 备注 |
+|---|---|---|
+| Debug | 290/290 | 集成测试 10000 帧 |
+| Release | 281/281 | 集成测试 10000 帧；DEBUG 断言的用例在 Release 下不计入 |
+| ASan+UBSan | 290/290 | 集成测试经 `YR_INTEGRATION_FRAMES` 编译宏降到 1000 帧 |
+
+**M4 剩余 / 遗留（不阻塞收口）**
+
+- 未接线阶段 2/5/10/11/12 仍是空钩子（`flush_messages` / `pre_physics` / `extract_render` / `present` / `collect_garbage`）。
+- `MessageQueue` 推迟（依赖方法绑定 + 阶段 2 安全点）；`onPhysicsUpdate` 未加（无消费者）；`Object::notification` 编号体系未引入。
+- `NodePath`、名字唯一性、`get_node(path)`、独立 headless 平台层未做。
+- Transform 仅平移；CSV 仅 total + physics 步数（完整每阶段列与绘图归 M11）。
+
+**下一步（按路线图）**：进入 **M5 · 渲染契约与 NullBackend**——`yr_render_iface`（`RenderSnapshot`/`RendererBackend` 纯 POD 契约）、`yr_render_null`，以及 `yr/engine/render_extract.h/.cpp` 把阶段 10 接上 `SceneTree → RenderSnapshot` 的单向抽取；快照 dump/replay 作为契约完备性验收。
 
 **验收标准**
 - **生命周期顺序测试**：嵌套 3 层树，`_ready` 后序 / `_process` 前序 / `_exit_tree` 顺序，逐条断言。
@@ -323,7 +358,7 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 - 10000 帧 headless 运行：ASan+UBSan 干净、ObjectDB 归零、帧耗时标准差合理（打印 p50/p95/max）。
 - 固定步长：把 `real_delta` 人为抖动（模拟卡顿），physics 步数依然正确（写测试）。
 
-**产出物**：`apps/tick_sandbox` 录屏（终端动画）+ `FrameStats` CSV。帧阶段顺序的定义写在 `01-architecture.md` §5，代码里的注释指向它。
+**产出物**：`yr_runtime_headless --frames N` 终端输出 + `FrameStats` CSV。帧阶段顺序的定义写在 `01-architecture.md` §5，代码里的注释指向它。
 **学习点**：组合模式、树遍历与迭代器失效、脏标记、通知模式、固定步长积分、性能采样、RAII 与延迟销毁。
 **常见坑**：① `add_child` 时忘记设置 parent / 忘记派发 `kEnterTree` 到整棵子树；② `queue_free` 的 double free（父节点删了，子节点也在待删列表）；③ `get_node(path)` 每次都做字符串解析（缓存 `NodePath` 解析结果）；④ Transform 脏标记向上还是向下传播搞反；⑤ 暂停时 `SceneTreeTimer` 是否继续走（Godot 有 `process_always`/`process_in_physics` 标志，想清楚再实现）。
 **Godot 对照**：`scene/main/node.h` + `node.cpp`（`_propagate_ready`/`_propagate_enter_tree`/`_propagate_exit_tree`/`queue_free`）、`scene/main/scene_tree.h/.cpp`（`process`/`physics_process`/`flush_transform_notifications`）、`scene/main/scene_tree.h:57`（`SceneTreeTimer`）、`main/main.cpp`（`Main::iteration()` —— **一帧的权威顺序，M4 必读**）、`main/main.h`。
@@ -437,7 +472,7 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 - [ ] 版本兼容：`format_version` + 未知属性 warning 跳过 + 缺失属性用默认值 + migrator 链（写一个 v0→v1 的假迁移做测试）
 - [ ] `tools/yr_scene_conv`：文本 ↔ 二进制互转 + `--validate`
 - [ ] 测试：round-trip（save→load→save，两次输出**逐字节相同**）、手写文件加载、未知属性容忍、破坏性变更迁移、循环引用、深层嵌套
-- [ ] 把 M4 的 `tick_sandbox` 场景改成从 `.yrscn` 加载
+- [ ] 把 M4 的 headless 运行改成从 `.yrscn` 加载场景
 
 **验收标准**
 - **确定性 round-trip**：`yr_scene_conv a.yrscn → a.yrscnb → b.yrscn`，`diff a.yrscn b.yrscn` 为空；`save→load→save` 逐字节一致。（这条最难，也最能证明设计正确）
@@ -502,7 +537,7 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 - [ ] 线程安全审计：给所有"仅主线程"的 API 加 `YR_ASSERT(on_main_thread())`
 - [ ] **内存序决策写进 `yr/job/` 的头文件注释**：哪个 atomic 用哪个 order、为什么。这类信息离开代码就会失效，不适合放文档
 - [ ] benchmark：`benchmarks/bench_jobs.cpp`（1k/10k/100k 个任务的串行 vs 并行；不同 batch size 的曲线）
-- [ ] TSan preset 跑全部测试 + `tick_sandbox` 10000 帧
+- [ ] TSan preset 跑全部测试 + `runtime_headless` 10000 帧
 
 **验收标准**
 - TSan 下全部测试 + 10000 帧集成测试**零报告**（这一条不过就不算完成）。
@@ -524,7 +559,7 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 **目标**：让项目从"一堆 C++ 代码"变成"有开发流程的引擎环境"，并完成作品包装。
 
 - [ ] `tools/yr_pack`：`assets/` → `.yrpak`（manifest(JSON/二进制) + blob 区 + 内容哈希 + 版本号）；对照 Godot PCK
-- [ ] `PakFileAccess`：Runtime 从 `.yrpak` 加载；`--pak` 启动参数；验证 `tick_sandbox` / `render_demo` 能完全从 pak 跑起来
+- [ ] `PakFileAccess`：Runtime 从 `.yrpak` 加载；`--pak` 启动参数；验证 `runtime_headless` / `render_demo` 能完全从 pak 跑起来
 - [ ] 资源导入管线雏形：`assets_src/`（源）→ `yr_pack` 转换/压缩 → `assets/`（cooked），写清"为什么需要 cook"
 - [ ] 性能：接入 `perf` 工作流文档 + 可选 Tracy（submodule）；FrameStats 导出 CSV + 一个 Python 绘图脚本
 - [ ] 调试文档：`.gdbinit`、常用断点配方、core dump 分析、ASan 报告解读、Catch2 `--break`
@@ -538,7 +573,7 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 **验收标准**
 - `apps/render_demo --pak game.yrpak` 完全从 pak 启动运行，`assets/` 目录不存在也能跑。
 - CI：build + ctest + format + 架构门禁全绿。（clang-tidy / 覆盖率若做了就加上，没做不阻塞）
-- 一个完全陌生的开发者按 README 能在 15 分钟内构建并跑起两个可运行物（`tick_sandbox` / `render_demo`）（**找人实测一次**）。
+- 一个完全陌生的开发者按 README 能在 15 分钟内构建并跑起两个可运行物（`runtime_headless` / `render_demo`）（**找人实测一次**）。
 - `doc/` 与代码一致：架构图是最新的、`06-decisions.md` 收录了全部架构级取舍、`benchmarks/README.md` 有数据。
 
 **产出物**：完整可展示仓库 + 工具（+ 你想写的博客）。

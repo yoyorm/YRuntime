@@ -44,7 +44,7 @@ graph TD
     RNULL["yr_render_null"]
     RVK["yr_render_vulkan<br/>最小重写 + 选择性借鉴 Yo_Renderer 底层"]
 
-    APPS["apps/tick_sandbox<br/>apps/render_demo"]
+    APPS["apps/runtime_headless<br/>apps/render_demo"]
     TOOLS["tools/yr_pack · yr_scene_conv · yr_inspect"]
     TESTS["tests/ 每层一个 Catch2 target"]
 
@@ -112,7 +112,7 @@ YRuntime/
 │       ├── null/
 │       └── vulkan/
 ├── apps/
-│   ├── tick_sandbox/           # M4：headless 世界 tick 10000 帧
+│   ├── runtime_headless/       # M4：极薄正式 host（--frames N，Engine 驱动）
 │   └── render_demo/            # M7：Runtime 驱动的画面（首个主要作品节点）
 ├── tools/
 │   ├── yr_pack/                # assets/ → .yrpak
@@ -631,25 +631,24 @@ std::unique_ptr<RendererBackend> create_null_backend();       // 工厂在各自
 
 ```cpp
 namespace yr::engine {
-struct EngineConfig { Path project_root; bool headless; std::string renderer_backend; uint32_t job_threads; ... };
-
-class Engine {                                    // 组装并拥有所有子系统，控制启停顺序
+class Engine {                                    // 组合拥有子系统，用声明顺序控制析构顺序
  public:
-  static Engine& instance();                      // 唯一允许的第二个全局单例（ADR D-??）
-  bool initialize(const EngineConfig&);
-  int run();                                      // 主循环，返回退出码
-  void shutdown();                                // **顺序与 initialize 严格相反**，写在文档里
-  [[nodiscard]] scene::SceneTree& tree();
-  [[nodiscard]] asset::AssetDatabase& assets();
-  [[nodiscard]] evt::EventBus& events();               // 可持有自己的总线；默认入口是 globalEventBus()
-  [[nodiscard]] job::JobSystem& jobs();
-  [[nodiscard]] render::RendererBackend* renderer();   // headless 时为 NullBackend 或 nullptr
-  [[nodiscard]] FrameStats& stats();
+  Engine() noexcept;
+  void run(std::uint64_t maxFrames);              // 每帧 MainLoop::tick(Clock::nextDelta())，到上限或 shouldQuit()
+  [[nodiscard]] scene::SceneTree& sceneTree();
+  [[nodiscard]] evt::EventBus& events();
+  [[nodiscard]] MainLoop& mainLoop();
 };
 }
 ```
 
-**启停顺序必须是显式文档**（初始化：core/log → ClassDB → Job → Asset → SceneTree → Renderer → 加载首场景；
+当前为最小 headless 版本：`Engine` 直接组合拥有 `SceneTree` / `EventBus` / `Clock` / `MainLoop`，
+成员声明顺序 `sceneTree_ → eventBus_ → clock_ → mainLoop_`，析构逆序，保证 `MainLoop` 最先析构、
+`SceneTree` 最后析构；`mainLoop_` 构造时注入前两者且不拥有它们。`EngineConfig`、全局单例、
+Asset/Job/Renderer 装配与显式 `initialize`/`shutdown` 顺序推迟到确有消费者时再加入。
+**帧阶段顺序仍唯一定义在 `MainLoop`，`Engine` 不复制阶段编排。**
+
+**启停顺序必须是显式文档**（未来完整版初始化：core/log → ClassDB → Job → Asset → SceneTree → Renderer → 加载首场景；
 关闭：反序）。90% 的引擎启动崩溃来自顺序错误。
 
 ---

@@ -133,7 +133,7 @@ TEST_CASE("Node: queue_free during own kProcess is deferred to phase 9", "[scene
 |---|---|---|---|
 | 单元测试 | `tests/<layer>/` | 每次构建 + CI | 语义正确 |
 | 集成测试 | `tests/integration/`（如"跑 10000 帧 headless"） | CI | 系统协同、泄漏、稳定性 |
-| headless scene simulation | `apps/tick_sandbox` 跑 10000 帧（创建/删除/移动 Node，ObjectDB 归零） | CI | 证明 Runtime 真能承载世界、生命周期与删除安全 |
+| headless scene simulation | `yr_runtime_headless --frames N` 跑 10000 帧（创建/删除/移动 Node，ObjectDB 归零） | CI | 证明 Runtime 真能承载世界、生命周期与删除安全 |
 | 快照重放门禁 | `apps/render_demo --dump-snapshot` / `--replay-snapshot` + `NullBackend` 确定性统计 | CI | 证明渲染契约完备、与后端解耦 |
 | benchmark | `benchmarks/` | **手动**（不进 CI，太慢且噪声大） | 性能判断，产出报告 |
 
@@ -337,7 +337,7 @@ handler 目前非线程安全，约定在启动线程前设置（M10 修）。
 | `format` | `clang-format-18 --dry-run -Werror` 全仓库 | push + PR |
 | `lint` | `tools/check_deps.py`（反向依赖 + 禁用符号）；clang-tidy 可选 | push + PR |
 | `coverage` | gcovr → 上传 + 徽章（M11，**可选**：只统计、不做门禁） | push to master |
-| `sandbox` | 构建 `apps/tick_sandbox` + 跑 headless 10000 帧 simulation + `NullBackend` 快照 dump/replay（M5 起；Vulkan 路径不在无 GPU runner 跑） | push + PR |
+| `sandbox` | 构建 `apps/runtime_headless` + 跑 headless 10000 帧 simulation + `NullBackend` 快照 dump/replay（M5 起；Vulkan 路径不在无 GPU runner 跑） | push + PR |
 
 要求：**CI 必须能在无 GPU、无窗口、无网络的 runner 上全绿**（这就是 headless-first 的红利）。
 Vulkan 后端 target 用 CMake option `YR_BUILD_VULKAN_BACKEND=OFF` 默认关闭，CI 里不构建。
@@ -407,5 +407,5 @@ build/<preset>/assets/   # 构建时拷贝（或 yr_pack 产物 .yrpak）
 这些信息分别由 **commit message 正文**（高频理由）、**ADR**（架构取舍）、**代码注释**（离开代码就会失效的细节，如内存序、帧阶段顺序、快照字段单位）承载。
 
 **根 README 的最小结构**（M0 建骨架，M7/M11 补内容）：
-项目一句话 → 状态与里程碑进度表 → 架构图 → `tick_sandbox` / `render_demo` 的 GIF → 构建与运行（三条命令）→
+项目一句话 → 状态与里程碑进度表 → 架构图 → `runtime_headless` 终端输出 / `render_demo` 的 GIF → 构建与运行（三条命令）→
 模块说明表 → 测试与 CI 徽章 → 文档索引 → 致谢/参考。

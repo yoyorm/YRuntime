@@ -159,7 +159,7 @@ graph LR
     GD["GodotDev/godot<br/>4.8-dev 源码"] -.->|"只读参照系"| ALL["所有模块的设计取舍"]
     CORE --> RUN["YRuntime Runtime"]
     VK --> RUN
-    RUN --> DEMO["apps/tick_sandbox<br/>apps/render_demo"]
+    RUN --> DEMO["apps/runtime_headless<br/>apps/render_demo"]
 ```
 
 - **yo_lib**：`logger` / `yo_assert` / `yo_sparse_set` / `yo_eventsys` / `yo_mtqueue` / `yo_timer` 是 M0~M10 的起点。
