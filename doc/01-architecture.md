@@ -28,10 +28,12 @@
 
 ```mermaid
 graph TD
-    CORE["yr_core<br/><i>yr::core</i><br/>Handle·SlotMap·SparseSet·StringId<br/>容器·Log·Assert·Time/Clock·Math"]
+    CORE["yr_core<br/><i>yr::core</i><br/>Handle·SlotMap·StringId·Log·Assert·Time/Clock<br/>容器（SparseSet 规划中）"]
+
+    MATH["yr_math<br/><i>yr::math</i><br/>Vec3·Mat4（仅平移所需）"]
 
     JOB["yr_job<br/><i>yr::job</i><br/>ThreadPool·TaskGraph"]
-    OBJ["yr_object<br/><i>yr::obj</i><br/>Object·ObjectID·ClassDB<br/>PropertyInfo·Variant·Ref"]
+    OBJ["yr_object<br/><i>yr::obj</i><br/>Object·ObjectID·ClassDB<br/>PropertyInfo·Variant<br/>Ref（规划中）"]
     RIF["yr_render_iface<br/><i>yr::render</i><br/>RenderSnapshot · RendererBackend<br/>纯 POD 契约，零 Runtime 依赖"]
 
     EVT["yr_event<br/><i>yr::evt</i><br/>EventBus（单线程）·MessageQueue（推迟）"]
@@ -39,16 +41,18 @@ graph TD
     AST["yr_asset<br/><i>yr::asset</i><br/>Resource·AssetDatabase·Loader/Saver·Pak"]
 
     SCN["yr_scene<br/><i>yr::scene</i><br/>Node·SceneTree·PackedScene·SceneSerializer"]
-    ENG["yr_engine<br/><i>yr::engine</i><br/>Engine·MainLoop·World·FrameStats·RenderExtract"]
+    ENG["yr_engine<br/><i>yr::engine</i><br/>Engine·MainLoop·FrameStats<br/>World·RenderExtract（规划中）"]
 
     RNULL["yr_render_null"]
     RVK["yr_render_vulkan<br/>最小重写 + 选择性借鉴 Yo_Renderer 底层"]
 
-    APPS["apps/runtime_headless<br/>apps/render_demo"]
-    TOOLS["tools/yr_pack · yr_scene_conv · yr_inspect"]
+    APPS["apps/runtime_headless（已实现）<br/>apps/render_demo（M7 规划）"]
+    TOOLS["tools/yr_pack · yr_scene_conv · yr_inspect（规划中）"]
     TESTS["tests/ 每层一个 Catch2 target"]
 
     CORE --> JOB & OBJ & RIF
+    CORE --> MATH
+    MATH --> OBJ & SCN
     OBJ --> EVT & SER
     CORE --> AST
     OBJ --> AST
@@ -70,12 +74,13 @@ graph TD
 | target | namespace | 依赖 | 一句话职责 | 里程碑 |
 |---|---|---|---|---|
 | `yr_core` | `yr::core` | 仅 std | 句柄、容器、字符串驻留、日志、断言、时间 | M0~M1 |
+| `yr_math` | `yr::math` | core | 最小数学库（Vec3 / Mat4，仅平移所需） | M4 |
 | `yr_job` | `yr::job` | core | 线程池 + 任务依赖图 | M10 |
-| `yr_object` | `yr::obj` | core | 对象模型 + 反射 + 动态值 | M1~M2 |
+| `yr_object` | `yr::obj` | core, math（Variant 带 Vec3） | 对象模型 + 反射 + 动态值 | M1~M2 |
 | `yr_event` | `yr::evt` | object | 类型化同步事件总线（单线程）；延迟调用队列推迟 | M3 |
 | `yr_serialize` | `yr::ser` | object | 值/属性的编解码与格式后端 | M8 |
 | `yr_asset` | `yr::asset` | object, job | 资源注册、加载、卸载、pak | M9 |
-| `yr_scene` | `yr::scene` | object, event, serialize, asset | 节点树 + 场景树 + 场景存读档 | M4, M8 |
+| `yr_scene` | `yr::scene` | object, event, serialize, asset, math | 节点树 + 场景树 + 场景存读档 | M4, M8 |
 | `yr_engine` | `yr::engine` | 以上全部 + render_iface | 主循环、世界、帧统计、快照抽取 | M4, M5/M7 |
 | `yr_render_iface` | `yr::render` | core | 渲染契约（**这是解耦的关键层**） | M5 |
 | `yr_render_null` | `yr::render` | iface | 空后端，CI/测试用 | M5 |
@@ -348,6 +353,10 @@ class MessageQueue {                                     // 延迟调用：任�
 
 **为什么存在**：游戏世界需要**层级**（角色手里拿着剑，剑跟着手动）、需要**统一的生命周期通知**、需要**可整体存读档的单元（场景）**。
 
+> ⚠️ **以下 C++ 片段是规划草图，不是现状。** 其中 `add_child(Ref<Node>)`、`path()`、`request_ready()`、`SceneTreeTimer`
+> 等签名与实际实现不同（例如实际用 `addChild(std::unique_ptr<Node>&&)`、`queueFree()`，无 `path()`/`requestReady()`）。
+> **实际 API 与契约以 `doc/layers/scene.md` 为准。**
+
 ```cpp
 namespace yr::scene {
 class Node : public yr::obj::Object {
@@ -417,6 +426,9 @@ editor 相关逻辑、process thread groups、physics interpolation 均不进入
 
 **为什么存在**：引擎的"正确性"很大程度上就是**顺序的正确性**。同一批逻辑，换个顺序结果就不同（且难查）。
 把顺序显式写成代码 + 文档，是 Runtime 的核心价值。
+
+> ⚠️ **以下 C++ 片段是规划草图，不是现状。** 实际 `Clock` 只负责采样（`nextDelta()`，无 `begin_frame()`/`game_delta()`），
+> `MainLoop::tick(double realDelta)` 接收注入的 delta，`World` 不存在。**实际 API 与契约以 `doc/layers/engine.md` 为准。**
 
 ```cpp
 namespace yr::core {
@@ -659,24 +671,24 @@ Asset/Job/Renderer 装配与显式 `initialize`/`shutdown` 顺序推迟到确有
 
 | # | 阶段 | 内容 | 线程 | 可修改场景树？ |
 |---|---|---|---|---|
-| 0 | `begin_frame` | `Clock` 采样墙钟、算 `game_delta`、累加 physics accumulator | 主 | 否 |
-| 1 | `poll_input` | 平台输入 → `InputEvent`（headless 下从脚本/命令注入） | 主 | 否 |
+| 0 | `begin_frame` | 算 `game_delta`（`real_delta × effectiveTimeScale`）、累加 physics accumulator；墙钟采样在 `MainLoop` 外层的 `Engine::run` 里由 `Clock::nextDelta()` 完成 | 主 | 否 |
+| 1 | `poll_input` | 平台输入 → `InputEvent`（**未实现，空钩子**） | 主 | 否 |
 | 2 | `flush_messages` | `MessageQueue::flush()`（上一帧的 deferred call；**尚未实现**，见 §4.5） | 主 | 是（安全点） |
 | 3 | `flush_events` | `EventBus::flush()`（上一帧 post 的事件） | 主 | 是（安全点） |
-| 4 | `pump_assets` | `AssetDatabase::pump()`：完成异步加载回调、失败上报 | 主 | 是 |
-| 5 | `pre_physics` | 派发 `kPrePhysicsProcess` | 主 | 否（只改数据） |
-| 6 | `physics_step` ×N | 固定步长循环：`kPhysicsProcess` → 物理后端 → 碰撞事件 post | 主（后端可并行） | 否 |
-| 7 | `process` | 派发 `kProcess`（游戏逻辑主战场） | 主 | 否（改结构用 queue_free/add_child 延迟） |
-| 8 | `post_process` | Transform 层级刷新（脏标记 → 并行 job）、动画采样、AI | 主 + job | 否 |
-| 9 | `apply_structure` | 执行 `add_child` 待处理队列 + `flush_deletions()`（**唯一的结构性修改点**） | 主 | **是** |
-| 10 | `extract_render` | `RenderExtractSystem`：SceneTree → `RenderSnapshot` | 主（可并行剔除） | 否 |
-| 11 | `present` | `RendererBackend::present(snapshot)` | 主（或渲染线程） | 否 |
-| 12 | `collect_garbage` | 资源 GC、延迟销毁 GPU 资源、`Ref` 归零对象回收 | 主 | 否 |
-| 13 | `end_frame` | `FrameStats` 汇总、日志 flush、检查 quit 请求 | 主 | 否 |
+| 4 | `pump_assets` | `AssetDatabase::pump()`：完成异步加载回调、失败上报（**未实现，空钩子**） | 主 | 是 |
+| 5 | `pre_physics` | 派发 `kPrePhysicsProcess`（**未实现，空钩子**） | 主 | 否（只改数据） |
+| 6 | `physics_step` ×N | 固定步长循环：每步调用 `onPhysicsStep`（默认 no-op）；物理后端 / `kPhysicsProcess` / 碰撞事件 **规划中** | 主（后端可并行） | 否 |
+| 7 | `process` | 派发 `onUpdate`（`SceneTree::process`，前序 ObjectID 快照） | 主 | 否（改结构用 `queueFree` 延迟） |
+| 8 | `post_process` | `SceneTree::refreshTransforms()`：单线程顺序刷新 Transform 缓存；并行 job / 动画采样 / AI **规划中** | 主（并行规划中） | 否 |
+| 9 | `apply_structure` | 执行 `flushDeletions()`（**唯一已实现的结构性修改点**）；`add_child` 待处理队列 **规划中** | 主 | **是** |
+| 10 | `extract_render` | `RenderExtractSystem`：SceneTree → `RenderSnapshot`（**未实现，空钩子**） | 主（可并行剔除） | 否 |
+| 11 | `present` | `RendererBackend::present(snapshot)`（**未实现，空钩子**） | 主（或渲染线程） | 否 |
+| 12 | `collect_garbage` | 资源 GC、延迟销毁 GPU 资源、`Ref` 归零对象回收（**未实现，空钩子**） | 主 | 否 |
+| 13 | `end_frame` | `FrameStats` 汇总（整帧 / 各阶段 / 物理步数入环）；日志 flush 规划中，quit 决策在 `MainLoop` 外层 | 主 | 否 |
 
 > **设计要点**：所有"结构性修改"（增删节点）都收敛到 **阶段 9**。阶段 5~8 里的逻辑只能改**数据**，
-> 想改结构就 `queue_free()` / `add_child()`（后者也进待处理队列）。
-> 这一条规则消灭了 80% 的"迭代器失效"类 bug，也让多线程变得可能（阶段 8 可以安全并行，因为没人改结构）。
+> 想改结构就 `queueFree()`（`add_child` 待处理队列规划中）。
+> 这一条规则消灭了 80% 的"迭代器失效"类 bug，也让多线程变得可能（阶段 8 未来可以安全并行，因为没人改结构）。
 
 ---
 
@@ -690,7 +702,7 @@ Asset/Job/Renderer 装配与显式 `initialize`/`shutdown` 顺序推迟到确有
 | `EventBus` | 进程（默认 `globalEventBus`）/ Engine | 读写 | 只能 `post` 到 MPSC 队列（M10 起） | 帧首合并 |
 | `AssetDatabase` 索引 | Asset | 读写 | 只读快照 | 加载任务只读路径表 |
 | 资源**原始字节/解码结果** | Job 内部 | 不碰 | 读写 | `pump()` 在主线程构造对象 |
-| `Transform3D` 数组（SoA） | Scene | 读 | **可并行写**（阶段 8） | 索引分片，无重叠 |
+| `Transform3D` 缓存（`TransformStore` + `Handle`） | Scene | 读写 | **禁止**（当前单线程顺序 DFS 刷新）；SoA 数组 + 阶段 8 并行写 **规划中** | — |
 | `RenderSnapshot` | Engine | 写（阶段 10） | 读（Backend） | 双缓冲 + fence/序号 |
 | `FrameStats` | Engine | 写 | 各线程写自己的槽 | 每线程独立 cacheline |
 

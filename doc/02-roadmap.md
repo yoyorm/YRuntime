@@ -106,7 +106,7 @@
 - [x] `yr/core/timer.h`：`Duration`/`TimePoint`（`std::chrono` 别名）+ `ScopeTimer`；完整 `Clock` 推迟到 M4 ✅ 2026-09-27
 - [x] `yr/core/object_id.h`：`ObjectID`（全局唯一 64-bit 强类型）；有效 ID 分配与 `ObjectDB` 实现留到 M2 ✅ 2026-10-01
 - [ ] `yr/core/math.h`：最小 `Vec2/Vec3/Vec4/Mat4/Transform3D/Quaternion`（决策 Q1；先做 Vec3 + Mat4 + Transform3D，其余按需）
-      ⏸ **已暂缓到 M4**：等 Transform 层级真正需要时再做（R3）
+      ⏸ **已暂缓到 M4**：等 Transform 层级真正需要时再做（R3）；实际落地为**独立层** `yr/math`（`yr::math`，见 M4 清单），不在 `yr/core`。
 - [x] 测试：Handle 失效检测、SlotMap erase 后旧 handle 失效、slot 复用 ABA、`clear()` 后旧 handle 不复活 ✅ 2026-09-26
 - [x] 测试：100,000 次 SlotMap 混合操作、StringId 驻留一致性与存储增长稳定性 ✅ 2026-09-30
 - [ ] **benchmark**：`benchmarks/bench_slot_map.cpp`（SlotMap vs `unordered_map` vs `vector+标记位`，测插入/查找/遍历三项）
@@ -321,27 +321,27 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 - **Transform 层级**：`position_` 是唯一可写数据源（`setPosition` 只标脏），`globalTransform()` 返回上次 `refreshTransforms` 的缓存；本阶段降级为仅平移（无旋转/缩放）。
 - **MainLoop**（`engine/engine/.../main_loop.h`、`clock.h`）：14 阶段骨架，本阶段接线 0/3/6/7/8/9/13（`beginFrame` 计数与累积、`EventBus::flush`、固定物理循环、`SceneTree::process`、`refreshTransforms`、`flushDeletions`、`FrameStats` 汇总）；阶段方法是 `protected virtual`，测试探针可覆写而不侵入生产代码；`Clock` 的 clamp（0.25s）放在采样侧，`tick(double)` 是最终注入点。
 - **时间**：累加器吃**缩放后的 gameDelta**（`timeScale`/`paused` 单规则：`effectiveTimeScale = paused ? 0 : timeScale`）；spiral 保护 = 单帧最多 8 步 + `fmod` 丢弃整步积压 + warn-once。
-- **FrameStats**（`engine/engine/.../frame_stats.h/.cpp`）：MainLoop **组合**持有，`stats()` 访问；`ScopeTimer` 对 14 阶段前后采样，4096 环形窗口，每 1000 帧打印已接线阶段的 p50/p95/max；CSV 极简附加（`frame,total_ns,physics_steps`，默认关闭）。
+- **FrameStats**（`engine/engine/.../frame_stats.h/.cpp`）：MainLoop **组合**持有，`stats()` 访问；`ScopeTimer` 对 14 阶段前后采样，4096 环形窗口，每 1000 帧打印 **total 的 p50/p95/max，各阶段只打 p50**；CSV 极简附加（`frame,total_ns,physics_steps`，默认关闭）。
 - **Engine / runtime_headless**（`engine/engine/.../engine.h/.cpp`、`apps/runtime_headless`）：`Engine` 组合拥有 `SceneTree` + 局部 `EventBus` + `Clock` + `MainLoop`（声明顺序保证 `MainLoop` 最先析构、`SceneTree` 最后析构），`run(maxFrames)` 用真实 `Clock` 驱动 `MainLoop::tick`，到帧数上限或 `shouldQuit()` 退出；host 只解析 `--frames N`、创建 Engine 并报告 FrameStats 汇总，不生成演示场景。**阶段顺序仍唯一定义在 `MainLoop`，Engine 不复制。**
 - **10000 帧集成测试**（`tests/integration`）：固定 `1/60` 确定性推进，一次覆盖帧数 / 物理步数 / 事件顺序 / 中途删除 / Transform 刷新 / FrameStats 百分位 / ObjectDB 归零。
 
 **与 Godot 的对照要点**
 
 - Godot 的 `MainLoop`（`main/main.cpp` 的 `Main::iteration()`）是**帧骨架**，但 YRuntime 不把它当"世界接口"——SceneTree 只经 `process/refreshTransforms/flushDeletions` 三个显式安全点被驱动，没有隐藏的遍历。
-- Godot 把安全点分散在 `SceneTree` 与 `MessageQueue` 内部；YRuntime 把它们**显式写在骨架层**（阶段 2/3/8/9），顺序即正确性。
+- Godot 把安全点分散在 `SceneTree` 与 `MessageQueue` 内部；YRuntime 把它们**显式写在骨架层**（阶段 3/7/8/9），顺序即正确性。
 - Godot 的 `MainTimerSync`（固定步长 + 追帧上限）对应 YRuntime 的累加器 + spiral 截断；差异是 YRuntime 的累加器消费缩放后 delta，暂停即 timeScale 0。
 
 **测试规模与三配置**
 
 | 配置 | 结果 | 备注 |
 |---|---|---|
-| Debug | 290/290 | 集成测试 10000 帧 |
-| Release | 281/281 | 集成测试 10000 帧；DEBUG 断言的用例在 Release 下不计入 |
-| ASan+UBSan | 290/290 | 集成测试经 `YR_INTEGRATION_FRAMES` 编译宏降到 1000 帧 |
+| Debug | 296/296 | 集成测试 10000 帧 |
+| Release | 287/287 | 集成测试 10000 帧；DEBUG 断言的用例在 Release 下不计入 |
+| ASan+UBSan | 296/296 | 集成测试经 `YR_INTEGRATION_FRAMES` 编译宏降到 1000 帧 |
 
 **M4 剩余 / 遗留（不阻塞收口）**
 
-- 未接线阶段 2/5/10/11/12 仍是空钩子（`flush_messages` / `pre_physics` / `extract_render` / `present` / `collect_garbage`）。
+- 未接线阶段 1/2/4/5/10/11/12 仍是空钩子（`poll_input` / `flush_messages` / `pump_assets` / `pre_physics` / `extract_render` / `present` / `collect_garbage`）。
 - `MessageQueue` 推迟（依赖方法绑定 + 阶段 2 安全点）；`onPhysicsUpdate` 未加（无消费者）；`Object::notification` 编号体系未引入。
 - `NodePath`、名字唯一性、`get_node(path)`、独立 headless 平台层未做。
 - Transform 仅平移；CSV 仅 total + physics 步数（完整每阶段列与绘图归 M11）。

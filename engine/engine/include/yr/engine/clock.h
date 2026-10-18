@@ -5,12 +5,8 @@
 namespace yr::engine {
 
   // 墙钟 delta 采样器。只负责采样：timeScale / paused 归 MainLoop，physics 累加器归 MainLoop。
-  //
-  // 真实时钟：nextDelta() 返回距上次调用的墙钟秒数，clamp 到 [0, maxDelta]。上限防止调试断点 /
-  // 挂起后单帧巨大 delta 冲垮固定步长累加器——clamp 是采样质量问题，因此放 Clock 侧。
-  //
-  // 测试注入：派生并覆写 now() 换成确定性时间序列；或直接对 MainLoop::tick(delta) 传值——
-  // tick 是最终注入点，不经 Clock，故不受 clamp 影响。
+  // clamp 到 [0, maxDelta] 是采样质量问题，故放这里；MainLoop::tick(delta) 是最终注入点，不经 Clock。
+  // 测试注入：派生覆写 now() 换成确定性序列，或直接对 tick(delta) 传值。
   class Clock {
   public:
     static constexpr double kDefaultMaxDelta = 0.25;

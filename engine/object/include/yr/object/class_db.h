@@ -10,10 +10,9 @@ namespace yr::obj {
 
   class Object;
 
-  // 进程级类注册表：yr::core::StringId 类名 → const ClassInfo*（非拥有）。
-  // 与 ObjectDB 同构：只做索引，不拥有被索引的静态元数据。
-  // ClassInfo 由各类自己的注册函数创建（函数内 static）；本类只登记它们的地址。
-  // 约定：注册只发生在启动期，之后 freeze()，此后 get/查询线程只读、无需加锁。
+  // 进程级类注册表：StringId 类名 → const ClassInfo*（非拥有），与 ObjectDB 同构：只索引、不拥有。
+  // ClassInfo 由各类注册函数创建（函数内 static），本类只登记其地址。
+  // 约定：注册只发生在启动期，之后 freeze()，此后查询线程只读、无需加锁。
   class ClassDB {
   public:
     ClassDB() = default;

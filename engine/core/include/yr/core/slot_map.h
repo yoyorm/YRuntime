@@ -39,9 +39,9 @@ namespace yr::core {
       const uint32_t pos = slot2dense_[slot];
       const uint32_t last = static_cast<uint32_t>(dense_.size()) - 1;
 
-      if (pos != last) { // 只有当被删的不是尾巴时才搬运
+      if (pos != last) {
         const uint32_t moved_slot = dense2slot_[last];
-        dense_[pos] = std::move(dense_[last]); // 比 swap 少一次 move
+        dense_[pos] = std::move(dense_[last]);
         dense2slot_[pos] = moved_slot;
         slot2dense_[moved_slot] = pos;
       }
@@ -93,7 +93,6 @@ namespace yr::core {
     [[nodiscard]] std::size_t size() const noexcept { return dense_.size(); }
     [[nodiscard]] bool empty() const noexcept { return dense_.empty(); }
 
-    /// 预留容量，避免增长过程中反复扩容搬移。
     void reserve(std::size_t n) {
       dense_.reserve(n);
       dense2slot_.reserve(n);
@@ -133,7 +132,7 @@ namespace yr::core {
     std::vector<uint64_t> generation_; // 默认gen = 1开始
     std::vector<uint32_t> slot2dense_;
     std::vector<uint32_t> dense2slot_;
-    std::vector<uint32_t> freelist_; // 空闲Slot
+    std::vector<uint32_t> freelist_;
   };
 
 } // namespace yr::core

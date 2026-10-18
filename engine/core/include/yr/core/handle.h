@@ -36,7 +36,7 @@ namespace yr::core {
     [[nodiscard]] constexpr uint64_t raw() const noexcept { return raw_; }
     [[nodiscard]] static constexpr Handle invalid() noexcept { return Handle{}; }
 
-    // 从裸值还原
+    // 从裸值还原，不做合法性校验
     [[nodiscard]] static constexpr Handle fromRaw(uint64_t raw) noexcept {
       Handle h;
       h.raw_ = raw;

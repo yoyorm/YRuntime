@@ -14,9 +14,9 @@ namespace yr::scene {
   // SceneTree：独占拥有 root，子树由 Node::children_ 级联拥有。setRoot 成功才接管所有权，
   // 先 enter 再 ready；clearRoot 与析构先 exit 再交还所有权。
   //
-  // Transform：持有 TransformStore，通过 refreshTransforms() 显式刷新。Node 只持有 Handle。
+  // Transform 由 TransformStore 集中持有，refreshTransforms() 显式刷新；Node 只持有 Handle。
   //
-  // TODO: requestReady 当前不实现。
+  // requestReady 当前不实现。
   class SceneTree {
   public:
     SceneTree() = default;
@@ -67,18 +67,15 @@ namespace yr::scene {
     // 前序收集 node 子树到 out。
     static void collectPreorder(const Node& node, std::vector<core::ObjectID>& out);
 
-    // 成员按声明逆序析构：root_ 在 transformStorage_ 之前声明，使 root_ 子树（~Node 会用
-    // transformOwner_ 归还槽）先于 transformStorage_ 销毁。
+    // root_ 声明在 transformStorage_ 之后，故析构逆序时 root_ 先销毁：~Node 仍需经
+    // transformOwner_ 归还槽，所以 transformStorage_ 必须活到最后。
     TransformStore transformStorage_;
 
     std::unique_ptr<Node> root_;
-    // 存 ObjectID 而非 Node*：节点可能已被级联删除，flush 时解析失败即跳过。
     std::vector<core::ObjectID> pendingDeletions_;
-    // flush 重入防护：exit 回调里再 flush 会让 removeChild 持有的迭代器失效。
+    // 三安全点互斥的重入标志：分别防 flushDeletions / process / refreshTransforms 重入。
     bool flushing_ = false;
-    // process 重入防护；并让 process 期间的 flushDeletions 早退。
     bool processing_ = false;
-    // transform 刷新重入防护；让 process / flushDeletions 期间的 refresh 早退。
     bool refreshing_ = false;
   };
 

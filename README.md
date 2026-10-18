@@ -25,9 +25,9 @@ Runtime，再以 renderer-neutral 的渲染契约把游戏状态接到渲染后�
 | `yr_object` | Object / ObjectDB / Variant / ClassDB |
 | `yr_event` | 单线程 EventBus |
 | `yr_scene` | Node / SceneTree |
-| `yr_engine` | Engine / MainLoop / World / RenderExtract |
-| `yr_render_iface` · `yr_render_null` · `yr_render_vulkan` | RenderSnapshot 契约、NullBackend、Vulkan 后端 |
-| `apps/` · `tools/` | demo 与打包 / 查看工具 |
+| `yr_engine` | Engine / MainLoop / FrameStats（`World`、`RenderExtract` 规划中） |
+| `yr_render_iface` · `yr_render_null` · `yr_render_vulkan` | RenderSnapshot 契约、NullBackend、Vulkan 后端（均规划中，M5 起） |
+| `apps/runtime_headless` | 正式 headless host（M4 可运行物）；`render_demo` 与 `tools/` 打包 / 查看工具规划中 |
 
 依赖方向由构建系统强制，完整分层见 [`doc/01-architecture.md`](doc/01-architecture.md)。
 
@@ -69,6 +69,7 @@ ctest --preset debug          # 测试
 | [`doc/START-HERE.md`](doc/START-HERE.md) | 现在在哪、下一步做什么 |
 | [`doc/00-vision.md`](doc/00-vision.md) | 定位、目标 / 非目标、成功判据 |
 | [`doc/01-architecture.md`](doc/01-architecture.md) | 分层、模块职责、帧循环、线程模型 |
+| [`doc/layers/`](doc/layers/) | 分层代码契约（core / math / object / event / scene / engine） |
 | [`doc/02-roadmap.md`](doc/02-roadmap.md) | 任务清单与验收标准 |
 | [`doc/README.md`](doc/README.md) | 全部文档索引 |
 

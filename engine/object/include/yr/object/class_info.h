@@ -9,11 +9,10 @@ namespace yr::obj {
 
   class Object;
 
-  // 单个类的元数据。只保存静态信息。
+  // 单个类的静态元数据。
   //
-  // 所有权：name_ 是驻留 yr::core::StringId；properties_ 是指向「静态 PropertyInfo 数组」的 span，
-  // 该数组必须比 ClassInfo 活得更久（手工注册时用函数内 static 数组，避开 SIOF）。
-  // factory 由注册代码提供；抽象类为 nullptr。它返回裸指针，所有权/回收交给 Ref（M2 后续）。
+  // properties_ 指向静态 PropertyInfo 数组，该数组必须比 ClassInfo 活得更久；factory 返回裸
+  // 指针，所有权交给调用方（未来是 Ref）。
   class ClassInfo {
   public:
     // 按类创建实例的工厂。返回裸 Object*（check_deps 禁裸 new，注册方用 make_unique/make_ref 实现）。

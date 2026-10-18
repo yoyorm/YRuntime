@@ -132,6 +132,11 @@ namespace yr::scene {
       return;
     }
 
+    YR_ASSERT_MSG(!flushing_, "SceneTree::process: cannot process while flushing deletions");
+    if (flushing_) {
+      return;
+    }
+
     // RAII 恢复 processing_，回调抛异常也不卡住标志。
     struct ProcessGuard {
       bool& flag;

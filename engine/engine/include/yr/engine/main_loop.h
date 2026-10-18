@@ -1,9 +1,7 @@
 #pragma once
 
 #include <array>
-#include <cstddef>
 #include <cstdint>
-
 #include <yr/core/timer.h>
 #include <yr/engine/frame_stats.h>
 #include <yr/engine/phase.h>
@@ -17,23 +15,14 @@ namespace yr::evt {
 
 namespace yr::engine {
 
-  // MainLoop：帧阶段序列的唯一权威实现。一次 tick = 一次 0→13。
+  // MainLoop：帧阶段序列的唯一权威实现，一次 tick = 一次 0→13。
   //
-  // 引用非拥有：SceneTree / EventBus 由装配者（未来 Engine 或测试）拥有，必须比 MainLoop
-  // 活得更久。不提供默认 globalEventBus 路径，避免隐藏的全局依赖。
+  // 引用非拥有：SceneTree / EventBus 由装配者拥有，必须比 MainLoop 活得更久；不提供默认
+  // globalEventBus 路径。只负责一帧内顺序，quit 标志由外层驱动，tick() 不读取它。
   //
-  // 只负责一帧内的顺序；while 循环与 --frames N 由外层驱动，tick() 不读取 quit 标志。
-  // 阶段方法为 protected virtual，便于测试探针记录顺序与后续扩展。
-  //
-  // 时间：realDelta_ 是本帧注入的墙钟秒数，gameDelta_ = realDelta_ * effectiveTimeScale()。
-  // 固定步长累加器消费 gameDelta_（timeScale=0 即暂停，物理 0 步），阶段 7 的 process 也收
-  // gameDelta_。timeScale / paused 由这里管理，Clock 只负责采样（见 clock.h）。
-  //
-  // 当前接线：beginFrame 递增帧计数并累积物理；tick 进入阶段 0 前暂存 realDelta；阶段 3/7/8/9
-  // 分别接 EventBus::flush / SceneTree::process / refreshTransforms / flushDeletions。
-  //
-  // FrameStats：tick 对 14 个阶段前后采样并记录整帧耗时，endFrame（阶段 13）把本帧数据写入
-  // 环形窗口、按间隔打印 p50/p95/max 并追加 CSV 行。
+  // 时间：gameDelta_ = realDelta_ * effectiveTimeScale()（paused 独立于 timeScale，恢复保留原
+  // scale）；固定步长累加器消费 gameDelta_，阶段 7 的 process 也收 gameDelta_。
+  // 阶段方法为 protected virtual，便于测试探针记录顺序与后续扩展。完整阶段表见 doc/layers/engine.md。
   class MainLoop {
   public:
     MainLoop(scene::SceneTree& tree, evt::EventBus& events) noexcept;

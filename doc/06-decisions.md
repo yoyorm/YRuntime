@@ -105,6 +105,9 @@
 > **2026-09-26 修订**：里程碑从 M1 推迟到 M4。理由：M1 里没有数学库的消费者，
 > 提前写 `Vec3/Mat4` 只能靠单元测试验证，属于造一个没人用的模块。M4 做 Transform 层级时它才有真实用途（R3）。
 > 决策本身（自研而非 GLM）不变。
+>
+> **2026-10-16 修订**：实际落地为**独立层** `yr/math`（`engine/math/`、命名空间 `yr::math`，`Vec3` + `Mat4`），
+> **不在 `yr/core`**；见 `02-roadmap.md` M4 清单与 `tools/check_deps.py` 的 `math` 层。下文 `yr/core/math.h` 的写法已过时。
 
 **决策**：`yr/core/math.h` 提供 `Vec2/Vec3/Vec4/Mat4/Quaternion/Transform3D`（值语义、`constexpr` 友好、无动态分配）。
 GLM 只出现在 `engine/render/vulkan/` 与 `apps/render_demo`，在快照边界处做一次显式转换。

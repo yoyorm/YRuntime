@@ -14,11 +14,9 @@
 
 namespace yr::evt {
 
-  // 类型化同步事件总线。
-  // - 每种事件类型 E 一张独立分表（type_index → deque<Entry>）；用 deque 保证 publish
-  //   回调中订阅同类型时不会移动正在执行的 std::function。
-  // - 回调以强类型 void(const E&) 公开，内部按 type_index 分区做类型擦除。
-  // - 仅主线程；主线程 assert / MPSC 见 roadmap §M3。
+  // 类型化同步事件总线，按 type_index 分区做类型擦除；仅主线程。
+  // 分表用 deque 存放 Entry：publish 回调中订阅同类型不会移动正在执行的 std::function。
+  // 详细语义（深度上限、inactive 清理、post/flush 双缓冲）见 doc/layers/event.md。
   class EventBus {
   public:
     EventBus() = default;

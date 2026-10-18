@@ -8,15 +8,14 @@
 
 namespace yr::scene {
 
-  // Transform 的最小状态（仅平移）。position 是唯一可写数据源（在 Node 中），本结构只保存
-  // 派生缓存与脏标记。不存 local 矩阵：refresh 时按需合成，避免 position 与 local 双源。
+  // Transform 的最小状态（仅平移）：只保存派生缓存与脏标记。position 是唯一可写数据源
+  // （在 Node 中），不存 local 矩阵，refresh 时按需合成。
   struct TransformData {
     math::Mat4 global;
     bool localDirty = true;
   };
 
-  // Node 只持有 Handle，经 SceneTree 转发访问；槽的分配（首次入树）与释放（Node 析构）
-  // 由 Node 驱动，detach 保留。
+  // Node 只持有 Handle，经 SceneTree 转发访问；槽首次入树分配、Node 析构释放、detach 保留。
   class TransformStore {
   public:
     [[nodiscard]] core::Handle<TransformData> create() { return slots_.insert(TransformData{}); }

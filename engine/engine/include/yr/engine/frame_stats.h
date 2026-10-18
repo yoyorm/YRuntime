@@ -18,12 +18,12 @@ namespace yr::engine {
     std::uint64_t reportInterval = 1000;
   };
 
-  // 帧耗时统计：MainLoop 每帧把整帧与各阶段耗时交给 recordFrame，这里负责
+  // 帧耗时统计：MainLoop 每帧把整帧与各阶段耗时交给 recordFrame。
   //   - 环形窗口保留最近 windowSize 帧的 total + 按阶段耗时；
-  //   - 每 reportInterval 帧打印一行 total 与"已接线阶段"的 p50/p95/max；
+  //   - 每 reportInterval 帧打印一行：total 打 p50/p95/max，"已接线阶段"只打 p50；
   //   - 可选 CSV：enableCsv 后立即写 header，之后每帧追加 total + physics 步数。
   //
-  // 无堆外指针，仅持有 std::vector / std::ofstream；析构时若 CSV 仍开启则关闭文件。
+  // 仅持有 std::vector / std::ofstream，无外部指针；析构时若 CSV 仍开启则关闭。
   class FrameStats {
   public:
     explicit FrameStats(FrameStatsConfig config = {});

@@ -16,19 +16,16 @@ namespace yr::scene {
   class SceneTree;
   struct TransformData;
 
-  // Node：父子关系与 enter/ready/exit 生命周期传播。
+  // Node：父子层级与 enter/ready/exit 生命周期传播。
   //
   // 所有权：children_ 独占拥有；parent_ 非拥有；addChild 成功才转移所有权，失败不消费。
   //
-  // 生命周期：enter 前序，ready 后序且一生一次，exit 后序倒序。回调不得抛异常，不得修改
-  // 正在传播的 parent；exit 传播期间结构冻结。addChild/removeChild/detach 期间接收者的
-  // children_ 冻结，回调里增删子节点会被拒（断言 + 失败），保证外层遍历有效。
+  // 生命周期：enter 前序，ready 后序且一生一次，exit 后序倒序。回调不得抛异常，不得修改正在
+  // 传播的 parent；传播期间接收者的 children_ 冻结，增删子节点被拒（断言 + 失败）。
   //
-  // Transform（仅平移）：setPosition O(1) 只改本地并置脏。globalTransform 返回上次
-  // refreshTransforms 的缓存（树内为上次刷新值，出树保留离开时的值，从未入树为 identity）。
-  // 出树保留旧 global 与槽，重新入树时标脏，下次 refresh 才按新父链重算。
+  // Transform 仅平移；读取与槽生命周期契约见 doc/layers/scene.md。
   //
-  // TODO: name 目前只读，名字唯一性尚未实现。
+  // name 目前只读，名字唯一性未实现。
 
   class Node : public yr::obj::Object {
   public:
@@ -77,9 +74,8 @@ namespace yr::scene {
     [[nodiscard]] math::Mat4 globalTransform() const noexcept;
 
   protected:
-    // 生命周期 / 更新钩子：只处理当前节点，不负责递归，由私有传播函数在正确的 tree_ 状态
-    // 下调用；回调契约见类头。onUpdate 由 SceneTree::process 前序派发，回调中可
-    // addChild/removeChild/queueFree，安全由 ObjectID 快照重解析保证。
+    // 生命周期 / 更新钩子：只处理当前节点，不负责递归，由私有传播函数在正确的 tree_ 状态下
+    // 调用。onUpdate 由 SceneTree::process 前序派发，回调中增删 / queueFree 安全（ObjectID 快照重解析）。
     virtual void onEnterTree();
     virtual void onReady();
     virtual void onUpdate(float deltaTime);
@@ -93,8 +89,7 @@ namespace yr::scene {
     void propagateEnterTree();
     void propagateExitTree();
 
-    // 后序传播 ready。已 ready 仍递归，让离线新增、从未 ready 的后代补上 ready；
-    // 仅首次 ready 调用 onReady()。
+    // 后序传播 ready。已 ready 仍递归，让离线新增、从未 ready 的后代补上 ready；仅首次调用 onReady()。
     void propagateReady();
 
     // 入树时保证 transform 槽就绪并标脏（同树重新入树也要标脏，使新父链生效）。
@@ -106,8 +101,8 @@ namespace yr::scene {
     std::vector<std::unique_ptr<Node>> children_;
     // 一生只 ready 一次的标记；detach/exit 不重置，重新入树只重新 enter。
     bool everReady_ = false;
-    // children_ 冻结深度：>0 时本节点的 addChild/removeChild/detach 被拒。用计数而非
-    // bool，嵌套 guard 不能提前解除外层冻结。
+    // children_ 冻结深度：>0 时本节点的 addChild/removeChild 被拒（子节点的 detach 经此，
+    // 同样被拒）。用计数而非 bool，嵌套 guard 不能提前解除外层冻结。
     std::uint32_t propagationDepth_ = 0;
     // 已入删除队列的标记；queueFree 成功入队时置位。
     bool queuedForDeletion_ = false;

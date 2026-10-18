@@ -9,11 +9,9 @@
 
 namespace yr::engine {
 
-  // Engine：headless 运行时的顶层装配。组合拥有 SceneTree、EventBus、Clock、MainLoop 并驱动
-  // while loop；帧阶段顺序仍唯一定义在 MainLoop，Engine 不复制阶段编排。
-  //
-  // 生命周期：成员声明顺序 sceneTree_ → eventBus_ → clock_ → mainLoop_，析构逆序，保证
-  // mainLoop_ 最先析构、sceneTree_ 最后析构。mainLoop_ 构造时注入前两者且不拥有它们。
+  // Engine：headless 顶层装配。组合拥有 SceneTree / EventBus / Clock / MainLoop 并驱动 while loop；
+  // 帧阶段顺序唯一定义在 MainLoop，Engine 不复制编排。
+  // 声明顺序 sceneTree_ → eventBus_ → clock_ → mainLoop_，析构逆序保证 mainLoop_ 最先析构。
   class Engine {
   public:
     Engine() noexcept;

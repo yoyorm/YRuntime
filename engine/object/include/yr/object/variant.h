@@ -14,12 +14,9 @@
 
 namespace yr::obj {
   class Variant;
-  // 两个递归容器：装 Variant，所以必须在 Variant 定义之前先声明。
-  // std::vector 自 C++17 起支持不完全类型；alias 本身只是给类型起名，不要求元素完整，
-  // 真正需要 Variant 完整的地方（构造/拷贝/比较）都延迟到 .cpp 或模板实例化时。
+  // 递归容器：必须在 Variant 定义前先声明（不完全类型 alias；需要完整类型处延迟到 .cpp / 模板实例化）。
   using Array = std::vector<Variant>;
-  // 保序字典：vector<pair>，不用 unordered_map（D5：序列化输出必须逐字节可复现）。
-  // StringId 没有 operator<，所以也不能用 std::map。
+  // 保序字典（vector<pair>）：不用 unordered_map 以保证序列化逐字节可复现；StringId 无 operator<，也不能用 map。
   using Dict = std::vector<std::pair<yr::core::StringId, Variant>>;
 } // namespace yr::obj
 

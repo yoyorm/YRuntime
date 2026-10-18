@@ -21,7 +21,7 @@ namespace yr::math {
     constexpr Mat4() noexcept
         : m_{1.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F} {}
 
-    // identity 工厂（等价于默认构造）。
+    // identity 工厂
     [[nodiscard]] static constexpr Mat4 identity() noexcept { return Mat4{}; }
 
     // 平坦索引访问原始存储：index = col * 4 + row。
@@ -73,9 +73,6 @@ namespace yr::math {
     return result;
   }
 
-  // TODO(M4 Transform 层级 / M6-M7 相机)：inverse —— 变换矩阵求逆可用 TRS 逆合成，
-  // 通用 4x4 求逆等真需要再写。
-  // TODO(M6-M7 相机)：perspective / ortho / lookAt 等投影与视图矩阵。
-  // TODO(M4 Transform 层级)：TRS 合成与分解。
+  // TODO(M4 / M6-M7)：inverse、perspective / ortho / lookAt、TRS 合成与分解。
 
 } // namespace yr::math
