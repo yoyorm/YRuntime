@@ -368,29 +368,38 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 
 ## M5 · 渲染契约与 NullBackend（2 周）★ 解耦的那条线
 
-**目标**：定义 Runtime 与 Renderer 之间那条线，并用一个什么都不画的后端验证它。本阶段只做 **renderer-neutral 数据契约**，不碰任何图形 API；真正的画面留到 M6/M7。
+**目标**：定义 Runtime 与 Renderer 之间的**数据式契约**（POD 快照 + 后端接口），用一个什么都不画的后端与 dump/replay 验证它；不碰任何图形 API。
+**只引入一个概念**：用一坨 POD 值把场景交给后端（区别于 Godot 的命令式 Server，见 `06-decisions.md` D7/D19）。
 
-- [ ] `yr/render/snapshot.h`：`RenderSnapshot` 及全部 POD 类型（§4.11），**每个字段的单位/坐标系/矩阵序都写注释**
-- [ ] `yr/render/backend.h`：`RendererBackend` 接口 + `BackendConfig` + `BackendStats`
-- [ ] `yr/render/asset_handle.h`：**强类型** `AssetHandle`（默认构造 = 无效；后端可有内建 triangle / default material 的临时 ID，正式 `AssetUID` 在 M9 替换）
-- [ ] `yr/engine/render_extract.h/.cpp`：`RenderExtractSystem`（遍历 SceneTree → 可见性 → 生成 DrawItem/Camera/Light；本阶段全量抽取，**不做剔除**）
-- [ ] 排序键：`sort_key = (pipeline << 48) | (material << 24) | depth`（对照 Yo_Renderer roadmap §2.1）
-- [ ] `yr_render_null`：`NullBackend`（统计 draw call / 三角形数 / 快照字节数，校验快照合法性）
-- [ ] **快照重放**：`--dump-snapshot f.bin` 把快照写文件，`--replay-snapshot f.bin` 直接喂给 Backend（**验证契约完备性的杀手级测试**）
-- [ ] 把 `01-architecture.md` §7 的三个解耦层次逐条对应到代码：哪一行实现了**数据解耦**、哪一行是**生命周期解耦**、哪一行是**时间解耦**（写在 `yr/render/snapshot.h` 的头注释里）
-- [ ] CI 检查：`grep` 确保 `engine/`（除 `render/vulkan/`）零 `vulkan`/`GLFW` include
-- [ ] 测试：快照 dump→replay 逐字节一致；`NullBackend` 在 10000 帧 headless simulation 里统计数字稳定
+- [x] `yr_render_iface`（`engine/render/iface`，只依赖 core）：`asset_handle.h`（强类型 `AssetHandle`，默认无效）；`snapshot.h`（`RenderObjectId`/`TransformPod`/`DrawItem`/`CameraPod`/`RenderSnapshot` + 元素级 trivially-copyable 断言）；`backend.h`（`RendererBackend`/`BackendConfig`/`BackendStats`）；`snapshot_io.h`（encode/decode，固定字段序小端）✅ 2026-10-19
+- [x] `yr_render_null`（`engine/render/null`）：`NullBackend` 统计 items/draw_calls/triangles/snapshot_bytes + `create_null_backend()` ✅ 2026-10-19
+- [x] 快照 dump/replay：同输入两次逐字节一致、统计确定 ✅ 2026-10-19
+- [x] `RenderExtractSystem`（`yr_engine`）：前序遍历 SceneTree → 每个树内节点一个 `DrawItem`（世界矩阵取 `globalTransform()`），单相机固定默认；接帧阶段 10 ✅ 2026-10-19
+- [x] 帧阶段 11 `present` 接非拥有 `RendererBackend*`（Engine 注入）✅ 2026-10-19
+- [x] headless + NullBackend 跑 1000 帧，统计稳定；CI 全绿 ✅ 2026-10-19（app 不生成场景，故 `items=0` 恒定；含节点的快照稳定性由 `tests/integration` 集成测试覆盖）
+- [x] CI 门禁：`yr_render_iface` 只 include `yr/core`/std；`engine/`（除 `engine/render/vulkan/`）零 vulkan/GLFW include ✅ 2026-10-19
+
+**M5 明确不做（推迟，避免过早设计）**
+
+| 内容 | 推迟到 | 理由 |
+|---|---|---|
+| `uploads` / `releases` | M9 | 资源系统出现才有上传/释放请求 |
+| `LightPod` | M7 | 无光照消费者，字段现在定是猜 |
+| 相机 fov/near/far、多相机 | M7 | 单相机固定默认够 M5 |
+| `sort_key` 位段 | M7 | M5 用前序遍历顺序即确定 |
+| 双/三缓冲交换协议 | M7 | 由 Vulkan frame-in-flight 决定 |
+| 独立渲染线程、静态/version 标记 | M7 stretch | 无体验、无消费者 |
 
 **验收标准**
 - headless + `NullBackend` 跑 headless scene simulation 1000 帧，快照统计正常，CI 全绿。
 - 快照 dump/replay round-trip 一致，**且统计确定**（同输入两次逐字节相同）。
 - `yr_render_iface` 的头文件**只 include `yr/core/*` 与 std**（CI 检查 include 列表）。
-- `DrawItem` 中**禁止**出现 `Object*` / `Mesh*` / `Ref<Mesh>` / `Vk*`；`AssetHandle` 是强类型，且"未就绪资源本帧跳过"写进契约。
+- `DrawItem` 中**禁止**出现 `Object*` / `Mesh*` / `Ref<Mesh>` / `Vk*`；`AssetHandle` 是强类型。（"未就绪资源本帧跳过"是**上传时序**契约，随 `uploads`/`releases` **推迟到 M9**——M5 的 `AssetHandle` 仅作不透明 key，不承诺未就绪语义。）
 - 能回答："如果换一个 OpenGL 后端，需要改 Runtime 的哪一行代码？"（答案必须是 0 行）
 
 **产出物**：快照重放 demo。**这个主题面试高频，值得写成博客**（见 `07-portfolio.md` §4）。
 **学习点**：数据契约设计、POD 与 ABI、Server 模式、可重放性作为设计验证手段。
-**常见坑**：① 快照里偷偷放了 `Object*`（"就这一次"）→ 解耦崩塌，CI 必须挡住；② 矩阵行列主序/坐标系（Y-up vs Z-up）没写清 → 后面画面全错且极难查，**现在就把注释写死**；③ 资源上传请求的时序（Backend 还没加载完 mesh，DrawItem 已经引用它）→ 契约里要规定"未就绪的资源本帧跳过"；④ 把临时 triangle / default material ID 当成正式资源系统 → 正式 `AssetUID` / `AssetDatabase` 必须等 M9。
+**常见坑**：① 快照里偷偷放了 `Object*`（"就这一次"）→ 解耦崩塌，CI 必须挡住；② 矩阵行列主序/坐标系（Y-up vs Z-up）没写清 → 后面画面全错且极难查，**现在就把注释写死**；③ 资源上传请求的时序（Backend 还没加载完 mesh，DrawItem 已经引用它）→ 该"未就绪本帧跳过"契约随 `uploads`/`releases` **推迟到 M9**，M5 只把 `AssetHandle` 定为不透明 key；④ 把临时 triangle / default material ID 当成正式资源系统 → 正式 `AssetUID` / `AssetDatabase` 必须等 M9。
 **Godot 对照**：`servers/rendering/rendering_server.h`（Server 命令接口）、`servers/server_wrap_mt_common.h`（选读：Server 如何包装）、`core/templates/command_queue_mt.h`。
 **降级方案**：不做快照重放（只做 dump 用于人工检查）。**但"Runtime 侧零 vulkan include"与"AssetHandle 强类型"不能降级。**
 

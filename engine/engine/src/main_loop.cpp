@@ -24,6 +24,8 @@ namespace yr::engine {
     stats_.setPhaseReported(Phase::kProcess, true);
     stats_.setPhaseReported(Phase::kPostProcess, true);
     stats_.setPhaseReported(Phase::kApplyStructure, true);
+    stats_.setPhaseReported(Phase::kExtractRender, true);
+    stats_.setPhaseReported(Phase::kPresent, true);
     stats_.setPhaseReported(Phase::kEndFrame, true);
   }
 
@@ -124,11 +126,16 @@ namespace yr::engine {
   }
 
   void MainLoop::extractRender() {
-    // TODO: RenderExtractSystem 将 SceneTree 抽取为 RenderSnapshot。
+    // 阶段 10：取当前帧 0-based 序号，再全量抽取；frame_index 是唯一由本阶段写入的字段。
+    snapshot_.frame_index = frameIndex();
+    renderExtract_.extract(sceneTree_, snapshot_);
   }
 
   void MainLoop::present() {
-    // TODO: RendererBackend::present(snapshot)。
+    // 阶段 11：未装配后端时 no-op（headless 默认路径）。
+    if (backend_ != nullptr) {
+      backend_->present(snapshot_);
+    }
   }
 
   void MainLoop::collectGarbage() {

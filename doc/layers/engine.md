@@ -39,7 +39,7 @@
 ## MainLoop（`engine::MainLoop`）
 
 - **职责**：**帧阶段序列的唯一权威实现**。一次 `tick` = 一次 0→13。
-- **所有权 / 生命周期**：`SceneTree` / `EventBus` 由装配者拥有，`MainLoop` **引用非拥有**，二者必须比 `MainLoop` 活得更久。不提供默认 `globalEventBus` 路径，避免隐藏的全局依赖。
+- **所有权 / 生命周期**：`SceneTree` / `EventBus` 由装配者拥有，`MainLoop` **引用非拥有**，二者必须比 `MainLoop` 活得更久。`RendererBackend*`（`setBackend`）同样非拥有，装配者拥有并保证其生命周期长于 `MainLoop`；未装配时阶段 11 为 no-op。不提供默认 `globalEventBus` 路径，避免隐藏的全局依赖。
 - **公开 API**：
 
   | 签名 | 语义 / 契约 | 失败模式 |
@@ -54,6 +54,8 @@
   | `double physicsStep() const` | 固定步长 `kPhysicsStep = 1/60` | — |
   | `double accumulator() const` | 当前未消费的物理累积（诊断用），spiral 截断后始终 `< physicsStep` | — |
   | `SceneTree& tree()` / `EventBus& events()` | 返回注入的引用 | — |
+  | `void setBackend(render::RendererBackend*) noexcept` | 注入非拥有后端；`nullptr` 使阶段 11 回到 no-op | — |
+  | `RenderSnapshot& snapshot()` / `const RenderSnapshot& snapshot() const` | 阶段 10 产出的当前帧快照；下一次 `tick` 才被覆写 | — |
   | `FrameStats& stats() const` | 帧统计；构造后、tick 前可配置 | — |
 
 - **时间模型**：
@@ -79,15 +81,34 @@
 | 7 | process | `processPhase` | ✅ | `SceneTree::process`（安全点） | 前序派发 `onUpdate` |
 | 8 | post_process | `postProcess` | ✅ | `SceneTree::refreshTransforms`（安全点） | 刷新 Transform 缓存 |
 | 9 | apply_structure | `applyStructure` | ✅ | `SceneTree::flushDeletions`（安全点） | 执行本帧延迟删除 |
-| 10 | extract_render | `extractRender` | ⬜ 空钩子 | 无 | — |
-| 11 | present | `present` | ⬜ 空钩子 | 无 | — |
+| 10 | extract_render | `extractRender` | ✅ | `RenderExtractSystem::extract` | 写 `snapshot_`（`frame_index` 取 `frameIndex()`，全量前序抽取 `items`） |
+| 11 | present | `present` | ✅ | `RendererBackend::present(snapshot_)`（非拥有后端） | 后端只读快照；未装配后端时 no-op |
 | 12 | collect_garbage | `collectGarbage` | ⬜ 空钩子 | 无 | — |
 | 13 | end_frame | `endFrame` | ✅ | `FrameStats::recordFrame` | 量本阶段耗时，汇总整帧 / 各阶段 / 物理步数入环 |
 
-> 空钩子 = 1/2/4/5/10/11/12，尚未接任何子系统。per-phase 报告只覆盖已接线阶段（0/3/6/7/8/9/13）。
+> 空钩子 = 1/2/4/5/12，尚未接任何子系统。per-phase 报告只覆盖已接线阶段（0/3/6/7/8/9/10/11/13）。
 
 - **Godot 对照**：`main/main.cpp` 的 `Main::iteration`。
-- **遗留 / 已知缺口**：空钩子见上表；`SceneTree::process` 未检查 `flushing_`（见 `scene.md` 遗留）。
+- **遗留 / 已知缺口**：空钩子见上表。
+
+## RenderExtractSystem（`engine::RenderExtractSystem`）
+
+- **职责**：`SceneTree → RenderSnapshot` 的**唯一单向转换点**（`../01-architecture.md` §4.11 规则② / D7）。M5 **全量抽取、不做剔除**。
+- **所有权 / 生命周期**：无状态、无所有权；`extract` 只读 `SceneTree`、只写调用方传入的 `RenderSnapshot`。
+- **公开 API**：
+
+  | 签名 | 语义 / 契约 | 失败模式 |
+  |---|---|---|
+  | `void extract(const scene::SceneTree&, render::RenderSnapshot& out) const` | 重置 `out.camera` 为固定默认（identity），按**前序**清空并填充 `out.items`；**不修改** `out.frame_index` | 空树安全（`items` 空，`camera` 仍填默认） |
+
+- **抽取规则**：
+  - 前序遍历整棵树（含 `root`），每个树内节点产出一个 `DrawItem`；顺序即前序，无排序键。
+  - `DrawItem::object.value = node.id().raw()`；`DrawItem::world = node.globalTransform()`（均为 column-major，逐元素拷贝，不 memcpy 结构体）。
+  - `DrawItem::mesh` / `material` 保持无效（`AssetHandle{}`）；M5 无资源系统，未就绪语义推迟到 M9。
+  - `CameraPod` 的 `view` / `proj` 均 identity（`TransformPod` 默认即 identity）；真实投影留到 M7。
+- **不变量 / 顺序**：每次 `extract` 先 `clear` 再填充，不累加；`items.size()` == 树内节点数（含 `root`）。`frame_index` 由调用方（`MainLoop::extractRender`）在本阶段写入。
+- **设计原因**：把 Runtime↔Renderer 的耦合收敛到**一处、单向**，后端拿到的全是值。
+- **Godot 对照**：无直接对应（Godot 走命令式 Server，见 §4.11）。
 
 ## FrameStats（`engine::FrameStats`）
 
@@ -124,13 +145,14 @@
 ## Engine（`engine::Engine`）
 
 - **职责**：headless 运行时的顶层装配，组合拥有各子系统并驱动 while loop。
-- **所有权 / 生命周期**：**组合拥有顺序** `sceneTree_ → eventBus_ → clock_ → mainLoop_`，按声明**逆序**析构，保证 `mainLoop_` 最先析构、`sceneTree_` 最后析构。`mainLoop_` 构造时注入前两者且不拥有它们。不可拷贝 / 移动。
+- **所有权 / 生命周期**：**组合拥有顺序** `sceneTree_ → eventBus_ → clock_ → mainLoop_`，按声明**逆序**析构，保证 `mainLoop_` 最先析构、`sceneTree_` 最后析构。`mainLoop_` 构造时注入前两者且不拥有它们。**`Engine` 不拥有、不创建 `RendererBackend`**（`yr_engine` 不得依赖 `yr_render_null`，由 `tools/check_deps.py` 保证）；装配者创建并保证其生命周期长于 `Engine`。不可拷贝 / 移动。
 - **公开 API**：
 
   | 签名 | 语义 / 契约 | 失败模式 |
   |---|---|---|
   | `Engine() noexcept` | `mainLoop_(sceneTree_, eventBus_)` | — |
   | `void run(uint64_t maxFrames)` | 最多运行 `maxFrames` 帧：每帧 `mainLoop_.tick(clock_.nextDelta())`，达到上限或 `shouldQuit()` 后退出 | 使用真实 Clock，无 delta 确定性保证 |
+  | `void setBackend(render::RendererBackend*) noexcept` | 转发 `mainLoop_.setBackend`；非拥有 | — |
   | `SceneTree& sceneTree()` / `EventBus& events()` / `MainLoop& mainLoop()` | 暴露子系统 | — |
 
 - **不变量 / 顺序**：**帧阶段顺序唯一定义在 `MainLoop`，`Engine` 不复制阶段编排**。确定性测试直接用 `MainLoop::tick(fixedDelta)`。
@@ -147,9 +169,9 @@
   | `--frames N` | 帧数，默认 **1000**；用 `std::from_chars` 解析，非数字 / 越界拒绝 |
   | `--help` / `-h` | 打印 usage 到 stdout，退出码 0 |
   | 非法参数 | usage 到 stderr，退出码 2 |
-  | 运行 | `yr::engine::Engine engine; engine.run(options.frames);` |
-  | 结束打印 | `frames=…`、`physics_steps=…`（`stats.totalPhysicsSteps()`）、`alive=…`（`globalObjectDB().aliveCount()`）、`total p50/p95/max` |
+  | 运行 | `auto backend = create_null_backend(); engine.setBackend(backend.get()); engine.run(options.frames);`（backend 由入口拥有，生命周期覆盖 `run`） |
+  | 结束打印 | `frames=…`、`physics_steps=…`（`stats.totalPhysicsSteps()`）、`alive=…`（`globalObjectDB().aliveCount()`）、`items=/draw_calls=/triangles=`（`backend->last_frame_stats()`）、`total p50/p95/max` |
 
-- **不变量 / 顺序**：不生成场景或演示节点；装配由 `Engine` 负责。
+- **不变量 / 顺序**：不生成场景或演示节点；装配由 `Engine` 负责；backend 在 `run` 前创建、`run` 返回后才读取统计。
 - **设计原因**：手写参数解析只支持帧数与 help，不引入 CLI 库。
-- **遗留 / 已知缺口**：无 render / asset 装配；无 `--frames 0` 以外的其他开关。
+- **遗留 / 已知缺口**：不生成场景（`items` 恒为 0，快照稳定性由 `tests/integration` 覆盖）；无 asset / job 装配；无 `--frames 0` 以外的其他开关。

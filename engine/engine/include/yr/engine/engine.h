@@ -7,6 +7,10 @@
 #include <yr/event/event_bus.h>
 #include <yr/scene/scene_tree.h>
 
+namespace yr::render {
+  class RendererBackend;
+}
+
 namespace yr::engine {
 
   // Engine：headless 顶层装配。组合拥有 SceneTree / EventBus / Clock / MainLoop 并驱动 while loop；
@@ -25,6 +29,9 @@ namespace yr::engine {
     // 运行最多 maxFrames 帧：每帧 tick(clock_.nextDelta())，达到上限或 shouldQuit() 后退出。
     // 使用真实 Clock，不作 delta 确定性保证；确定性测试直接用 MainLoop::tick(fixedDelta)。
     void run(std::uint64_t maxFrames);
+
+    // 非拥有后端：Engine 不创建、不拥有；装配者保证 backend 生命周期长于 Engine。
+    void setBackend(render::RendererBackend* backend) noexcept;
 
     [[nodiscard]] scene::SceneTree& sceneTree() noexcept { return sceneTree_; }
     [[nodiscard]] evt::EventBus& events() noexcept { return eventBus_; }

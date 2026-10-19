@@ -11,6 +11,7 @@
 #include <yr/event/event_bus.h>
 #include <yr/math/vec3.h>
 #include <yr/object/object_db.h>
+#include <yr/render/null_backend.h>
 #include <yr/scene/node.h>
 #include <yr/scene/scene_tree.h>
 
@@ -72,6 +73,15 @@ namespace {
     void onPhysicsStep(double /*physicsDelta*/) override { ++physicsStepCount; }
   };
 
+  // 前序节点计数：用于比对抽取出的快照条目数。
+  std::size_t countNodes(const yr::scene::Node& node) {
+    std::size_t count = 1;
+    for (std::size_t child = 0; child < node.childCount(); ++child) {
+      count += countNodes(*node.childAt(child));
+    }
+    return count;
+  }
+
 } // namespace
 
 TEST_CASE("integration: deterministic headless tick is leak-free and stats-sane", "[engine][integration][main_loop]") {
@@ -92,6 +102,10 @@ TEST_CASE("integration: deterministic headless tick is leak-free and stats-sane"
     yr::evt::EventBus bus;
     ProbeMainLoop loop(tree, bus);
     loop.stats().setReportInterval(0); // 测试静默：不打印周期报告
+
+    // NullBackend 由测试拥有，生命周期覆盖整段运行；Engine 只持非拥有指针。
+    auto backend = yr::render::create_null_backend();
+    loop.setBackend(backend.get());
 
     // 确定性树：root + 10 子 + 每子 9 孙，另有 1 个中途自杀的 victim。
     auto root = std::make_unique<ProbeNode>();
@@ -135,7 +149,16 @@ TEST_CASE("integration: deterministic headless tick is leak-free and stats-sane"
       bus.post(CounterEvent{frame}); // 本帧阶段 3 flush 派发
       loop.tick(kDelta);
       REQUIRE_FALSE(loop.shouldQuit());
+      // 阶段 10/11：每帧后端统计都等于本帧快照条目数（稳定、无漂移）。
+      REQUIRE(backend->last_frame_stats().items == loop.snapshot().items.size());
     }
+
+    // --- RenderSnapshot → NullBackend：条目数等于最终树内节点数 ---
+    const std::size_t finalNodes = countNodes(*rawRoot);
+    CHECK(finalNodes == static_cast<std::size_t>(kChildren) * (kGrandchildren + 1) + 1);
+    CHECK(loop.snapshot().items.size() == finalNodes);
+    CHECK(backend->last_frame_stats().items == finalNodes);
+    CHECK(backend->last_frame_stats().draw_calls == finalNodes);
 
     // --- 帧数 / 物理步数 ---
     CHECK(loop.frameCount() == kFrames);

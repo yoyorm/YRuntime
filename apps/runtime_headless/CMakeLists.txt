@@ -5,4 +5,5 @@ add_executable(yr_runtime_headless
 target_link_libraries(yr_runtime_headless PRIVATE
     yr::engine
     yr::object
+    yr::render_null
     yr::core)

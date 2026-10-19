@@ -5,6 +5,8 @@
 #include <yr/engine/main_loop.h>
 #include <yr/event/event_bus.h>
 #include <yr/object/object_db.h>
+#include <yr/render/null_backend.h>
+#include <yr/render/snapshot.h>
 #include <yr/scene/node.h>
 #include <yr/scene/scene_tree.h>
 
@@ -661,4 +663,58 @@ TEST_CASE("main_loop: paused does not clobber the configured timeScale", "[engin
   loop.setPaused(false);
   loop.tick(1.0 / 60.0);
   CHECK(rawRoot->lastDelta == static_cast<float>((1.0 / 60.0) * 0.25));
+}
+
+// ============================================================================
+// 阶段 10 extract / 阶段 11 present
+// ============================================================================
+
+TEST_CASE("main_loop: extract fills a frame-indexed snapshot even without a backend", "[engine][main_loop][render]") {
+  yr::scene::SceneTree tree;
+  yr::evt::EventBus bus;
+  MainLoop loop(tree, bus);
+
+  auto root = std::make_unique<yr::scene::Node>();
+  auto child = std::make_unique<yr::scene::Node>();
+  REQUIRE(root->addChild(std::move(child)));
+  REQUIRE(tree.setRoot(std::move(root)));
+
+  loop.tick(1.0 / 60.0);
+  CHECK(loop.snapshot().frame_index == 0);
+  CHECK(loop.snapshot().items.size() == 2);
+
+  loop.tick(1.0 / 60.0);
+  CHECK(loop.snapshot().frame_index == 1);
+  CHECK(loop.snapshot().items.size() == 2);
+
+  const MainLoop& constLoop = loop; // const snapshot() 重载
+  CHECK(constLoop.snapshot().items.size() == 2);
+}
+
+TEST_CASE("main_loop: present forwards the snapshot to the injected backend deterministically",
+          "[engine][main_loop][render]") {
+  yr::scene::SceneTree tree;
+  yr::evt::EventBus bus;
+  MainLoop loop(tree, bus);
+
+  auto root = std::make_unique<yr::scene::Node>();
+  auto childA = std::make_unique<yr::scene::Node>();
+  auto childB = std::make_unique<yr::scene::Node>();
+  REQUIRE(root->addChild(std::move(childA)));
+  REQUIRE(root->addChild(std::move(childB)));
+  REQUIRE(tree.setRoot(std::move(root)));
+
+  auto backend = yr::render::create_null_backend();
+  loop.setBackend(backend.get());
+
+  for (int frame = 0; frame < 4; ++frame) {
+    CAPTURE(frame);
+    loop.tick(1.0 / 60.0);
+    const std::size_t items = loop.snapshot().items.size();
+    REQUIRE(items == 3);
+    const yr::render::BackendStats stats = backend->last_frame_stats();
+    CHECK(stats.items == items);
+    CHECK(stats.draw_calls == items);
+    CHECK(stats.triangles == items);
+  }
 }

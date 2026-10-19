@@ -596,37 +596,48 @@ class JobSystem {
 ```cpp
 namespace yr::render {
 // ---- 契约：全部 POD，无 Runtime 头文件依赖，可安全跨线程 ----
-struct RenderObjectId { uint64_t id; };
-struct TransformPod   { float m[16]; };                       // 列主序，注释写清楚！
-struct DrawItem {
-  RenderObjectId object; AssetHandle mesh; AssetHandle material;
-  TransformPod world; uint32_t sort_key; uint8_t flags;       // 半透明/阴影投射...
+struct AssetHandle {          // 强类型资源句柄：默认无效(0)，跨边界只作不透明 key
+  uint64_t value = 0;
+  bool isValid() const;       // value != 0
 };
-struct CameraPod { TransformPod view, proj; float near_z, far_z; float fov; };
-struct LightPod  { uint8_t type; float color[3]; float intensity; float position[3]; float direction[3]; };
+struct RenderObjectId {       // 承载 ObjectID 的值；后端只当不透明 key
+  uint64_t value = 0;
+};
+struct TransformPod {         // 同 yr::math::Mat4：column-major、v' = M * v、右手 Y-up、深度 [0,1]
+  float m[16]{};
+};
+struct DrawItem {
+  RenderObjectId object; TransformPod world;
+  AssetHandle mesh, material;                       // M5：内建/无效，未就绪语义推到 M9
+};
+struct CameraPod { TransformPod view, proj; };      // M5 单相机、固定默认值
 struct RenderSnapshot {
   uint64_t frame_index;
-  std::vector<CameraPod> cameras;
+  CameraPod camera;
   std::vector<DrawItem> items;
-  std::vector<LightPod> lights;
-  // 资源上传请求：Backend 收到后自行加载/缓存，Runtime 不持 GPU 句柄
-  std::vector<AssetUploadRequest> uploads;
+};
+
+struct BackendConfig {};                            // M5 headless：无窗口/设备参数
+struct BackendStats {
+  uint64_t items, draw_calls, triangles, snapshot_bytes;
 };
 
 // ---- 后端接口 ----
 class RendererBackend {
  public:
   virtual ~RendererBackend() = default;
-  virtual bool initialize(const BackendConfig&) = 0;          // 窗口/surface 由 config 传入（可为空 = headless）
+  virtual bool initialize(const BackendConfig&) = 0;
   virtual void shutdown() = 0;
-  virtual void present(const RenderSnapshot&) = 0;            // 消费快照，不回调 Runtime
-  virtual const char* name() const = 0;
-  [[nodiscard]] virtual BackendStats last_frame_stats() const = 0;
+  virtual void present(const RenderSnapshot&) = 0; // 消费快照，不回调 Runtime
+  virtual const char* name() const noexcept = 0;
+  [[nodiscard]] virtual BackendStats last_frame_stats() const noexcept = 0;
 };
 
-std::unique_ptr<RendererBackend> create_null_backend();       // 工厂在各自 target 里
+std::unique_ptr<RendererBackend> create_null_backend();  // 工厂在各自 target 里
 }
 ```
+
+**规划与兑现**：上面的结构是 M5 冻结的最小版（与 `engine/render/iface` 一致）。`uploads` / `releases` / `LightPod` / `sort_key` / 多相机 / 双三缓冲均为**规划**，分别在 M7 / M9 引入（见 `02-roadmap.md` M5 的"明确不做"表）。§7 的解耦方案保持不变。
 
 **四条硬性规则**（写进 CI 检查）：
 1. `RenderSnapshot` 里**不允许**出现 `yr::scene::*` / `yr::obj::Object*` 类型 → 只能传 ID 和值。
@@ -681,8 +692,8 @@ Asset/Job/Renderer 装配与显式 `initialize`/`shutdown` 顺序推迟到确有
 | 7 | `process` | 派发 `onUpdate`（`SceneTree::process`，前序 ObjectID 快照） | 主 | 否（改结构用 `queueFree` 延迟） |
 | 8 | `post_process` | `SceneTree::refreshTransforms()`：单线程顺序刷新 Transform 缓存；并行 job / 动画采样 / AI **规划中** | 主（并行规划中） | 否 |
 | 9 | `apply_structure` | 执行 `flushDeletions()`（**唯一已实现的结构性修改点**）；`add_child` 待处理队列 **规划中** | 主 | **是** |
-| 10 | `extract_render` | `RenderExtractSystem`：SceneTree → `RenderSnapshot`（**未实现，空钩子**） | 主（可并行剔除） | 否 |
-| 11 | `present` | `RendererBackend::present(snapshot)`（**未实现，空钩子**） | 主（或渲染线程） | 否 |
+| 10 | `extract_render` | `RenderExtractSystem`：SceneTree → `RenderSnapshot`（**已接线**；M5 全量前序抽取、不做剔除） | 主（可并行剔除） | 否 |
+| 11 | `present` | `RendererBackend::present(snapshot)`（**已接线**；装配者注入非拥有后端，未装配则 no-op） | 主（或渲染线程） | 否 |
 | 12 | `collect_garbage` | 资源 GC、延迟销毁 GPU 资源、`Ref` 归零对象回收（**未实现，空钩子**） | 主 | 否 |
 | 13 | `end_frame` | `FrameStats` 汇总（整帧 / 各阶段 / 物理步数入环）；日志 flush 规划中，quit 决策在 `MainLoop` 外层 | 主 | 否 |
 
@@ -724,7 +735,7 @@ sequenceDiagram
 
     G->>T: 修改 Transform / 可见性
     Note over T: 阶段 8：并行刷新 Transform SoA
-    T->>X: 阶段 10：遍历可见节点
+    T->>X: 阶段 10：前序遍历全树
     X->>S: 填充 DrawItem / Camera / Light / uploads
     Note over X,S: 唯一耦合点，单向，无回调
     S->>B: present(snapshot)

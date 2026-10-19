@@ -15,7 +15,7 @@
 | [`06-decisions.md`](06-decisions.md) | ADR：架构级取舍及其代价 | **活文档**，只增不改 |
 | [`00-vision.md`](00-vision.md) | 定位、目标 / 非目标、成功判据、风险 | 参考，怀疑方向时看 |
 | [`01-architecture.md`](01-architecture.md) | 分层、模块职责、核心概念、帧循环、线程模型 | 参考，写模块前看对应小节 |
-| [`layers/`](layers/) | 每层代码级 API 契约与"为什么"（core / math / object / event / scene / engine），与 01-architecture 的设计意图互补 | **活文档**，改对应层 API / 契约时同步 |
+| [`layers/`](layers/) | 每层代码级 API 契约与"为什么"（core / math / object / event / scene / engine / render），与 01-architecture 的设计意图互补 | **活文档**，改对应层 API / 契约时同步 |
 | [`03-learning-map.md`](03-learning-map.md) | 知识点 → 里程碑映射、书单、16 个实验 | 参考，卡住时看 |
 | [`04-godot-study.md`](04-godot-study.md) | Godot 4.8 源码索引（本机路径已验证）+ 对照问题 | 参考，对照阅读时看 |
 | [`05-engineering.md`](05-engineering.md) | 构建 / 测试 / 日志 / 调试 / 剖析 / Git / CI / 代码规范 | 参考，查规范时看 |

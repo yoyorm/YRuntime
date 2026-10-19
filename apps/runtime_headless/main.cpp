@@ -13,6 +13,8 @@
 #include <yr/engine/engine.h>
 #include <yr/engine/frame_stats.h>
 #include <yr/object/object_db.h>
+#include <yr/render/backend.h>
+#include <yr/render/null_backend.h>
 
 namespace {
 
@@ -77,12 +79,19 @@ int main(int argc, char** argv) {
   }
 
   yr::engine::Engine engine;
+  // backend 由本入口拥有，生命周期覆盖 engine.run()；Engine 只持非拥有指针。
+  auto backend = yr::render::create_null_backend();
+  engine.setBackend(backend.get());
   engine.run(options.frames);
 
   const yr::engine::FrameStats& stats = engine.mainLoop().stats();
+  const yr::render::BackendStats backendStats = backend->last_frame_stats();
   std::string summary = "frames=" + std::to_string(engine.mainLoop().frameCount());
   summary += " physics_steps=" + std::to_string(stats.totalPhysicsSteps());
   summary += " alive=" + std::to_string(yr::obj::globalObjectDB().aliveCount());
+  summary += " items=" + std::to_string(backendStats.items);
+  summary += " draw_calls=" + std::to_string(backendStats.draw_calls);
+  summary += " triangles=" + std::to_string(backendStats.triangles);
   summary += " | total p50=" + formatDuration(stats.totalP50());
   summary += " p95=" + formatDuration(stats.totalP95());
   summary += " max=" + formatDuration(stats.totalMax());

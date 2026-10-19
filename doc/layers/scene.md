@@ -77,7 +77,7 @@
 
   | 安全点 | 职责 | 重入 / 互斥保护 |
   |---|---|---|
-  | `process` | `ObjectID` 快照前序派发 `onUpdate` | 检查 `processing_`（重入会让同一帧重复派发）、`refreshing_`；**不检查 `flushing_`**（见遗留） |
+  | `process` | `ObjectID` 快照前序派发 `onUpdate` | 检查 `processing_`（重入会让同一帧重复派发）、`refreshing_`、`flushing_` |
   | `refreshTransforms` | 前序 DFS 刷新 Transform 缓存 | 检查 `refreshing_`、`processing_`、`flushing_` |
   | `flushDeletions` | 执行延迟删除 | 检查 `flushing_`、`processing_`、`refreshing_` |
 
@@ -92,12 +92,11 @@
     - `processing_`：防止 `process` 重入导致同一帧重复派发；并让 process 期间的 `flushDeletions` 早退。
     - `refreshing_`：防止 `refreshTransforms` 重入；并让 process / flushDeletions 期间的 refresh 早退。
 - **不变量 / 顺序**：
-  - 三个安全点**互相排斥**，但 `process` 对 `flushing_` 的检查缺失（见遗留）。
+  - 三个安全点**互相排斥**：`process` / `refreshTransforms` / `flushDeletions` 各自检查另外两个标志。
   - **析构顺序**：成员声明顺序是 `transformStorage_` → `root_` → `pendingDeletions_`，按声明**逆序**析构，因此 `root_` **先于** `transformStorage_` 销毁——这正是为了让 `~Node` 还能用 `transformOwner_` 归还槽。
 - **设计原因**：结构性修改收敛到安全点、用 `ObjectID` 快照 + 重解析代替"遍历中安全删除"，消灭迭代器失效类 bug（`01-architecture` §4.6）。
 - **Godot 对照**：`scene/main/scene_tree.h`（`SceneTreeTimer` 在约第 57 行）、`scene/main/node.cpp` 的 `queue_free`、`scene/main/scene_tree_fti.cpp`。
 - **遗留 / 已知缺口**：
-  - **`process` 未检查 `flushing_`**：`refreshTransforms` 与 `flushDeletions` 都检查了三个标志，唯独 `process` 缺 `flushing_` 检查，构成三安全点互斥的唯一缺口。尚未决定是否补（补属行为改动）。
   - `refreshTransforms` **仅平移**：不支持旋转 / 缩放。
   - `NodePath` / `requestReady` 未实现（见 Node）。
   - 无 `physicsProcess` 相位、无 `SceneTreeTimer`。

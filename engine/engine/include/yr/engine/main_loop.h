@@ -5,6 +5,9 @@
 #include <yr/core/timer.h>
 #include <yr/engine/frame_stats.h>
 #include <yr/engine/phase.h>
+#include <yr/engine/render_extract.h>
+#include <yr/render/backend.h>
+#include <yr/render/snapshot.h>
 
 namespace yr::scene {
   class SceneTree;
@@ -62,6 +65,13 @@ namespace yr::engine {
     [[nodiscard]] scene::SceneTree& tree() noexcept { return sceneTree_; }
     [[nodiscard]] evt::EventBus& events() noexcept { return eventBus_; }
 
+    // 非拥有后端：装配者拥有并保证比 MainLoop 活得更久；nullptr 时阶段 11 为 no-op。
+    void setBackend(render::RendererBackend* backend) noexcept { backend_ = backend; }
+
+    // 阶段 10 产出的当前帧快照，直到下一次 tick 才被覆写。
+    [[nodiscard]] render::RenderSnapshot& snapshot() noexcept { return snapshot_; }
+    [[nodiscard]] const render::RenderSnapshot& snapshot() const noexcept { return snapshot_; }
+
     // 组合持有：记录本帧各阶段耗时、环形窗口与周期报告。构造后、tick 前可配置报告频率 /
     // CSV 路径 / 静默（setReportInterval(0)）。
     [[nodiscard]] FrameStats& stats() noexcept { return stats_; }
@@ -109,6 +119,11 @@ namespace yr::engine {
     // spiral 截断只报告一次，避免卡顿时每帧刷屏。
     bool spiralReported_ = false;
     bool quitRequested_ = false;
+
+    // 渲染接线：backend_ 非拥有（装配者拥有）；snapshot_ 每帧阶段 10 重建。
+    render::RendererBackend* backend_ = nullptr;
+    render::RenderSnapshot snapshot_;
+    RenderExtractSystem renderExtract_;
 
     // 帧统计：tick 全程计时 + 每阶段计时，endFrame 汇总入环。
     FrameStats stats_;

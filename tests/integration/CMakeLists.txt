@@ -13,6 +13,7 @@ target_link_libraries(YrTests_integration PRIVATE
     yr::engine
     yr::scene
     yr::event
+    yr::render_null
     yr::core
     Catch2::Catch2WithMain)
 
