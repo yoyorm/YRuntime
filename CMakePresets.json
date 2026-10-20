@@ -53,6 +53,22 @@
                 "YR_ENABLE_LOG": "OFF",
                 "YR_ENABLE_DEBUG_LOG": "OFF"
             }
+        },
+        {
+            "name": "debug-vk",
+            "displayName": "Debug + Vulkan 后端",
+            "inherits": "debug",
+            "cacheVariables": {
+                "YR_BUILD_VULKAN_BACKEND": "ON"
+            }
+        },
+        {
+            "name": "release-vk",
+            "displayName": "Release + Vulkan 后端",
+            "inherits": "release",
+            "cacheVariables": {
+                "YR_BUILD_VULKAN_BACKEND": "ON"
+            }
         }
     ],
     "buildPresets": [
@@ -74,6 +90,14 @@
             "targets": [
                 "YrBench_slot_map"
             ]
+        },
+        {
+            "name": "debug-vk",
+            "configurePreset": "debug-vk"
+        },
+        {
+            "name": "release-vk",
+            "configurePreset": "release-vk"
         }
     ],
     "testPresets": [
@@ -94,6 +118,13 @@
         {
             "name": "asan",
             "configurePreset": "asan",
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "debug-vk",
+            "configurePreset": "debug-vk",
             "output": {
                 "outputOnFailure": true
             }

@@ -1,4 +1,4 @@
-# render 层（`yr_render_iface` + `yr_render_null`）
+# render 层（`yr_render_iface` + `yr_render_null` + `yr_render_vulkan`）
 
 > 代码位置：`engine/render/iface/include/yr/render/`（+ `src/snapshot_io.cpp`）与 `engine/render/null/include/yr/render/null_backend.h`（+ `src/null_backend.cpp`）。
 > 契约层 `yr_render_iface` 只依赖 `yr_core` 与 std；Null 后端 `yr_render_null` 依赖 `yr_render_iface` + `yr_core`。设计意图见 `../01-architecture.md` §4.11，推进范围见 `../02-roadmap.md` M5。本文件是**代码级契约的主来源**。
@@ -120,6 +120,20 @@
 - **设计原因**：NullBackend 是"契约消费者"的最小实现——它跑得通，说明快照自洽且可被独立后端消费，而无需任何图形 API。
 - **Godot 对照**：`servers/display/display_server.h` 的 headless 形态（对照阅读）。
 - **遗留 / 已知缺口**：`initialized_` 目前只作状态标记，`present` 不校验它；无依赖 `initialized_` 的行为。真实后端（`yr_render_vulkan`）在 M6/M7。
+
+## Vulkan 后端（`yr_render_vulkan`，M6-1 外壳）
+
+> 代码位置：公开头 `engine/render/vulkan/include/yr/render/vk/vulkan_backend.h` + 私有实现 `src/{vulkan_backend,platform_window,vk_instance,vk_debug}.{h,cpp}`。
+> 构建开关 `YR_BUILD_VULKAN_BACKEND`（默认 **OFF**）：关掉时本 target 与 `apps/render_demo` 都不存在，默认构建不需要 Vulkan SDK / GLFW。**开这个开关用 `cmake --preset debug-vk`（或 `release-vk`）构建/开发**；clangd 需把根 `compile_commands.json` 指向该 preset 的 DB（`tools/link_compile_commands.sh debug-vk`），否则拿不到 vulkan TU 的编译命令、找不到 `<vulkan/...>`。环境细节见 `../05-engineering.md` §1 的 Vulkan SDK 行。
+
+- **公开头必须 vulkan-free / GLFW-free**：`vulkan_backend.h` 只 include `<memory>` 与 `<yr/render/backend.h>`，用 PIMPL（`struct Impl` + `std::unique_ptr<Impl>`）把 `VkInstance` / `GLFWwindow` 关在 `.cpp` 与 `src/` 私有头里。这是"图形 API 不越过本层"的可编译证据。
+- **图形 API 隔离是机械门禁**：`engine/render/vulkan/` 是**唯一**允许 `#include <vulkan/...>` / `<GLFW/...>` 的目录（`tools/check_deps.py` 的 `GRAPHIC_ALLOWED_DIRS`）；`apps/render_demo` 只 include `<yr/render/...>`。本层允许的依赖仍只有 `render_iface` + `core`。
+- **validation 层只在 Debug**：CMake 用 `$<$<CONFIG:Debug>:YR_ENABLE_VULKAN_VALIDATION=1>` 注入宏；`vk_instance.cpp` 在宏打开时先用 `vk::enumerateInstanceLayerProperties()` 探测 `VK_LAYER_KHRONOS_validation`，可见才启用并额外加 `VK_EXT_debug_utils`，不可见则**初始化硬失败**（抛异常，提示先 `sudo apt install vulkan-validationlayers`，或 `source ~/SDK/.../setup-env.sh` 提供 `VK_ADD_LAYER_PATH`），避免跑到没有 validation 的假绿。
+- **`DebugStats` 的存亡契约**：它是 `Instance` 的成员并声明在 messenger 成员**之前**，`pUserData` 指向它；error 计数并立即打印，warning 只计数。计数只能在 `Instance` 析构前取走，`VulkanBackend::Impl::shutdown()` 先取副本再 `reset()`，因此该统计**不含** instance 自身析构期产生的消息（messenger 必须先于 instance 销毁，属固有限制）。
+- **`validationErrorCount()` 是具体后端的诊断访问器**：只在 `VulkanBackend` 上提供，不属于 `RendererBackend` 契约；返回本次运行累计的 validation error 数（validation 被编译掉时恒 0）。`render_demo` 用它把"零 error"变成进程退出码（有 error 返回 1）。
+- **M6 的 `present` 不消费快照**：只 `pollEvents()`，`last_frame_stats()` 恒为全 0；接快照是 M7 的事（见 `../02-roadmap.md` M7）。
+- **`shouldClose()` 是临时接口**：M6 由 `apps/render_demo` 自己驱动 `while(!shouldClose()) present({})`；M7 改为 `MainLoop` 驱动后移除。
+- `create_vulkan_backend()` 与 `create_null_backend()` 同形（返回 `std::unique_ptr<RendererBackend>`）；`initialize` 把 Vulkan-Hpp 抛出的异常翻译成"日志 + `false`"，构造窗口/instance 失败不会泄漏半成品。
 
 ## 本层遗留 / 接线现状
 

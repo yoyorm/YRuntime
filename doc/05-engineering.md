@@ -25,17 +25,17 @@
 | clang-format | ✅ | 18 | 与 Yo_Renderer 保持一致的版本 |
 | ASan / UBSan | ✅ | GCC 实测可用 | `asan` preset |
 | GLFW3 | ✅ | `/usr/include/GLFW` | 新 M6 用 |
-| Vulkan SDK | ✅ | `/home/yoyorm/SDK/Vulkan/1.4.357.1/x86_64`；另有 GLFW3（`/usr/include/GLFW`）与系统 `libvulkan.so.1.4.313` | **`VULKAN_SDK` 环境变量未设置**（2026-09-22 复查仍未设）。新 M6 前把 `export VULKAN_SDK=~/SDK/Vulkan/1.4.357.1/x86_64` 写进 `~/.bashrc`，并在 CMake 里做 fallback 查找 |
+| Vulkan SDK | ✅ | `/home/yoyorm/SDK/Vulkan/1.4.357.1/x86_64`；另有 GLFW3（`/usr/include/GLFW`）与系统 `libvulkan.so.1.4.313` | **无需 shell 环境变量**（2026-10-20 复查）。apt 装 `vulkan-validationlayers` + `glslc` 后**无需 `VK_ADD_LAYER_PATH`**（层进系统搜索路径）；CMake **自动探测** `~/SDK/Vulkan/*/x86_64`（**无需 `VULKAN_SDK` 环境变量**，取版本最大者，`engine/render/vulkan/CMakeLists.txt` 另有一次 loader hint 回退，仍找不到才 `FATAL_ERROR`）；**运行期无需 `LD_LIBRARY_PATH`**（CMake 已把指向 SDK loader 的 RUNPATH 写进 `yr_render_demo`）。本机布局非标准：loader 在 `x86_64/lib/VulkanLoader/lib`（**不在** `$VULKAN_SDK/lib`）。`libvulkan-dev` **装不了**：它依赖 `libvulkan1=1.3.275`，与本机 LunarG 1.4.313 冲突，强装会卸掉 8 个 i386 图形包 |
 | Python | ✅ | 3.12.3 | `tools/check_deps.py` 等脚本用 |
 | **clang-tidy** | ❌ 未装 | — | **可选**：`sudo apt install clang-tidy`。被推了三次（M0→M1→M11），说明学习价值低 → 不痛就不装（R6） |
 | **valgrind** | ❌ 未装 | — | `sudo apt install valgrind` —— 可选，ASan 已覆盖大部分场景；M9/M10 查内存时序问题时可能想要 |
 | **ccache** | ❌ 未装 | — | `sudo apt install ccache` —— 安排在 **Day 5**（做 CI 缓存时才知道它省了多少）。CMake 侧用 `find_program` 探测，装了就用、没装不报错 |
-| clangd | ✅ **已接入** | apt 安装 | 根目录 `compile_commands.json` → `build/debug/` 符号链接；`.vscode/settings.json` 里已禁用 C/C++ 扩展的 IntelliSense 避免冲突 |
+| clangd | ✅ **已接入** | apt 安装 | 根目录 `compile_commands.json` 用 `tools/link_compile_commands.sh debug-vk` 指向**开了 Vulkan 后端**的 DB（`build/debug-vk/`，含全部 target + vulkan TU 的 `-isystem`；`debug`/`release`/`asan` 的 DB 里 0 条 vulkan 条目）；`.vscode/settings.json` 里已禁用 C/C++ 扩展的 IntelliSense 避免冲突 |
 | doxygen / graphviz | ❌ 未装 | — | 可选（M11 生成调用图/依赖图） |
 | Tracy | ❌ 未装 | — | M11 可选，用 git submodule |
 | gcovr / lcov | ❓ 待查 | — | **可选**，M11 想看覆盖率时再装：`sudo apt install python3-pip gcovr`。只统计，不做门禁 |
 
-**硬件**：12 线程 CPU / 31GB RAM / 磁盘剩余 240GB。
+**硬件**：12 线程 CPU / 31GB RAM / 磁盘剩余 240GB；GPU = **NVIDIA RTX 5060**（驱动报 Vulkan 1.4.351，`/usr/share/vulkan/icd.d/nvidia_icd.json`）+ **llvmpipe**（`lvp_icd.json`）兜底。
 → 对 M10 的意义：`JobSystem` 默认 `worker_count = 11`，benchmark 时记录这个值；
 → 对构建的意义：`-j12`。**实测 M0 规模：configure 0.15s / 全量 1.2s / 改一个 .cpp 增量 0.18s**（还没到需要 ccache 的量级）。
 
@@ -63,6 +63,8 @@
 | `debug` | 日常开发 | `CMAKE_BUILD_TYPE=Debug`；`YR_ENABLE_ASSERTS=ON`、`YR_ENABLE_DEBUG_LOG=ON` |
 | `release` | 性能测试 / 录屏 | `CMAKE_BUILD_TYPE=Release`（带 `-O3 -DNDEBUG`）；`YR_ENABLE_ASSERTS=OFF`、`YR_ENABLE_DEBUG_LOG=OFF`、`YR_ENABLE_LOG=ON` |
 | `asan` | 内存/UB 检查 | Debug + `YR_ENABLE_SANITIZERS=ON`（`-fsanitize=address,undefined -fno-sanitize-recover=all`） |
+| `debug-vk` | Vulkan 后端开发 | 同 `debug` + `YR_BUILD_VULKAN_BACKEND=ON`（`build/debug-vk/`，clangd 的 DB 指这里） |
+| `release-vk` | Vulkan 后端性能 / 录屏 | 同 `release` + `YR_BUILD_VULKAN_BACKEND=ON` |
 
 推迟：
 
