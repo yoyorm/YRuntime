@@ -22,6 +22,8 @@ namespace yr::render::vk {
     Instance& operator=(Instance&&) = delete;
 
     [[nodiscard]] ::vk::Instance handle() const noexcept { return *instance_; }
+    // 只读引用：raii::SurfaceKHR 等子对象的构造函数需要它，且不转移所有权。
+    [[nodiscard]] const ::vk::raii::Instance& raiiInstance() const noexcept { return instance_; }
     [[nodiscard]] const DebugStats& debugStats() const noexcept { return debugStats_; }
     // 本次构建是否真的启用了 validation 层（探测到 + 已列入启用层）。
     [[nodiscard]] bool validationEnabled() const noexcept { return validationEnabled_; }

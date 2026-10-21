@@ -9,14 +9,20 @@
 #include <yr/core/log.h>
 
 #include "platform_window.h"
+#include "vk_device.h"
 #include "vk_instance.h"
+#include "vk_surface.h"
 
 namespace yr::render {
 
-  // M6 骨架的资源组合；声明顺序即构造顺序，析构逆序。
+  // M6 骨架的资源组合；声明顺序即依赖顺序（window → instance → surface → device），析构逆序。
   struct VulkanBackend::Impl {
     std::optional<vk::Window> window;
     std::optional<vk::Instance> instance;
+    // 依赖 instance + window，故声明在二者之后、先于二者重置。
+    std::optional<vk::Surface> surface;
+    // 依赖 instance + surface，故声明在二者之后、先于二者重置。
+    std::optional<vk::Device> device;
     BackendStats stats{};
     std::uint32_t lastValidationErrors = 0;
 
@@ -24,7 +30,9 @@ namespace yr::render {
       if (!instance.has_value()) {
         return;
       }
-      const vk::DebugStats debugStats = instance->debugStats();
+      device.reset();                                           // 依赖 surface，先于 surface 释放
+      surface.reset();                                          // 可能产生 validation 消息
+      const vk::DebugStats debugStats = instance->debugStats(); // 现在再取，包含 surface 析构期
       lastValidationErrors = debugStats.errors;
       instance.reset();
       window.reset();
@@ -46,9 +54,13 @@ namespace yr::render {
       // 窗口必须先于 instance：glfwGetRequiredInstanceExtensions 依赖 glfwInit。
       impl_->window.emplace();
       impl_->instance.emplace();
+      impl_->surface.emplace(*impl_->instance, *impl_->window);
+      impl_->device.emplace(*impl_->instance, *impl_->surface);
     } catch (const std::exception& error) {
       YR_LOG_ERROR("render.vk.backend", std::string("初始化失败：") + error.what());
       impl_->lastValidationErrors = 0;
+      impl_->device.reset();
+      impl_->surface.reset();
       impl_->instance.reset();
       impl_->window.reset();
       return false;

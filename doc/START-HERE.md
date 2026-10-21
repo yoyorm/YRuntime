@@ -14,17 +14,34 @@
 | **M2 反射与对象模型** | ✅ 核心完成 —— Object/ObjectDB/Variant（10 tag）/PropertyInfo/ClassInfo/ClassDB 完成；`yr_inspect`、注册宏延后 |
 | **M3 单线程 EventBus** | ✅ 已完成 / 收口（2026-10-08） |
 | **M4 场景树与主循环** | ✅ 已完成 / 收口（2026-10-17）——Node/SceneTree/Transform/MainLoop/Clock/FrameStats + Engine + `apps/runtime_headless` + 10000 帧集成测试；剩余的 `NodePath`/headless 平台层为非阻塞遗留 |
-| **M5 渲染契约与 NullBackend** | 🔨 **下一主线**（`yr_render_iface` + `yr_render_null` + `render_extract`） |
-| M6 ~ M11 | ⬜ 未开始 |
+| **M5 渲染契约与 NullBackend** | ✅ 已完成 / 收口 —— `yr_render_iface` + `yr_render_null` + `render_extract` + headless 注入 |
+| **M6 最小 Vulkan Bootstrap** | 🔨 **进行中** —— M6-1 外壳 + M6-2 Surface / 设备 / 队列完成；下一步 M6-3 swapchain + 清屏 |
+| M7 ~ M11 | ⬜ 未开始 |
 
-**远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend → M6 最小 Vulkan bootstrap → M7 Snapshot 驱动画面（首个主要作品节点）→ M8 序列化 → M9 资源系统 → M10 任务系统 → M11 工具链打磨。**当前唯一任务：M5。**
+**远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend ✅ → M6 最小 Vulkan bootstrap 🔨 → M7 Snapshot 驱动画面（首个主要作品节点）→ M8 序列化 → M9 资源系统 → M10 任务系统 → M11 工具链打磨。**当前唯一任务：M6-3。**
 
 进度**只在两处维护**：根 `README.md` 的里程碑表（对外）+ `02-roadmap.md` 的 checkbox（对内）。
 别的地方不要重复记录，否则一定会漂移。
 
 ---
 
-## 2. 下一步：M5 渲染契约与 NullBackend（M4 已完成）
+## 2. 下一步：M6-3 swapchain + 清屏（M6-2 已完成）
+
+### M6-3 的范围与自测
+
+按顺序做，每步独立可提交：
+
+1. **Swapchain**：`raii::SwapchainKHR` + image views 包成 RAII 所有者；格式 / present mode / extent 从 surface 能力选；resize / 最小化（0×0）时整体重建。
+2. **清屏**：用 dynamic rendering（不建 render pass / framebuffer 对象），pipeline 的 color format 从 swapchain 取，录制清屏 command buffer。
+3. **跑通**：acquire → 录制清屏 → submit → present 的最小单帧路径（帧同步 M6-4 完整化）；validation 零 error。
+
+收口时必须能脱稿回答：
+
+1. 为什么 swapchain 是"可再生资源"，什么情况必须整体重建？
+2. 最小化时 framebuffer 为 0×0，为什么不能照常 acquire 下一张 image？
+3. 为什么 pipeline 的 color format 必须从 swapchain 取，而不是写字面量？
+
+> 以下为已完成里程碑的回顾，开工时不用重读。
 
 ### M3 已完成：单线程 EventBus（2026-10-08）
 
@@ -161,14 +178,36 @@ Day 3b→3c 就是这个模式：先硬编码 flag 亲眼看 ASan 抓 bug，再�
 
 ---
 
-## 4. 分工
+## 4. 分工与学习契约（D20）
 
-| AI 可以做 | AI 不做 |
+AI 已能写实现，瓶颈不再是"会不会写 API"，而是"能不能判断结构对不对"。所以分工按**知识层次**划分，不按文件划分：
+
+| 归你（人） | 归 AI |
 |---|---|
-| CMake / CI / Python 脚本等**构建样板** | `engine/` 下任何模块的**实现代码** |
-| 解释概念、讲清坑的原理、Godot 源码导读 | 替你做设计决策（只给选项 + 代价） |
-| review 你的头文件与实现、指出 bug 的**类型** | 替你写博客 |
-| 给测试用例清单（清单是规格，实现你写） | 在没必要时跑后台验证（浪费你的 token） |
+| L2 契约：不变量、依赖顺序、所有权与析构、失败语义、单一真相源 | L3 API 机制：字段、枚举、扩展名、样板调用 |
+| 设计取舍：现在做不做、抽象要不要引入 | 实现与验证：改代码、跑构建 / 测试 / 格式 / 依赖检查 |
+| 判断"这段结构对不对"（按下面六条） | 把事实查清楚并带 `文件:行` 证据 |
+| 里程碑收口时脱稿讲清自测题 | 按契约维度写报告，而不是按文件罗列 |
+
+**AI 可以写 `engine/` 实现代码，但不做未定的设计决策。** 决策仍由你拍板；AI 只给选项与代价。
+
+### 新概念四问法
+
+1. 没有它会怎样？
+2. 它依赖谁、谁依赖它？
+3. 谁创建、谁销毁、什么时候？
+4. 失败时我们怎么表现？
+
+答不出的部分才是要查 API 的部分。
+
+### 每步 review 只看这六条
+
+1. 新增的所有者是谁？依赖谁？析构顺序对不对？
+2. 失败路径有没有半成品？异常边界是不是只有一个？
+3. 日志能不能回答"为什么选它 / 为什么重建"？
+4. 有没有提前引入抽象或预埋字段？
+5. 公开头有没有被图形 API 污染？
+6. `YR_BUILD_VULKAN_BACKEND=OFF` 或无 GPU 时是否仍全绿？
 
 **卡住时的顺序**（不要第一步就问）：
 ① 把问题写成一句话 → ② 20 行最小复现 → ③ `clang -E` / gdb / 加日志缩小范围 →
