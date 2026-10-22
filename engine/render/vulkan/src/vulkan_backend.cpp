@@ -17,6 +17,7 @@
 #include "vk_instance.h"
 #include "vk_surface.h"
 #include "vk_swapchain.h"
+#include "vk_triangle_pipeline.h"
 
 namespace yr::render {
 
@@ -28,8 +29,8 @@ namespace yr::render {
 
   } // namespace
 
-  // M6 骨架的资源组合；声明顺序即依赖顺序（window → instance → surface → device → swapchain → commandPool
-  // → frameSync），析构逆序。
+  // M6 骨架的资源组合；声明顺序即依赖顺序（window → instance → surface → device → swapchain →
+  // trianglePipeline → commandPool → frameSync），析构逆序。
   struct VulkanBackend::Impl {
     std::optional<vk::Window> window;
     std::optional<vk::Instance> instance;
@@ -39,6 +40,8 @@ namespace yr::render {
     std::optional<vk::Device> device;
     // 依赖 device + surface + window，故声明在二者之后、先于三者重置。
     std::optional<vk::Swapchain> swapchain;
+    // 依赖 device + swapchain format，故声明在 swapchain 之后、先于 swapchain 重置。
+    std::optional<vk::TrianglePipeline> trianglePipeline;
     // 依赖 device，故声明在 device 之后、先于 device 重置。
     std::optional<vk::CommandPool> commandPool;
     std::optional<vk::FrameSync> frameSync;
@@ -57,6 +60,7 @@ namespace yr::render {
       }
       frameSync.reset();
       commandPool.reset();
+      trianglePipeline.reset();                                 // 依赖 swapchain format，先于 swapchain 释放
       swapchain.reset();                                        // 依赖 device，先于 device 释放
       device.reset();                                           // 依赖 surface，先于 surface 释放
       surface.reset();                                          // 可能产生 validation 消息
@@ -76,10 +80,12 @@ namespace yr::render {
         // 旧 FrameSync 的 fence / semaphore 可能仍被 pending 提交引用，重建前必须等 GPU 空闲。
         device->raiiDevice().waitIdle();
         swapchain->recreate(*device, *surface, *window);
+        // format 可能随新 swapchain 变化，pipeline 无条件按新 format 重建。
+        // 边界：swapchain 已换新而 TrianglePipeline / FrameSync 构造失败时，optional 为空（swapchain 有效）。
+        // 此时 renderFrame 直接返回，present 发现 pipeline 或 frameSync 缺失会再调一次本函数恢复。
+        // 若 swapchain->recreate 抛异常，旧 pipeline 仍与旧 swapchain 匹配。
+        trianglePipeline.emplace(*device, swapchain->format());
         // imageCount 可能变化，renderFinished 的数量随之变化，因此 FrameSync 与 swapchain 一起重建。
-        // 边界：swapchain 已换新而 FrameSync 构造失败时，optional 为空（swapchain 是有效的）。
-        // 此时 renderFrame 直接返回，present 发现 frameSync 缺失会再调一次本函数恢复。
-        // 若 swapchain->recreate 抛异常，新的 FrameSync 还没动，旧的仍与旧 swapchain 匹配。
         frameSync.emplace(*device, kFramesInFlight, swapchain->imageCount());
         frameSlot_ = 0;
         YR_LOG_INFO("render.vk.backend", "swapchain 已重建 " + std::to_string(swapchain->extent().width) + "x" +
@@ -95,7 +101,7 @@ namespace yr::render {
     // N 帧在飞：等本 slot 的 fence → acquire → reset fence → 录制清屏 → submit → present → 推进 slot。
     void renderFrame() {
       if (!window.has_value() || !surface.has_value() || !device.has_value() || !swapchain.has_value() ||
-          !commandPool.has_value() || !frameSync.has_value()) {
+          !trianglePipeline.has_value() || !commandPool.has_value() || !frameSync.has_value()) {
         return;
       }
 
@@ -157,6 +163,11 @@ namespace yr::render {
       ::vk::RenderingInfo renderingInfo{};
       renderingInfo.setRenderArea(::vk::Rect2D{{0, 0}, extent}).setLayerCount(1).setColorAttachments(colorAttachment);
       cmd.beginRendering(renderingInfo);
+      cmd.bindPipeline(::vk::PipelineBindPoint::eGraphics, trianglePipeline->handle());
+      cmd.setViewport(0, ::vk::Viewport{0.0f, 0.0f, static_cast<float>(extent.width), static_cast<float>(extent.height),
+                                        0.0f, 1.0f});
+      cmd.setScissor(0, ::vk::Rect2D{{0, 0}, extent});
+      cmd.draw(3, 1, 0, 0);
       cmd.endRendering();
 
       const ::vk::ImageMemoryBarrier2 toPresent{::vk::PipelineStageFlagBits2::eColorAttachmentOutput,
@@ -226,6 +237,7 @@ namespace yr::render {
       impl_->surface.emplace(*impl_->instance, *impl_->window);
       impl_->device.emplace(*impl_->instance, *impl_->surface);
       impl_->swapchain.emplace(*impl_->device, *impl_->surface, *impl_->window);
+      impl_->trianglePipeline.emplace(*impl_->device, impl_->swapchain->format());
       impl_->commandPool.emplace(*impl_->device, kFramesInFlight);
       impl_->frameSync.emplace(*impl_->device, kFramesInFlight, impl_->swapchain->imageCount());
     } catch (const std::exception& error) {
@@ -233,6 +245,7 @@ namespace yr::render {
       impl_->lastValidationErrors = 0;
       impl_->frameSync.reset();
       impl_->commandPool.reset();
+      impl_->trianglePipeline.reset();
       impl_->swapchain.reset();
       impl_->device.reset();
       impl_->surface.reset();
@@ -265,8 +278,8 @@ namespace yr::render {
     if (impl_->window->width() <= 0 || impl_->window->height() <= 0) {
       return;
     }
-    if (!impl_->frameSync.has_value()) {
-      // 上一次重建在 FrameSync 构造处失败（swapchain 已是新的）：再走一次重建以恢复出帧。
+    if (!impl_->frameSync.has_value() || !impl_->trianglePipeline.has_value()) {
+      // 上一次重建在 TrianglePipeline / FrameSync 构造处失败（swapchain 已是新的）：再走一次重建以恢复出帧。
       (void)impl_->tryRecreate();
       return;
     }

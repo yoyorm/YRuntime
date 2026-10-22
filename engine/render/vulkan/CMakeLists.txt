@@ -1,5 +1,6 @@
 # Vulkan 后端：engine/render/vulkan/ 是唯一允许 include vulkan/GLFW 的目录
 # （tools/check_deps.py 的 GRAPHIC_ALLOWED_DIRS）。
+# M6 用构建期 glslc + 运行时路径加载 shader；M7/M9 换成资源系统。
 
 # 本机 SDK 布局非标准：loader 在 lib/VulkanLoader/lib，不在 $VULKAN_SDK/lib。
 # 自动探测 ~/SDK/Vulkan/*/x86_64 是为了让 configure 不依赖 shell 里 source 过
@@ -30,6 +31,30 @@ if(NOT Vulkan_FOUND)
 endif()
 
 find_package(glfw3 3.3 REQUIRED)
+find_program(YR_GLSLC_EXECUTABLE glslc REQUIRED)
+
+set(YR_VULKAN_SHADER_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders")
+set(YR_VULKAN_SHADER_BINARIES
+    "${YR_VULKAN_SHADER_DIR}/triangle.vert.spv"
+    "${YR_VULKAN_SHADER_DIR}/triangle.frag.spv")
+
+add_custom_command(
+    OUTPUT "${YR_VULKAN_SHADER_DIR}/triangle.vert.spv"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${YR_VULKAN_SHADER_DIR}"
+    COMMAND "${YR_GLSLC_EXECUTABLE}" -o "${YR_VULKAN_SHADER_DIR}/triangle.vert.spv"
+            "${CMAKE_CURRENT_SOURCE_DIR}/shaders/triangle.vert"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/triangle.vert"
+    COMMENT "编译 Vulkan shader：triangle.vert"
+    VERBATIM)
+add_custom_command(
+    OUTPUT "${YR_VULKAN_SHADER_DIR}/triangle.frag.spv"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${YR_VULKAN_SHADER_DIR}"
+    COMMAND "${YR_GLSLC_EXECUTABLE}" -o "${YR_VULKAN_SHADER_DIR}/triangle.frag.spv"
+            "${CMAKE_CURRENT_SOURCE_DIR}/shaders/triangle.frag"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/triangle.frag"
+    COMMENT "编译 Vulkan shader：triangle.frag"
+    VERBATIM)
+add_custom_target(yr_vulkan_shaders DEPENDS ${YR_VULKAN_SHADER_BINARIES})
 
 add_library(yr_render_vulkan
     src/vulkan_backend.cpp
@@ -41,8 +66,10 @@ add_library(yr_render_vulkan
     src/vk_device.cpp
     src/vk_swapchain.cpp
     src/vk_command_pool.cpp
-    src/vk_frame_sync.cpp)
+    src/vk_frame_sync.cpp
+    src/vk_triangle_pipeline.cpp)
 add_library(yr::render_vulkan ALIAS yr_render_vulkan)
+add_dependencies(yr_render_vulkan yr_vulkan_shaders)
 
 target_include_directories(yr_render_vulkan
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -52,4 +79,6 @@ target_link_libraries(yr_render_vulkan
     PRIVATE Vulkan::Vulkan glfw)
 
 # validation 层只在 Debug 构建启用（见 doc/layers/render.md）。
-target_compile_definitions(yr_render_vulkan PRIVATE $<$<CONFIG:Debug>:YR_ENABLE_VULKAN_VALIDATION=1>)
+target_compile_definitions(yr_render_vulkan PRIVATE
+    $<$<CONFIG:Debug>:YR_ENABLE_VULKAN_VALIDATION=1>
+    "YR_VULKAN_SHADER_DIR=\"${YR_VULKAN_SHADER_DIR}\"")

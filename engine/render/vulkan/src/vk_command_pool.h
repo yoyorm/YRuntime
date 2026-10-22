@@ -1,9 +1,7 @@
 #pragma once
 
-#include <cstdint>
-#include <vector>
-
 #include "vk_hpp.h"
+#include <cstdint>
 
 namespace yr::render::vk {
 
@@ -20,7 +18,6 @@ namespace yr::render::vk {
     CommandPool(CommandPool&&) = delete;
     CommandPool& operator=(CommandPool&&) = delete;
 
-    // 越界是编程错误：debug 下断言，release 下不检查。
     [[nodiscard]] ::vk::CommandBuffer commandBuffer(std::uint32_t slot) const;
 
   private:

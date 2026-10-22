@@ -15,30 +15,31 @@
 | **M3 单线程 EventBus** | ✅ 已完成 / 收口（2026-10-08） |
 | **M4 场景树与主循环** | ✅ 已完成 / 收口（2026-10-17）——Node/SceneTree/Transform/MainLoop/Clock/FrameStats + Engine + `apps/runtime_headless` + 10000 帧集成测试；剩余的 `NodePath`/headless 平台层为非阻塞遗留 |
 | **M5 渲染契约与 NullBackend** | ✅ 已完成 / 收口 —— `yr_render_iface` + `yr_render_null` + `render_extract` + headless 注入 |
-| **M6 最小 Vulkan Bootstrap** | 🔨 **进行中** —— M6-1 外壳 + M6-2 Surface / 设备 / 队列 + M6-3 swapchain + 清屏上屏链路 + M6-4a N 帧在飞完成；下一步 M6-4b 硬编码三角形 |
+| **M6 最小 Vulkan Bootstrap** | 🔨 **进行中** —— M6-1 外壳 + M6-2 Surface / 设备 / 队列 + M6-3 swapchain + 清屏上屏链路 + M6-4a N 帧在飞 + M6-4b 硬编码三角形完成；下一步 M6-5 健壮性收口 |
 | M7 ~ M11 | ⬜ 未开始 |
 
-**远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend ✅ → M6 最小 Vulkan bootstrap 🔨 → M7 Snapshot 驱动画面（首个主要作品节点）→ M8 序列化 → M9 资源系统 → M10 任务系统 → M11 工具链打磨。**当前唯一任务：M6-4。**
+**远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend ✅ → M6 最小 Vulkan bootstrap 🔨 → M7 Snapshot 驱动画面（首个主要作品节点）→ M8 序列化 → M9 资源系统 → M10 任务系统 → M11 工具链打磨。**当前唯一任务：M6-5。**
 
 进度**只在两处维护**：根 `README.md` 的里程碑表（对外）+ `02-roadmap.md` 的 checkbox（对内）。
 别的地方不要重复记录，否则一定会漂移。
 
 ---
 
-## 2. 下一步：M6-4b 硬编码三角形（M6-4a N 帧在飞已完成）
+## 2. 下一步：M6-5 健壮性收口（M6-4b 硬编码三角形已完成）
 
-### M6-4b 的范围与自测
+### M6-5 的范围与自测
 
-按顺序做，每步独立可提交：
-
-1. **三角形**：dynamic rendering 下建最小的 vertex buffer / shader / pipeline / draw；`colorAttachment` 的 format 必须从当前 swapchain 取（不能硬编码），renderArea 也从 swapchain 取；present 前仍是 `ATTACHMENT_OPTIMAL → PRESENT_SRC`。
-2. **跑通**：保留 M6-3b 的 OOD / Suboptimal → 重建、0×0 跳过、重建失败保留旧链三条路径，验证 N 帧在飞下 fence / 信号量的等待关系仍然成立。
+1. **soak**：连续运行 10 分钟，无 crash / validation error / 明显泄漏。
+2. **resize**：手动 resize / 最小化恢复不崩。
+3. **清理已知小问题**：
+   - `renderFrame` 每帧 `getImages()` 分配；
+   - 可选：`FrameSync` 重建的强异常安全。
 
 收口时必须能脱稿回答：
 
-1. 为什么 N 帧在飞能提高吞吐？它和"画面更快"是什么关系？
-2. `renderFinished` 为什么按 swapchain image 索引分配，而不是按 frame slot？两种粒度的正确性论证分别是什么？
-3. 三角形 pipeline 的 color format 为什么必须从 swapchain 取？
+1. 为什么 dynamic viewport/scissor 能让 resize 不必重建 pipeline，而 swapchain format 变了就必须重建？
+2. 为什么这个三角形不需要 vertex buffer？M7 什么时候必须引入？
+3. 10 分钟 soak 能暴露哪些单帧测不出的问题？
 
 > 以下为已完成里程碑的回顾，开工时不用重读。
 
