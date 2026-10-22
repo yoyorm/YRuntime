@@ -346,7 +346,7 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 - `NodePath`、名字唯一性、`get_node(path)`、独立 headless 平台层未做。
 - Transform 仅平移；CSV 仅 total + physics 步数（完整每阶段列与绘图归 M11）。
 
-**下一步（按路线图）**：进入 **M5 · 渲染契约与 NullBackend**——`yr_render_iface`（`RenderSnapshot`/`RendererBackend` 纯 POD 契约）、`yr_render_null`，以及 `yr/engine/render_extract.h/.cpp` 把阶段 10 接上 `SceneTree → RenderSnapshot` 的单向抽取；快照 dump/replay 作为契约完备性验收。
+**下一步（历史）**：M5 / M6 已完成，当前进度见 `START-HERE.md`。
 
 **验收标准**
 - **生命周期顺序测试**：嵌套 3 层树，`_ready` 后序 / `_process` 前序 / `_exit_tree` 顺序，逐条断言。
@@ -411,15 +411,17 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 
 **Yo_Renderer 复用边界（审计结论，必须遵守）**：以**最小 Vulkan backend 重写为主**，选择性借鉴 / 逐文件搬底层机制为辅；**不把整个 Yo_Renderer 作为 subdirectory，也不整体搬迁**。
 
-- [ ] 策略写进 ADR（D19）：哪些**重写**、哪些**逐文件借鉴**，落进 `engine/render/vulkan/` 并适配 YRuntime 命名 / `Handle` / CMake 分层
-- [ ] 可借鉴 / 可能搬迁（逐个 review 后适配）：`platform/VulkanContext`、`Swapchain`、`SyncObjects` / `FrameSync`、`rhi/command/CommandRecorder`、`render/VulkanResourceTable`
-- [ ] **不搬**：`app/*`、`framework/*`、`system/*`、`ui/*`、`core/ObjectDB/Ref/Handle/TextureCache`、现有 `RenderServer`、`asset/GltfLoader` 全链路（存在反向依赖、`void*`、场景 / GPU 生命周期耦合或与 YRuntime 重复）
-- [ ] `yr_render_vulkan` target（CMake option `YR_BUILD_VULKAN_BACKEND`，默认 OFF）：GLFW 窗口 + Vulkan instance/device/queue + swapchain + frame sync
-- [ ] 清屏 + 硬编码三角形（顶点 / 着色器写死在 backend 内），validation layer 零 error
-- [ ] `VulkanBackend : RendererBackend` 骨架（`initialize`/`shutdown`/`present` 可为空实现或只画上面那一帧）；本阶段**不要求**消费真实 `RenderSnapshot`
-- [ ] 明确**不做**：PBR、IBL、shadow、glTF、ImGui、ECS、异步加载、JobSystem、独立渲染线程、视锥剔除
-- [ ] CI / 工程：`engine/` 除 `engine/render/vulkan/` 外零 Vulkan/GLFW include；`YR_BUILD_VULKAN_BACKEND=OFF` 时 CI 仍全绿（无 GPU 不构建该 target）
+- [x] 策略写进 ADR（D19）：哪些**重写**、哪些**逐文件借鉴**，落进 `engine/render/vulkan/` 并适配 YRuntime 命名 / `Handle` / CMake 分层
+- [x] 可借鉴 / 可能搬迁（逐个 review 后适配）：`platform/VulkanContext`、`Swapchain`、`SyncObjects` / `FrameSync`、`rhi/command/CommandRecorder`、`render/VulkanResourceTable`
+- [x] **不搬**：`app/*`、`framework/*`、`system/*`、`ui/*`、`core/ObjectDB/Ref/Handle/TextureCache`、现有 `RenderServer`、`asset/GltfLoader` 全链路（存在反向依赖、`void*`、场景 / GPU 生命周期耦合或与 YRuntime 重复）
+- [x] `yr_render_vulkan` target（CMake option `YR_BUILD_VULKAN_BACKEND`，默认 OFF）：GLFW 窗口 + Vulkan instance/device/queue + swapchain + frame sync
+- [x] 清屏 + 硬编码三角形（顶点 / 着色器写死在 backend 内），validation layer 零 error
+- [x] `VulkanBackend : RendererBackend` 骨架（`initialize`/`shutdown`/`present` 可为空实现或只画上面那一帧）；本阶段**不要求**消费真实 `RenderSnapshot`
+- [x] 明确**不做**：PBR、IBL、shadow、glTF、ImGui、ECS、异步加载、JobSystem、独立渲染线程、视锥剔除
+- [x] CI / 工程：`engine/` 除 `engine/render/vulkan/` 外零 Vulkan/GLFW include；`YR_BUILD_VULKAN_BACKEND=OFF` 时 CI 仍全绿（无 GPU 不构建该 target）
 - [ ] 借鉴 / 搬迁时遇到的**耦合点逐条记进 commit message 正文**
+
+> **M6 收口（2026-10-23）**：窗口 / instance / surface / device / swapchain / 清屏上屏 / 2 帧在飞 / 硬编码三角形全部落地，validation 零 error；resize 与最小化由用户手测通过，soak 由用户实际运行确认。最后一条（耦合点记进 commit message）在本次提交时补。
 
 **验收标准**
 - 能打开窗口、清屏并画出硬编码三角形；validation layer 零 error。

@@ -57,8 +57,9 @@ namespace yr::render::vk {
 
   Swapchain::Swapchain(const Device& device, const Surface& surface, const Window& window) {
     Created created = create(device, surface, window, nullptr);
-    std::vector<::vk::raii::ImageView> views = buildImageViews(device, created.handle, created.format);
+    std::vector<::vk::raii::ImageView> views = buildImageViews(device, created.images, created.format);
     swapchain_ = std::move(created.handle);
+    images_ = std::move(created.images);
     imageViews_ = std::move(views);
     format_ = created.format;
     extent_ = created.extent;
@@ -122,6 +123,7 @@ namespace yr::render::vk {
         oldSwapchain, nullptr);
 
     ::vk::raii::SwapchainKHR swapchain(device.raiiDevice(), createInfo);
+    std::vector<::vk::Image> images = swapchain.getImages();
 
     // 12. 一行日志记录本次选择。
     YR_LOG_INFO("render.vk.swapchain", "swapchain 创建成功 format=" + ::vk::to_string(surfaceFormat.format) +
@@ -130,13 +132,12 @@ namespace yr::render::vk {
                                            " presentMode=" + ::vk::to_string(presentMode) +
                                            " sharing=" + (concurrent ? "concurrent" : "exclusive"));
 
-    return Created{std::move(swapchain), surfaceFormat.format, extent};
+    return Created{std::move(swapchain), std::move(images), surfaceFormat.format, extent};
   }
 
   // 11. 每张 image 一个 e2D color view，components 用默认（identity）。
   std::vector<::vk::raii::ImageView>
-  Swapchain::buildImageViews(const Device& device, const ::vk::raii::SwapchainKHR& target, ::vk::Format format) const {
-    const std::vector<::vk::Image> images = target.getImages();
+  Swapchain::buildImageViews(const Device& device, std::span<const ::vk::Image> images, ::vk::Format format) const {
     std::vector<::vk::raii::ImageView> views;
     views.reserve(images.size());
     for (const ::vk::Image image : images) {
@@ -151,11 +152,12 @@ namespace yr::render::vk {
   void Swapchain::recreate(const Device& device, const Surface& surface, const Window& window) {
     // 全部成功前不改成员：create / buildImageViews 抛异常时旧链保持完整。
     Created next = create(device, surface, window, *swapchain_);
-    std::vector<::vk::raii::ImageView> nextViews = buildImageViews(device, next.handle, next.format);
+    std::vector<::vk::raii::ImageView> nextViews = buildImageViews(device, next.images, next.format);
     // 旧 views 先死，此时旧 swapchain 还活着。
     imageViews_ = std::move(nextViews);
-    // 旧 swapchain 死于赋值；随后才更新 format / extent。
+    // 旧 swapchain 死于赋值；随后才更新 images / format / extent。
     swapchain_ = std::move(next.handle);
+    images_ = std::move(next.images);
     format_ = next.format;
     extent_ = next.extent;
   }
@@ -164,6 +166,11 @@ namespace yr::render::vk {
     const ::vk::SurfaceCapabilitiesKHR caps = device.physicalDevice().getSurfaceCapabilitiesKHR(surface.handle());
     const ::vk::Extent2D expected = computeExtent(caps, window);
     return expected.width != extent_.width || expected.height != extent_.height;
+  }
+
+  ::vk::Image Swapchain::image(std::uint32_t index) const {
+    YR_ASSERT(index < images_.size());
+    return images_[index];
   }
 
   ::vk::ImageView Swapchain::imageView(std::uint32_t index) const {

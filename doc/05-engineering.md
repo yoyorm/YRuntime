@@ -25,6 +25,7 @@
 | clang-format | ✅ | 18 | 与 Yo_Renderer 保持一致的版本 |
 | ASan / UBSan | ✅ | GCC 实测可用 | `asan` preset |
 | GLFW3 | ✅ | `/usr/include/GLFW` | 新 M6 用 |
+| glslc | ✅ | 2023.8 | Vulkan shader 编译（M6-4b 起，CMake 构建期调用） |
 | Vulkan SDK | ✅ | `/home/yoyorm/SDK/Vulkan/1.4.357.1/x86_64`；另有 GLFW3（`/usr/include/GLFW`）与系统 `libvulkan.so.1.4.313` | **无需 shell 环境变量**（2026-10-20 复查）。apt 装 `vulkan-validationlayers` + `glslc` 后**无需 `VK_ADD_LAYER_PATH`**（层进系统搜索路径）；CMake **自动探测** `~/SDK/Vulkan/*/x86_64`（**无需 `VULKAN_SDK` 环境变量**，取版本最大者，`engine/render/vulkan/CMakeLists.txt` 另有一次 loader hint 回退，仍找不到才 `FATAL_ERROR`）；**运行期无需 `LD_LIBRARY_PATH`**（CMake 已把指向 SDK loader 的 RUNPATH 写进 `yr_render_demo`）。本机布局非标准：loader 在 `x86_64/lib/VulkanLoader/lib`（**不在** `$VULKAN_SDK/lib`）。`libvulkan-dev` **装不了**：它依赖 `libvulkan1=1.3.275`，与本机 LunarG 1.4.313 冲突，强装会卸掉 8 个 i386 图形包 |
 | Python | ✅ | 3.12.3 | `tools/check_deps.py` 等脚本用 |
 | **clang-tidy** | ❌ 未装 | — | **可选**：`sudo apt install clang-tidy`。被推了三次（M0→M1→M11），说明学习价值低 → 不痛就不装（R6） |

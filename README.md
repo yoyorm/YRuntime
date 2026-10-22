@@ -40,8 +40,8 @@ Runtime，再以 renderer-neutral 的渲染契约把游戏状态接到渲染后�
 | M2 反射与对象模型 | 完成 | Object / ObjectDB / Variant / ClassInfo / ClassDB |
 | M3 单线程 EventBus | 完成 | subscribe / publish / post+flush、重入与确定性重放 |
 | M4 场景树与主循环 | 完成 | Node / SceneTree / Transform / MainLoop / Clock / FrameStats + Engine + `yr_runtime_headless --frames N` 与 10000 帧集成测试 |
-| M5 渲染契约与 NullBackend | 未开始 | RenderSnapshot + RendererBackend 及 dump/replay |
-| M6 最小 Vulkan Bootstrap | 未开始 | 窗口 + 清屏 + 硬编码三角形 |
+| M5 渲染契约与 NullBackend | 完成 | RenderSnapshot + RendererBackend 及 dump/replay |
+| M6 最小 Vulkan Bootstrap | 完成 | 窗口 + 清屏 + 硬编码三角形；N 帧在飞 |
 | M7 Snapshot 驱动画面 | 未开始 | Runtime 移动 Node → 画面变化 |
 | M8+ 序列化 / 资源 / 任务 / 工具链 | 未开始 | 见路线图 |
 

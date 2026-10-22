@@ -130,7 +130,7 @@ namespace yr::render {
 
       const bool acquiredSuboptimal = acquired.result == ::vk::Result::eSuboptimalKHR;
       const std::uint32_t imageIndex = acquired.value;
-      const ::vk::Image image = swapchain->raiiHandle().getImages()[imageIndex];
+      const ::vk::Image image = swapchain->image(imageIndex);
       const ::vk::Extent2D extent = swapchain->extent();
 
       const ::vk::CommandBuffer cmd = commandPool->commandBuffer(slot);

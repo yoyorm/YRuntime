@@ -15,133 +15,35 @@
 | **M3 单线程 EventBus** | ✅ 已完成 / 收口（2026-10-08） |
 | **M4 场景树与主循环** | ✅ 已完成 / 收口（2026-10-17）——Node/SceneTree/Transform/MainLoop/Clock/FrameStats + Engine + `apps/runtime_headless` + 10000 帧集成测试；剩余的 `NodePath`/headless 平台层为非阻塞遗留 |
 | **M5 渲染契约与 NullBackend** | ✅ 已完成 / 收口 —— `yr_render_iface` + `yr_render_null` + `render_extract` + headless 注入 |
-| **M6 最小 Vulkan Bootstrap** | 🔨 **进行中** —— M6-1 外壳 + M6-2 Surface / 设备 / 队列 + M6-3 swapchain + 清屏上屏链路 + M6-4a N 帧在飞 + M6-4b 硬编码三角形完成；下一步 M6-5 健壮性收口 |
-| M7 ~ M11 | ⬜ 未开始 |
+| **M6 最小 Vulkan Bootstrap** | ✅ 已完成 / 收口（2026-10-23）—— M6-1 外壳 + M6-2 Surface / Device / 队列 + M6-3 Swapchain / 清屏上屏 + M6-4 N 帧在飞 + 硬编码三角形 + M6-5 健壮性（resize / 最小化手测、soak） |
+| **M7 Snapshot 驱动画面** | 🔨 **下一主线**（首个主要作品节点） |
+| M8 ~ M11 | ⬜ 未开始 |
 
-**远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend ✅ → M6 最小 Vulkan bootstrap 🔨 → M7 Snapshot 驱动画面（首个主要作品节点）→ M8 序列化 → M9 资源系统 → M10 任务系统 → M11 工具链打磨。**当前唯一任务：M6-5。**
+**远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend ✅ → M6 最小 Vulkan bootstrap ✅ → M7 Snapshot 驱动画面（首个主要作品节点）🔨 → M8 序列化 → M9 资源系统 → M10 任务系统 → M11 工具链打磨。**当前唯一任务：M7。**
 
 进度**只在两处维护**：根 `README.md` 的里程碑表（对外）+ `02-roadmap.md` 的 checkbox（对内）。
 别的地方不要重复记录，否则一定会漂移。
 
 ---
 
-## 2. 下一步：M6-5 健壮性收口（M6-4b 硬编码三角形已完成）
+## 2. 下一步：M7 Snapshot 驱动画面（M6 已完成）
 
-### M6-5 的范围与自测
+### M7 的范围与自测
 
-1. **soak**：连续运行 10 分钟，无 crash / validation error / 明显泄漏。
-2. **resize**：手动 resize / 最小化恢复不崩。
-3. **清理已知小问题**：
-   - `renderFrame` 每帧 `getImages()` 分配；
-   - 可选：`FrameSync` 重建的强异常安全。
+M6 的硬编码三角形只证明"渲染链路能跑"；M7 才把 Runtime 和渲染接起来。
+
+1. **接线**：`apps/render_demo` 从裸循环改成 `Engine` / `MainLoop` 驱动；阶段 11 的 `present` 消费阶段 10 产出的快照。
+2. **消费快照**：Vulkan 后端按 `DrawItem` 画多个对象（`object` id + `world` 变换），不再画硬编码三角形。
+3. **退出路径**：删除 `VulkanBackend::shouldClose()` 临时接口；退出改由 `MainLoop::requestQuit()` 驱动。
+4. **相机**：`CameraPod` 的 view/projection 进入渲染路径（M5 里默认 identity）。
 
 收口时必须能脱稿回答：
 
-1. 为什么 dynamic viewport/scissor 能让 resize 不必重建 pipeline，而 swapchain format 变了就必须重建？
-2. 为什么这个三角形不需要 vertex buffer？M7 什么时候必须引入？
-3. 10 分钟 soak 能暴露哪些单帧测不出的问题？
+1. 为什么阶段 10 抽快照、阶段 11 才 present？如果反过来会破坏什么？
+2. `DrawItem::object` 为什么是 `RenderObjectId` 而不是 `Object*`？
+3. 快照驱动后，`render_demo` 的循环和 `runtime_headless` 的循环还有什么差别？
 
-> 以下为已完成里程碑的回顾，开工时不用重读。
-
-### M3 已完成：单线程 EventBus（2026-10-08）
-
-- `Subscription` RAII：析构 / `reset()` 自动退订，move-only
-- `EventBus` 同步 `subscribe` / `publish` / `unsubscribe`：订阅按注册顺序、类型分表隔离
-- `post` / `flush` 双缓冲：flush 中 `post` 进下一轮、支持 move-only 事件、递归 flush 防护
-- 重入语义：回调退订自己 / 他人安全、inactive 延迟到最外层清理、统一同步深度上限 8（第 9 层拒绝）
-- `globalEventBus`，以及确定性重放 + 1000 事件正确性测试
-
-### M3 明确推迟（不要当成已完成）
-
-- **`MessageQueue`**：`ObjectID + StringId method + vector<Variant>` 的延迟调用。它依赖尚未实现的**方法绑定**
-  与未来 `MainLoop` 的**安全 flush 点**（帧阶段 2），**不是纯多线程功能**；两样具备后再做
-- **`post_from_any_thread` / MPSC / TSan 验证**：推迟到 **M10**
-- 事件追踪日志、`std::function` 性能实验：非阻塞优化，不阻塞主线
-
-### M4 已完成（2026-10-17）：Node/SceneTree/Transform/MainLoop/FrameStats + Engine/runtime_headless + 10000 帧集成测试
-
-M4 按 `02-roadmap.md` 拆成 Node-1 → Node-2 → Node-3 → Node-4 四步，之后补齐 Transform 层级、
-`MainLoop` 14 阶段与四安全点接线、`Clock`/累加器/spiral/`timeScale`/`paused`、`FrameStats`、
-`Engine`（组合拥有子系统并驱动 while loop）与极薄 host `apps/runtime_headless`，以及 10000 帧集成测试。
-收口总结见 `02-roadmap.md` 的「M4 收口总结（2026-10-17）」。
-
-**下一步（M5）**：`yr_render_iface`（`RenderSnapshot`/`RendererBackend` 纯 POD 契约）+
-`yr_render_null`（NullBackend + 统计）+ `yr/engine/render_extract`（阶段 10 接 SceneTree → RenderSnapshot），
-以快照 dump/replay 作为契约完备性验收。动笔前读 `01-architecture.md` §4.11 / §7 与 `04-godot-study.md` 的 M5 行。
-
-以下为 Node-1~4 的历史进度记录。
-
-**Node-1（父子关系与所有权）✅ 已完成（2026-10-12）**，落地在 `yr_scene`
-（`engine/scene/include/yr/scene/node.h` + `src/node.cpp`，测试 `YrTests_scene`）：
-父用 `std::vector<std::unique_ptr<Node>>` 拥有子，`addChild` 成功转移所有权、失败不消费（调用者仍持有），
-`removeChild` 交出所有权；生命周期/更新回调只占位 no-op。空 / 自己 / 多父 / 成环四项验收、
-父析构级联 + ObjectDB 注销均有测试，Debug/Release/ASan 全绿。
-
-**Node-2 的 enter/exit 子步骤 ✅ 已完成（2026-10-13）**：
-`SceneTree` 落地 root 所有权与 `setRoot` / `clearRoot` / 析构；
-`Node` 私有 `setTree` / `propagateEnterTree`（前序、父先子）/ `propagateExitTree`（后序、子节点倒序）
-维护 `tree_` 并调用受保护的 `onEnterTree` / `onExitTree`；
-`addChild` / `removeChild` / `detach` 已接线（新子树只 enter 一次、摘下的子树只 exit 一次）。
-
-**Node-2 的 ready 子步骤 ✅ 已完成（2026-10-13）**：
-`Node` 增加私有单标记 `everReady_`（一生只 ready 一次）与私有 `propagateReady()`
-（后序、子先父、正序递归全部 children，仅首次 ready 才回调 `onReady()`）；
-`SceneTree::setRoot` 在整树 enter 前序完成后统一 ready；`addChild` 对已 ready 的树内父节点
-会让新子树 enter 后立即 ready。`everReady_` 是**单标记**（不是 `entered` + `ready_requested`
-双状态）：detach/exit/clearRoot 不重置，重新入树只重新 enter、不自动再次 ready；
-`requestReady()` 本步不实现。测试在 `test_scene_tree.cpp` + `test_lifecycle.cpp` + `test_ready.cpp`，
-Debug/Release/ASan 全绿。
-
-**Node-2 的 selective propagation guard ✅ 已完成（2026-10-13）**：
-`Node` 增加私有传播深度计数 `propagationDepth_` 与最小 RAII guard。enter/ready 的 children
-正序遍历、exit 的 children 倒序遍历 + `onExitTree` 期间计数 > 0，只冻结“正在被遍历的
-节点自身 children_”：`onEnterTree`/`onReady` 中仍可 `this->addChild`，但 child 回调中修改
-正在被遍历的 parent（`parent->addChild/removeChild`、经 `detach` 修改 parent）会被拒绝；
-`onExitTree` 期间当前节点结构冻结。测试在 `test_propagation_guard.cpp`，Debug/Release/ASan 全绿。
-
-**Node-3 延迟删除 ✅ 已完成（2026-10-14）**：`Node::queueFree`（重复调用幂等；非树内 Debug 断言 +
-所有构建安全返回、不置标记、不入队）+ `SceneTree` 的 `ObjectID` 删除队列 + 显式 `flushDeletions`
-（开始时把队列 swap 到局部实现快照语义、重入防护；子 / root / 孤儿三分支，孤儿断言跳过不删除）。
-测试 `test_queue_free.cpp`：自己 / 父 / 子 / 兄弟四种删除场景不 double free（ASan 验证）、
-父子同帧两种入队顺序、flush 中 exit 回调再 queueFree 延后一批、非树内 queueFree 与孤儿跳过；
-Debug/Release/ASan 全绿。
-
-**Node-3.5 结构锁收尾 ✅ 已完成（2026-10-14）**：修掉 `removeChild` 在持有 `children_` 迭代器
-期间派发 exit 回调、回调改同一 parent 导致迭代器失效的隐患。`addChild`/`removeChild` 在入口
-`propagationDepth_` 检查通过后立即对接收者 this 加 RAII 结构锁，冻结其 `children_` 覆盖整个结构
-操作；回调中对同一 parent 的 addChild/removeChild/detach 一律被拒（断言 + 返回失败，不消费）。
-手动摘除（removeChild/detach）复位 `queuedForDeletion_` = 取消删除意图。`test_propagation_guard.cpp`
-补结构锁 / 恢复性用例，`test_queue_free.cpp` 补重排队回归；Debug/Release/ASan 全绿（ASan 验证
-迭代器失效与 UAF）。
-
-**Node-4 process 遍历 ✅ 已完成（2026-10-15）**：`SceneTree::process(float)` 开始时一次性
-**前序收集整棵子树的 `ObjectID`** 到局部快照，派发阶段逐个经 `obj::globalObjectDB().get(id)`
-重解析：解析失败（已级联销毁 / 注销）或解析成功但 `!isInsideTree()`（回调中被 detach）跳过，
-其余调用 `onUpdate(deltaTime)`。**方案 A（全树快照）**：第一版所有树内节点都 process，不实现
-`setProcess` 开关、priority、暂停、physics process。快照语义保证回调中 `addChild` 的新节点本帧
-不入快照、下一帧才收集到；回调中 `removeChild`/`detach`（含丢弃所有权立即析构）与 `queueFree`
-都安全，靠 `ObjectID` 重解析容错、不冻结结构。重入用 `processing_` + RAII guard 拒绝；
-`flushDeletions` 在 `processing_` 期间也被拒（对称保护），删除留到下一次 flush；两者分离，
-由调用方按帧阶段先后调用。测试 `test_process.cpp` 10 例，Debug/Release/ASan 全绿。
-
-**M4 已补齐（2026-10-17）**：最小数学库（`yr/math`）→ Transform 层级（position 单一数据源 + 脏标记）
-→ `MainLoop` 14 阶段与四安全点接线 → 固定步长 / spiral / `timeScale` / `paused` →
-`FrameStats` → `Engine` + `apps/runtime_headless`（M4 可运行物）→ 10000 帧集成测试。`NodePath` 与独立
-headless 平台层留作非阻塞遗留；process 分组 / physics process 视需要再补。
-
-**Node-1 已决定的接口**（不再重开）：
-
-1. 父拥有子用 `std::unique_ptr<Node>`（旧草图的 `Ref<T>` 尚未实现，已弃用）。
-2. `addChild(std::unique_ptr<Node>&&)` 失败时**不消费**参数，所有权归调用者。
-3. `queueFree` 的标志放 `Object` 还是 `Node` 留到 Node-3 决定。
-
-Node-1~4 已收口，M4 整体也已完成；后续按 `02-roadmap.md` 的 M5 清单推进，**不要一次实现整章**。
-
-benchmark 数据和结论统一写到 `benchmarks/README.md`；不要新建额外笔记文件。
-
-**非阻塞待办**（不急，别打断主线）：
-- log 的 fmt 格式化、时间戳 / 帧号 / 线程 ID、SBO 优化 → 见 `02-roadmap.md`
-- ccache、`.editorconfig`
+> M3/M4 等已完成里程碑的细节见 `02-roadmap.md` 与 git history；本文件只保留"现在做什么"。
 
 ---
 
