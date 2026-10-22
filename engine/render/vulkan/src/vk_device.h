@@ -1,6 +1,6 @@
 #pragma once
 
-#include <vulkan/vulkan_raii.hpp>
+#include "vk_hpp.h"
 
 #include "vk_device_selection.h"
 
@@ -21,6 +21,8 @@ namespace yr::render::vk {
 
     [[nodiscard]] ::vk::PhysicalDevice physicalDevice() const noexcept { return physicalDevice_; }
     [[nodiscard]] ::vk::Device handle() const noexcept { return *device_; }
+    // 只读引用：raii 子对象（如 raii::SwapchainKHR）的构造函数需要它，且不转移所有权。
+    [[nodiscard]] const ::vk::raii::Device& raiiDevice() const noexcept { return device_; }
     [[nodiscard]] ::vk::Queue graphicsQueue() const noexcept { return graphicsQueue_; }
     [[nodiscard]] ::vk::Queue presentQueue() const noexcept { return presentQueue_; }
     [[nodiscard]] const QueueFamilySelection& queues() const noexcept { return queues_; }

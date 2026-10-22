@@ -38,7 +38,10 @@ add_library(yr_render_vulkan
     src/vk_instance.cpp
     src/vk_surface.cpp
     src/vk_device_selection.cpp
-    src/vk_device.cpp)
+    src/vk_device.cpp
+    src/vk_swapchain.cpp
+    src/vk_command_pool.cpp
+    src/vk_frame_sync.cpp)
 add_library(yr::render_vulkan ALIAS yr_render_vulkan)
 
 target_include_directories(yr_render_vulkan

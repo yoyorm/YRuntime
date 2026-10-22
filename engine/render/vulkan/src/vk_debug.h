@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-#include <vulkan/vulkan.hpp>
+#include "vk_hpp.h"
 
 namespace yr::render::vk {
 

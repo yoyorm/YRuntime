@@ -334,7 +334,10 @@ handler 目前非线程安全，约定在启动线程前设置（M10 修）。
 | tag | 每个里程碑收口打 `v0.M4` 之类 |
 | `.gitignore` | `build*/`、`out/`、`.cache/`、`*.yrpak`、`compile_commands.json`（或反过来提交它，二选一并坚持）、`.vscode/` 部分 |
 | 大文件 | 资源（贴图/模型）用 Git LFS 或**只放小体积示例资源**；`.yrpak` 与录屏不进 git（放 release 附件或 `doc/media/` 下的小 GIF） |
-| 提交前自检 | ① `cmake --build --preset debug` ② `ctest --preset debug` ③ `ctest --preset asan` ④ `clang-format` 无 diff ⑤ `check_deps.py` 通过 |
+| 提交前自检 | ① `cmake --build --preset debug` ② `ctest --preset debug` ③ `ctest --preset asan` ④ `git ls-files -z -co --exclude-standard -- '*.h' '*.cpp' \| xargs -0 -r clang-format-18 --dry-run -Werror`（**含未跟踪文件**，与 CI 一致）⑤ `python3 tools/check_deps.py -v` |
+
+> **为什么自检要带 `-co`**：CI 的 `git ls-files` 只列**已跟踪**文件，本地用同一条命令会漏掉还没 `git add` 的新文件——它们要到提交后才第一次被检查，容易出现"本地绿、CI 红"。
+> `-c -o --exclude-standard` 把已跟踪和未跟踪文件一起列出来。`clang-format-18` 是本机 `clang-format` 的同版本别名。
 
 **commit 历史本身就是作品的一部分**：一个能看出"设计→实现→重构→测试"节奏的历史，
 比一个只有 20 个大 commit 的历史有说服力得多（`07-portfolio.md` §2）。

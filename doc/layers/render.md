@@ -121,9 +121,9 @@
 - **Godot 对照**：`servers/display/display_server.h` 的 headless 形态（对照阅读）。
 - **遗留 / 已知缺口**：`initialized_` 目前只作状态标记，`present` 不校验它；无依赖 `initialized_` 的行为。真实后端（`yr_render_vulkan`）在 M6/M7。
 
-## Vulkan 后端（`yr_render_vulkan`，M6-1 外壳 + M6-2 Surface / Device）
+## Vulkan 后端（`yr_render_vulkan`，M6-1 外壳 + M6-2 Surface / Device + M6-3 Swapchain / 清屏 + M6-4a N 帧在飞）
 
-> 代码位置：公开头 `engine/render/vulkan/include/yr/render/vk/vulkan_backend.h` + 私有实现 `src/{vulkan_backend,platform_window,vk_instance,vk_surface,vk_device,vk_device_selection,vk_debug}.{h,cpp}`。
+> 代码位置：公开头 `engine/render/vulkan/include/yr/render/vk/vulkan_backend.h` + 私有实现 `src/{vulkan_backend,platform_window,vk_instance,vk_surface,vk_device,vk_device_selection,vk_swapchain,vk_command_pool,vk_frame_sync,vk_debug}.{h,cpp}` + 编译期配置唯一入口 `src/vk_hpp.h`。
 > 构建开关 `YR_BUILD_VULKAN_BACKEND`（默认 **OFF**）：关掉时本 target 与 `apps/render_demo` 都不存在，默认构建不需要 Vulkan SDK / GLFW。**开这个开关用 `cmake --preset debug-vk`（或 `release-vk`）构建/开发**；clangd 需把根 `compile_commands.json` 指向该 preset 的 DB（`tools/link_compile_commands.sh debug-vk`），否则拿不到 vulkan TU 的编译命令、找不到 `<vulkan/...>`。环境细节见 `../05-engineering.md` §1 的 Vulkan SDK 行。
 
 - **公开头必须 vulkan-free / GLFW-free**：`vulkan_backend.h` 只 include `<memory>` 与 `<yr/render/backend.h>`，用 PIMPL（`struct Impl` + `std::unique_ptr<Impl>`）把 `VkInstance` / `GLFWwindow` 关在 `.cpp` 与 `src/` 私有头里。这是"图形 API 不越过本层"的可编译证据。
@@ -131,9 +131,17 @@
 - **validation 层只在 Debug**：CMake 用 `$<$<CONFIG:Debug>:YR_ENABLE_VULKAN_VALIDATION=1>` 注入宏；`vk_instance.cpp` 在宏打开时先用 `vk::enumerateInstanceLayerProperties()` 探测 `VK_LAYER_KHRONOS_validation`，可见才启用并额外加 `VK_EXT_debug_utils`，不可见则**初始化硬失败**（抛异常，提示先 `sudo apt install vulkan-validationlayers`，或 `source ~/SDK/.../setup-env.sh` 提供 `VK_ADD_LAYER_PATH`），避免跑到没有 validation 的假绿。
 - **`DebugStats` 的存亡契约**：它是 `Instance` 的成员并声明在 messenger 成员**之前**，`pUserData` 指向它；error 计数并立即打印，warning 只计数。计数只能在 `Instance` 析构前取走，`VulkanBackend::Impl::shutdown()` 先取副本再 `reset()`，因此该统计**不含** instance 自身析构期产生的消息（messenger 必须先于 instance 销毁，属固有限制）。
 - **`Surface`（M6-2）由 `glfwCreateWindowSurface` 创建并包进 `raii::SurfaceKHR`**：依赖 instance + window，必须先于二者销毁。`shutdown()` 先 `surface.reset()` 再取 `DebugStats` 副本，使 surface 析构期产生的 validation 消息也被计入。
-- **`Device`（M6-2）是逻辑设备 + 队列的所有者**：先枚举物理设备并调用**纯策略** `select_physical_device`（`vk_device_selection`，只读属性并打日志、不创建 Vulkan 对象；拒绝 `eCpu`，要求 `VK_KHR_swapchain` + graphics 族 + present 族，同族优先，逐设备记录拒绝原因），失败抛异常；只启用 `VK_KHR_swapchain`，graphics / present 按 distinct family 建 `DeviceQueueCreateInfo`（同族一条、异族两条，`queueCount = 1`）；`vk::Queue` 不包 RAII，只存由 device 拥有的裸句柄。`raii::Device` 的构造参数是 `raii::PhysicalDevice`，物理设备非拥有，故仅在构造期借 `Instance` 的 instance 句柄包一个临时 `raii::PhysicalDevice`。
+- **`Device`（M6-2）是逻辑设备 + 队列的所有者**：先枚举物理设备并调用**纯策略** `select_physical_device`（`vk_device_selection`，只读属性并打日志、不创建 Vulkan 对象；拒绝 `eCpu`，要求 `VK_KHR_swapchain` + graphics 族 + present 族，同族优先，逐设备记录拒绝原因），失败抛异常；只启用 `VK_KHR_swapchain`，graphics / present 按 distinct family 建 `DeviceQueueCreateInfo`（同族一条、异族两条，`queueCount = 1`）；`vk::Queue` 不包 RAII，只存由 device 拥有的裸句柄。`raii::Device` 的构造参数是 `raii::PhysicalDevice`，物理设备非拥有，故仅在构造期借 `Instance` 的 instance 句柄包一个临时 `raii::PhysicalDevice`。M6-3b 先用 `getFeatures2<PhysicalDeviceFeatures2, PhysicalDeviceVulkan13Features>()` 查询，`dynamicRendering` / `synchronization2` 任一不支持即抛异常；创建时用 `StructureChain<DeviceCreateInfo, PhysicalDeviceVulkan13Features>` 两项置 true，chain 活到 `createDevice` 返回。
 - **`validationErrorCount()` 是具体后端的诊断访问器**：只在 `VulkanBackend` 上提供，不属于 `RendererBackend` 契约；返回本次运行累计的 validation error 数（validation 被编译掉时恒 0）。`render_demo` 用它把"零 error"变成进程退出码（有 error 返回 1）。
-- **M6 的 `present` 不消费快照**：只 `pollEvents()`，`last_frame_stats()` 恒为全 0；接快照是 M7 的事（见 `../02-roadmap.md` M7）。
+- **`Swapchain`（M6-3）只拥有 `raii::SwapchainKHR` + image views，不拥有 depth**：format / present mode / extent 从 surface 能力现查选择（优先 B8G8R8A8Srgb + SrgbNonlinear，否则 `formats[0]`；优先 `eMailbox`，否则 `eFifo`；extent 用 `currentExtent` 或窗口尺寸 clamp 到 min/max，0×0 抛异常）；graphics / present 不同族时用 `eConcurrent` + 两个族索引。`create()` 是 `const` 且只返回私有 `Created{handle, format, extent}`，不碰成员；`buildImageViews()` 同样只返回 locals。构造与 `recreate` 都是**强异常安全**：先建新 swapchain → 建新 views → 用新 views 替换旧 views（旧 views 死，旧 swapchain 还活着）→ 替换 swapchain（旧 handle 死）→ 更新 format / extent；任何一步抛异常，旧链保持完整。
+- **`vk_hpp.h` 是编译期配置的唯一入口**：所有 TU 只通过它包含 `<vulkan/vulkan_raii.hpp>`，并在包含前定义 `VULKAN_HPP_HANDLE_ERROR_OUT_OF_DATE_AS_SUCCESS`。宏生效后 acquire 返回 `ResultValue<uint32_t>`、present 返回 `vk::Result`，`eErrorOutOfDateKHR` **不抛异常**，而是作为正常返回值处理（D14：resize / 最小化是分支，不是异常控制流）。
+- **`CommandPool`（M6-3b / M6-4a）持有 `framesInFlight` 条 primary command buffer**：`CommandPoolCreateInfo{eResetCommandBuffer, graphics family}`，用 `device.raiiDevice().allocateCommandBuffers()` 分配（`raii::CommandPool` 自身没有该成员）；按 frame slot 取，每帧 `reset()` 后重录。不可拷贝 / 移动。swapchain 重建不重建它：buffer 数只依赖 `framesInFlight`。
+- **`FrameSync`（M6-4a）按两种粒度分配同步对象**：`imageAvailable` / `inFlight` 按 frame slot 分配（`framesInFlight = 2`，fence 全部**创建为 signaled**，否则第一轮 `waitForFences` 永久阻塞）；`renderFinished` 按 swapchain image 索引分配（`imageCount` 个）。前者靠 CPU 侧顺序成立：同一 slot 的下一次使用必然发生在它的 fence 已被 wait 过之后；后者靠 present 的因果成立：同一 image 的 present 完成才会让该 image 被再次 acquire，所以该 semaphore 的下一次 signal 必然发生在旧的 wait 被消费之后。把 `renderFinished` 按 slot 复用只是"实践上成立"的假设，规范不保证。swapchain 重建可能改变 `imageCount`，因此 `FrameSync` 与 swapchain 一起重建。
+- **一帧算法（`Impl::renderFrame`，N 帧在飞）**：取 `slot = frameSlot_` → `waitForFences(inFlight(slot))` → `acquireNextImage(imageAvailable(slot))`（保留 `ResultValue`）→ 成功后 `resetFences(inFlight(slot))` → 对 `commandPool.commandBuffer(slot)` 做 `cmd.reset()` / `begin` → barrier2 `UNDEFINED → eColorAttachmentOptimal`（src/dst stage 均 `eColorAttachmentOutput`，src access `eNone`，dst access `eColorAttachmentWrite`）→ dynamic rendering `beginRendering` / `endRendering`（`layerCount = 1`，clearColor `{0.10, 0.18, 0.30, 1.0}`）→ barrier2 `eColorAttachmentOptimal → ePresentSrcKHR`（dst stage / access 均 `eNone`）→ `cmd.end()` → `submit2`（graphics queue wait `imageAvailable(slot)` @ `eColorAttachmentOutput`，signal `renderFinished(imageIndex)`，fence `inFlight(slot)`）→ `presentKHR`（present queue wait `renderFinished(imageIndex)`）→ **提交之后**才推进 `frameSlot_ = (frameSlot_ + 1) % framesInFlight`。acquire 的 image index 与 frame slot 是两套索引。不建 render pass / framebuffer / pipeline / shader。
+- **0×0 跳过**：`present()` 先 `pollEvents()`；framebuffer 为 0×0（最小化）时直接返回，不 acquire、不重建。
+- **OOD / Suboptimal → 重建**：`needsRecreate()` 用 surface 能力 + 与 `create` 共用的 `computeExtent()` 现算期望 extent，与 `extent_` 比较（不拿窗口像素尺寸直接比）。acquire 的 OOD 路径**不 reset fence、不推进 slot**，`waitForFences` 失败或 acquire 其它失败同样不推进。present 的 OOD / Suboptimal（含 acquire 的 Suboptimal）在推进 slot 后重建。重建先 `waitIdle`（旧 `FrameSync` 的同步对象可能仍被 pending 提交引用），再 `swapchain->recreate(...)`，然后用新的 `imageCount` 重建 `FrameSync` 并复位 `frameSlot_ = 0`。swapchain 重建抛异常时旧链保持完整；若 swapchain 已换新而 `FrameSync` 构造失败，`frameSync` 的 `optional` 为空，`present()` 下一帧发现缺失会再走一次重建恢复。重建异常只记日志，下一帧继续尝试。
+- **`shutdown()` 先 `waitIdle` 再销毁同步对象**：fence / semaphore / command buffer 不能在提交仍 pending 时释放。
+- **M6-4 的 `present` 仍不消费快照**：只驱动窗口事件、按需重建、清屏上屏；`last_frame_stats()` 恒为全 0；接快照是 M7 的事（见 `../02-roadmap.md` M7）。
 - **`shouldClose()` 是临时接口**：M6 由 `apps/render_demo` 自己驱动 `while(!shouldClose()) present({})`；M7 改为 `MainLoop` 驱动后移除。
 - `create_vulkan_backend()` 与 `create_null_backend()` 同形（返回 `std::unique_ptr<RendererBackend>`）；`initialize` 把 Vulkan-Hpp 抛出的异常翻译成"日志 + `false`"，构造窗口/instance 失败不会泄漏半成品。
 
@@ -148,13 +156,13 @@
 | `Surface`（M6-2） | `raii::SurfaceKHR` | Instance、Window | Instance |
 | `Device`（M6-2） | `raii::Device`、物理设备句柄、graphics / present 队列 | Instance、Surface | Surface |
 | `Swapchain`（M6-3） | `raii::SwapchainKHR`、image views | Device | Device |
-| `CommandPool`（M6-3） | `raii::CommandPool`、command buffers | Device | Device |
-| `FrameSync`（M6-4） | 信号量、fence | Device | Device |
+| `CommandPool`（M6-3b） | `raii::CommandPool`、command buffers | Device | Device |
+| `FrameSync`（M6-4a） | 信号量、fence | Device | Device |
 
 - **顺序由依赖图决定**："能不能呈现"必须拿 surface 去问设备，所以 surface 先于 device；surface 由 instance 创建，所以 surface 先于 instance 销毁。
 - **构造即有效**：组件不允许"构造了但没 init"；失败抛异常，只在 `VulkanBackend::initialize` 一个边界翻译成 `false`。`Impl` 用 `std::optional` 表达"存在 / 不存在"，不是两段式初始化。
 - **`vk::Queue` 不是 RAII 对象**：由 device 拥有，只能存裸句柄。
-- **只启用已验证且马上要用的扩展 / feature**：M6-2 只启用 `VK_KHR_swapchain`；`dynamicRendering` / `synchronization2` 到 M6-3 / M6-4 再加。
+- **只启用已验证且马上要用的扩展 / feature**：M6-2 只启用 `VK_KHR_swapchain`；M6-3b 通过 `PhysicalDeviceVulkan13Features` 同时查询并启用 `dynamicRendering` + `synchronization2`（两者都是 1.3 core feature，**不是**扩展字符串），M6-4b 只加三角形。
 - **设备选择是纯策略**：显式拒绝 `DEVICE_TYPE_CPU`，要求 `VK_KHR_swapchain` + graphics 族（`queueCount > 0`）+ present 族；同族优先；逐设备记录拒绝原因。
 - **公开头不变**：M6 期间 `vulkan_backend.h` 不新增方法（`shouldClose()` 是 M7 前的临时接口）。
 
@@ -164,7 +172,7 @@
 |---|---|---|
 | `platform/VulkanContext` | 拆解重写 | `Surface` + `Device` + `vk_device_selection` |
 | `platform/Swapchain` | 借鉴参数选择策略，重写 | `vk_swapchain`（M6-3）；depth 不进 |
-| `platform/SyncObjects` / `rhi/sync/FrameSync` | 借鉴 per-slot 结构，重写 | `vk_frame_sync`（M6-4） |
+| `platform/SyncObjects` / `rhi/sync/FrameSync` | 借鉴 per-slot 结构，重写 | `vk_frame_sync`（M6-4a） |
 | `rhi/command/CommandRecorder` | 暂不做 | M6-4 直接用裸 begin / end / draw |
 | `render/VulkanResourceTable` | 暂不做（M9） | — |
 | `render/RenderServer` | 不搬 | M7 的 `RenderExtractSystem` 取代 |

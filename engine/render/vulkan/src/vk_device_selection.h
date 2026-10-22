@@ -4,7 +4,7 @@
 #include <limits>
 #include <span>
 
-#include <vulkan/vulkan_raii.hpp>
+#include "vk_hpp.h"
 
 namespace yr::render::vk {
 

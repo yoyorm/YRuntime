@@ -36,10 +36,26 @@ namespace yr::render::vk {
                                .setPQueuePriorities(&priority));
     }
 
+    // 1.3 core feature 先查再开：dynamic rendering 与 synchronization2 都直接决定本层能否工作。
+    const auto available =
+        physicalDevice_.getFeatures2<::vk::PhysicalDeviceFeatures2, ::vk::PhysicalDeviceVulkan13Features>();
+    const ::vk::PhysicalDeviceVulkan13Features& available13 = available.get<::vk::PhysicalDeviceVulkan13Features>();
+    if (!available13.dynamicRendering) {
+      throw std::runtime_error("设备不支持 dynamicRendering（VkPhysicalDeviceVulkan13Features）");
+    }
+    if (!available13.synchronization2) {
+      throw std::runtime_error("设备不支持 synchronization2（VkPhysicalDeviceVulkan13Features）");
+    }
+
     const std::vector<const char*> extensionNames{VK_KHR_SWAPCHAIN_EXTENSION_NAME};
-    ::vk::DeviceCreateInfo createInfo{};
+
+    // chain 必须活到 createDevice 返回：DeviceCreateInfo::pNext 指向链上的 feature 结构。
+    ::vk::StructureChain<::vk::DeviceCreateInfo, ::vk::PhysicalDeviceVulkan13Features> chain;
+    ::vk::DeviceCreateInfo& createInfo = chain.get<::vk::DeviceCreateInfo>();
     createInfo.setQueueCreateInfos(queueInfos);
     createInfo.setPEnabledExtensionNames(extensionNames);
+    ::vk::PhysicalDeviceVulkan13Features& features13 = chain.get<::vk::PhysicalDeviceVulkan13Features>();
+    features13.setDynamicRendering(::vk::True).setSynchronization2(::vk::True);
 
     // raii::Device 需要 raii::PhysicalDevice 作构造参数；物理设备非拥有，故只在此构造期借用。
     device_ = ::vk::raii::Device(::vk::raii::PhysicalDevice(instance.raiiInstance(), physicalDevice_), createInfo);
@@ -48,7 +64,8 @@ namespace yr::render::vk {
     presentQueue_ = device_.getQueue(queues_.present, 0);
 
     YR_LOG_INFO("render.vk.device", "逻辑设备创建成功 graphicsFamily=" + std::to_string(queues_.graphics) +
-                                        " presentFamily=" + std::to_string(queues_.present));
+                                        " presentFamily=" + std::to_string(queues_.present) +
+                                        " dynamicRendering=on synchronization2=on");
   }
 
 } // namespace yr::render::vk
