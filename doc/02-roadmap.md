@@ -22,10 +22,11 @@
 | M7 | Snapshot 驱动画面 | 3~4 | `apps/render_demo` | **Runtime 移动 Node → 画面变化**（首个主要作品节点） | ★★★★★ |
 | M8 | 序列化与场景资源 | 3~4 | `yr_serialize` | 手写 `.yrscn` 加载 + save→load→save 逐字节 round-trip | ★★★★★ |
 | M9 | 资源系统 | 2~3 | `yr_asset` | 异步加载不卡帧 + AssetHandle→GPU 资源桥接 | ★★★★ |
+| M9.5 | 基础 PBR 内容 | 2~3 | `yr_render_vulkan`（扩展） | ToyCar PBR + 平行光/点光 + 单张阴影 | ★★★★★ |
 | M10 | 任务系统 | 3~4 | `yr_job` | 并行 vs 串行 benchmark + TSan 干净报告 | ★★★★ |
 | M11 | 工具链与打磨 | 2~4 | `tools/yr_pack` `yr_scene_conv` | `.yrpak` 打包 + 覆盖率 | ★★★ |
 
-**总计 ≈ 26~38 周**（约 6~9 个月）。假期按 3 倍速折算。
+**总计 ≈ 28~41 周**（约 7~10 个月）。假期按 3 倍速折算；M9.5 为 2026-10-23 新增（D21）。
 
 ### 三个铁规则
 1. **不跳里程碑**。M2（反射）没做完就开始 M8（序列化）= 返工；M4 的最小闭环没走完就冲 M6/M7（Vulkan）= 把渲染写成绕过 Node 生命周期、延迟删除与帧阶段的胶水。唯一例外：M9 可以先做同步加载版本。
@@ -445,12 +446,13 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 - [ ] **AssetHandle → GPU 桥接（临时版）**：先用 backend 内建 triangle / default material ID 响应 `AssetHandle`；正式 `AssetUID` / `AssetDatabase` 到 M9 再接
 - [ ] 相机 / 光照从快照取，删掉 Backend 内部对"场景"的假设（Backend 不得持有 `SceneTree*`）
 - [ ] 快照传递引入双 / 三缓冲（落实 §4.11 的"时间解耦"），frame index 单调递增
-- [ ] `apps/render_demo`：Runtime 里搭一个场景（几个带 Transform 的 Node + Camera Node + Light Node），键盘控制 Node → 画面变化
+- [x] `apps/render_demo`：Runtime 里搭一个场景（几个带 Transform 的 Node），键盘控制 Node → 画面变化（7c 完成；Camera Node / Light Node 归 M9.5）
+- [ ] `apps/render_demo`：Camera Node / Light Node 接入（M9.5，D21）
 - [ ] validation layer 零 error；`--dump-snapshot` + `--replay-snapshot` 在真后端也能跑，且与实时运行一致
 - [ ] `RenderSnapshot` 结构自 M5 起**未因后端需要而修改**（若改了 → 写 ADR 复盘，这本身是有价值的产出）
 - [ ] 帧时间统计：CPU 侧 extract / GPU 侧 present 分别可见
 - [ ] 录屏 + 截图进 `doc/media/`，README 更新架构图
-- [ ] 明确**不做**：视锥剔除、PBR、IBL、shadow、glTF、ImGui、独立渲染线程（都列入 stretch）
+- [ ] 明确**不做**：视锥剔除、PBR、IBL、shadow、glTF、ImGui、独立渲染线程（PBR 内容见 M9.5；其余列入 stretch）
 
 **验收标准**
 - `apps/render_demo` 运行：键盘移动一个 Node → 画面同步变化；validation layer 零 error；连续跑 10 分钟无崩溃无泄漏。
@@ -530,6 +532,29 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 **常见坑**：① 在工作线程构造 Object → 违反 §6 铁律（M10 要特别小心）；② GC 时机与 `Ref` 临时对象（一个表达式里的临时 `Ref` 会让 refcount 短暂 >1，导致该帧不卸载 —— 这是正常行为，别"修"它）；③ 加载失败后 in-flight 条目没清理 → 永久卡住；④ 场景递归加载的深度与栈溢出。
 **Godot 对照**：`core/io/resource.h`、`core/io/resource_loader.h/.cpp`（**精读 `ThreadLoadTask` 结构与 `load_threaded_request`/`load_threaded_get_status`，这是 M9+M10 的最佳参考**）、`core/io/resource_uid.h/.cpp`、`core/io/file_access.h` + `file_access_memory.h`（内存 FS）、`file_access_pack.h`（PCK，M11 用）、`tests/core/io/test_resource.cpp` + `test_resource_uid.cpp`。
 **降级方案**：不做 UID（只用 path）；GC 只做手动 `evict`；异步只做"入队 + pump 执行"不做真线程。
+
+---
+
+## M9.5 · 基础 PBR 内容接入（2~3 周）★ 真实画面
+
+**目标**：把 Yo_Renderer 已验证的基础 PBR 内容接到 `RenderSnapshot → RendererBackend` 链路上；不研究新图形特性。
+
+**范围（D21）**：
+- 保留：Cook-Torrance（D/G/F）、metallic-roughness、BaseColor/Normal/MetallicRoughness/Emissive、Directional/Point（≤8）、单张平行光阴影（PCF）、alpha mask、glTF。
+- 不做：IBL/irradiance cubemap、skybox、spot light、alpha blend、ImGui/编辑器、sun orbit、shadow debug。
+- 节点：`MeshInstanceNode` / `LightNode` / `CameraNode`（`yr_scene`）；只存 `AssetUID`/POD，`RenderExtractSystem`（`yr_engine`）解析成快照，`yr_scene` 不依赖 `yr_render_iface`。
+- 快照：增加 `LightPod`、`CameraPod.eye`；`DrawItem.mesh/material` 变成真实 handle；字段只在有真实消费者时加入。
+- 后端：set 0（camera/lights/shadow）+ set 1（材质四贴图 + params）；PBR opaque/mask pipeline、shadow pass；GLSL + `glslc`。
+- 资产：默认 ToyCar（约 12M）；Sponza 等大场景外部可选，不进仓库。
+
+**验收标准**
+- ToyCar 在 PBR 材质 + 平行光/点光 + 单张阴影下正确显示；validation 0。
+- 截图 / GIF 进 `doc/media/`；`engine/`（除 `render/vulkan/`）零 Vulkan include。
+- 帧时间统计：shadow pass 与 scene pass 分别可见。
+
+**降级方案**：先 PBR-min（无 shadow），阴影后补；IBL/skybox/GUI 永久留在 Stretch。
+**学习点**：descriptor set 布局、材质/纹理上传、shadow pass、GPU 资源延迟释放、Snapshot 扩展的契约成本。
+**Godot 对照**：`servers/rendering/renderer_rd/` 的 scene shader / material / shadow pass；`scene/3d/mesh_instance_3d.*`、`light_3d.*`、`camera_3d.*`。
 
 ---
 

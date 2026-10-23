@@ -30,6 +30,8 @@
 | D17 | 仓库内不产出笔记文件，记录只靠 commit message + ADR + checkbox | **已确认** | M0 |
 | D18 | 检验标准是"能否讲清楚"，不是"能否自证"（删除全部证据链要求） | **已确认** | M0 |
 | D19 | 删除文字冒险；M4 后 Contract/Null → Vulkan Bootstrap → Snapshot；Yo_Renderer 只选择性借鉴；快照数据式契约 | 暂定 | M4~M7 |
+| D20 | AI 协作下的学习重心：契约与边界归人，API 机制归 AI | 暂定 | M6 起 |
+| D21 | 复用 Yo_Renderer 的基础 PBR 内容（无 IBL/skybox/GUI），重构进 Runtime/Asset 链路 | 暂定 | M9.5 |
 
 ---
 
@@ -453,6 +455,30 @@ CI 首次运行时 `apt-get install libcatch2-dev` 退出码 100，job 失败。
 **后果**：+ 学到的是可迁移的结构判断力；+ 文档成为真正的产物，而不是代码的副产品；− 每步要写契约 / 做口试，前两周会显得慢；− 一旦文档漂移，学习会退化成"读 AI 的报告"。
 
 **什么情况下改回来**：若连续两个里程碑无法在 3 分钟内讲清自测题，或文档维护时间超过里程碑总时间的 20%，说明这套节奏不成立，需要收窄检查项。
+
+---
+
+## D21 · 复用 Yo_Renderer 的基础 PBR 内容，按 YRuntime 的 Runtime/Asset 链路重构
+**状态**：暂定 · **里程碑**：M9.5
+
+**背景**：M6/M7 只证明渲染链路与快照解耦，画面仍是内建图元，不足以作为引擎岗作品的视觉证据。Yo_Renderer 已有一版可运行的 PBR 内容（Cook-Torrance + 材质贴图 + 光源 + 阴影），重新研究图形特性没有收益；需要的是把它接入 YRuntime 的 `SceneTree → RenderSnapshot → AssetDatabase → GPU` 链路。
+
+**决策**：
+1. **保留**：Cook-Torrance（D/G/F）、metallic-roughness、BaseColor/Normal/MetallicRoughness/Emissive、Directional/Point（≤8）、单张平行光阴影（PCF）、alpha mask、glTF 场景。
+2. **不做**：IBL/irradiance cubemap、skybox、spot light、alpha blend、ImGui/编辑器、sun orbit、shadow debug。
+3. **架构**：不搬 ECS/Level/Systems；`MeshInstanceNode` / `LightNode` / `CameraNode` 放在 `yr_scene`，只存 `AssetUID` 与 POD 参数；`RenderExtractSystem`（`yr_engine`）负责解析成 `RenderSnapshot`，保持 `yr_scene` 不依赖 `yr_render_iface`。
+4. **Snapshot 扩展**：增加 `LightPod` 与 `CameraPod.eye`；`DrawItem.mesh/material` 从占位变成真实 handle。字段只在 M9.5 有真实消费者时加入。
+5. **Backend**：set 0（camera/lights/shadow）+ set 1（材质四贴图 + params）；PBR opaque/mask pipeline、shadow pass；GLSL + `glslc`，不引入 Slang。
+6. **里程碑**：M9 之后插入 M9.5，M10/M11 顺延；默认资产用 ToyCar（约 12M），Sponza 等大场景不进仓库。
+
+**备选与否决理由**：
+- *完整搬 Yo_Renderer（含 ECS/ImGui/IBL/skybox）*：把 Runtime 项目变成渲染器移植，范围与依赖都失控。
+- *只做 PBR 数学，不做材质/光源*：无法证明 AssetDatabase 与 GPU 资源生命周期，作品也没有视觉说服力。
+- *保留 Slang*：当前环境只有 `glslc`；为一个 shader 引入新工具链不划算。
+
+**后果**：+ 画面从“彩色图元”变成真实 PBR 场景，Asset/Snapshot/延迟释放链路被真实消费者验证；+ 与引擎岗的“资源生命周期 + 解耦”叙事一致。− 引入 descriptor set、pipeline、upload、shadow pass 等约 2~3k LOC 渲染代码；− 若控制不好会向图形项目漂移。
+
+**什么情况下改回来**：若 M9.5 超过 4 周仍未出图，先降级为 PBR-min（无 shadow），把 IBL/skybox/GUI 永久留在 Stretch；若后续目标转为图形岗，另立项目，不在此处扩张。
 
 ---
 

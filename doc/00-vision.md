@@ -53,7 +53,7 @@
 2. **P0 — 可验证的 Runtime 行为**：用 **headless scene simulation**（10000 帧创建/删除/移动 Node）、**RenderSnapshot + NullBackend 的 dump/replay**、**序列化 save→load→save 逐字节 round-trip** 三者替代"内容量 Demo"，证明 Runtime 真能承载世界与渲染链路，而不是一堆单测通过的类。
 3. **P1 — 工程化闭环**：CMake 分层、Catch2 测试、Sanitizer、CI、日志、性能统计、资源打包工具。
 4. **P1 — Godot 源码对照能力**：对着架构图任意模块，能说清"Godot 怎么做 / 我怎么做 / 为什么不同"（口头即可，不产出笔记——D17）。
-5. **P2 — Vulkan Backend 接入**：先最小 bootstrap（窗口 + 清屏 + 硬编码三角形），再由 `RenderSnapshot → RendererBackend → GPU` 跑通一个由 Runtime 驱动的可视化 sandbox。
+5. **P2 — Vulkan Backend 接入**：先最小 bootstrap（窗口 + 清屏 + 硬编码三角形），再由 `RenderSnapshot → RendererBackend → GPU` 跑通一个由 Runtime 驱动的可视化 sandbox；M9 之后接入 Yo_Renderer 已有的**基础 PBR** 内容（Cook-Torrance + 材质贴图 + 平行光/点光 + 单张阴影，**不含 IBL/skybox/GUI**，D21），作为 Runtime → 资源 → 渲染链路的真实消费者。
 6. **P2 — 作品可展示**：架构图、README、录屏、benchmark 数据、博客、可复述的设计决策。
 
 ### 3.2 非目标（明确不做，防止范围膨胀）
@@ -66,7 +66,7 @@
 | 音频 | 同上 | 接口留空 |
 | 跨平台（Windows/macOS） | Linux 已满足全部学习目标 | `platform/` 层保留薄抽象，不移植 |
 | 网络 / 多人 | 与 Runtime 核心无关 | 无 |
-| 新的图形学特性 | Yo_Renderer 已经覆盖，重复无收益 | 无 |
+| 新的图形学特性 | Yo_Renderer 已经覆盖，重复无收益 | 例外：M9.5 复用 Yo_Renderer 已验证的**基础 PBR**（Cook-Torrance + 材质贴图 + 平行光/点光 + 单张阴影）；IBL/skybox/spot/blend/GUI 不做（D21） |
 | 自研容器全家桶 | 时间花在刀刃上 | 只做 Handle/SparseSet/SmallVector 三个有学习价值的，其余用 STL |
 | 追求 API 优雅 / 向后兼容 | 只有你一个人用 | 无 |
 
@@ -94,6 +94,7 @@
 - [ ] `RendererBackend` 接口存在，`NullBackend` 与 `VulkanBackend` 都实现它，可在启动参数切换。
 - [ ] 最小 Vulkan bootstrap（窗口 + 清屏 + 硬编码三角形）与 `RenderSnapshot` 接入**分两步**完成（新 M6 / 新 M7）。
 - [ ] `apps/render_demo` 中，修改 Runtime 里的游戏状态（移动一个 Node）→ 画面同步变化，Vulkan validation layer 零 error。
+- [ ] M9.5：ToyCar（或等价 glTF）在基础 PBR 材质、平行光/点光、单张阴影下正确显示；validation 0；不含 IBL/skybox/GUI。
 - [ ] Runtime 侧代码 **零** `#include <vulkan/...>`（CI grep 检查）——这是"解耦"的硬指标。
 
 ### 4.4 工具链
@@ -201,4 +202,6 @@ graph LR
 
 假期（寒假/暑假）按 3 倍速折算。**如果某个里程碑超期 50%，不要压缩验收标准，而是砍它的功能范围**（见 `02-roadmap.md` 每个 M 的"降级方案"）。
 
+> **2026-10-23 修订**：M9 之后插入 **M9.5 基础 PBR 内容**（2~3 周，D21），M10/M11 顺延；总计划约 +2~3 周。
+>
 > **2026-09-30 时间线校准**：M0~M1 的 3~4 周前置投入是合理的，约占总计划 10%~15%；它建立的是所有后续模块复用的工程和身份基础。M4 预计在项目第 7~10 周开始，不视为过晚。M1 的 benchmark 结论不得继续阻塞 M2；若前期继续扩张，才属于失控。
