@@ -1,6 +1,7 @@
 #include <yr/render/vk/vulkan_backend.h>
 
 #include <array>
+#include <bit>
 #include <cstdint>
 #include <exception>
 #include <limits>
@@ -9,6 +10,7 @@
 #include <string>
 
 #include <yr/core/log.h>
+#include <yr/math/mat4.h>
 
 #include "platform_window.h"
 #include "vk_command_pool.h"
@@ -26,6 +28,20 @@ namespace yr::render {
     constexpr std::array<float, 4> kClearColor{0.10f, 0.18f, 0.30f, 1.0f};
     // CPU 最多同时在飞的帧数；fence / imageAvailable / command buffer 都按它分配。
     constexpr std::uint32_t kFramesInFlight = 2;
+
+    // 固定调色板：按 RenderObjectId 低两位取色，仅用于区分对象。
+    constexpr std::array<std::array<float, 4>, 4> kPalette{{
+        {0.95F, 0.30F, 0.25F, 1.0F},
+        {0.30F, 0.90F, 0.40F, 1.0F},
+        {0.30F, 0.55F, 0.95F, 1.0F},
+        {0.95F, 0.80F, 0.25F, 1.0F},
+    }};
+
+    static_assert(sizeof(TransformPod) == sizeof(math::Mat4));
+
+    [[nodiscard]] math::Mat4 toMat4(const TransformPod& transform) noexcept {
+      return std::bit_cast<math::Mat4>(transform);
+    }
 
   } // namespace
 
@@ -98,8 +114,13 @@ namespace yr::render {
       }
     }
 
-    // N 帧在飞：等本 slot 的 fence → acquire → reset fence → 录制清屏 → submit → present → 推进 slot。
-    void renderFrame() {
+    // N 帧在飞：等本 slot 的 fence → acquire → reset fence → 录制每 item 一次 draw → submit → present → 推进 slot。
+    void renderFrame(const RenderSnapshot& snapshot) {
+      stats.items = snapshot.items.size();
+      stats.draw_calls = snapshot.items.size();
+      stats.triangles = snapshot.items.size();
+      stats.snapshot_bytes = sizeof(RenderSnapshot) + snapshot.items.size() * sizeof(DrawItem);
+
       if (!window.has_value() || !surface.has_value() || !device.has_value() || !swapchain.has_value() ||
           !trianglePipeline.has_value() || !commandPool.has_value() || !frameSync.has_value()) {
         return;
@@ -164,10 +185,21 @@ namespace yr::render {
       renderingInfo.setRenderArea(::vk::Rect2D{{0, 0}, extent}).setLayerCount(1).setColorAttachments(colorAttachment);
       cmd.beginRendering(renderingInfo);
       cmd.bindPipeline(::vk::PipelineBindPoint::eGraphics, trianglePipeline->handle());
-      cmd.setViewport(0, ::vk::Viewport{0.0f, 0.0f, static_cast<float>(extent.width), static_cast<float>(extent.height),
-                                        0.0f, 1.0f});
+      // Vulkan NDC 的 Y 向下；负高度 viewport 把它翻回 Y-up（世界约定），代价是绕序反转，
+      // 因此 culling 必须保持关闭（当前 eCullNone）；将来开 culling 时 frontFace 需相应调整。
+      cmd.setViewport(0, ::vk::Viewport{0.0f, static_cast<float>(extent.height), static_cast<float>(extent.width),
+                                        -static_cast<float>(extent.height), 0.0f, 1.0f});
       cmd.setScissor(0, ::vk::Rect2D{{0, 0}, extent});
-      cmd.draw(3, 1, 0, 0);
+      const math::Mat4 viewProjection = toMat4(snapshot.camera.proj) * toMat4(snapshot.camera.view);
+      for (const DrawItem& item : snapshot.items) {
+        vk::PushConstants push{};
+        push.mvp = (viewProjection * toMat4(item.world)).m_;
+        push.color = kPalette[item.object.value % kPalette.size()];
+        cmd.pushConstants<vk::PushConstants>(trianglePipeline->layout(),
+                                             ::vk::ShaderStageFlagBits::eVertex | ::vk::ShaderStageFlagBits::eFragment,
+                                             0, push);
+        cmd.draw(3, 1, 0, 0);
+      }
       cmd.endRendering();
 
       const ::vk::ImageMemoryBarrier2 toPresent{::vk::PipelineStageFlagBits2::eColorAttachmentOutput,
@@ -263,12 +295,11 @@ namespace yr::render {
     impl_->shutdown();
   }
 
-  void VulkanBackend::present(const RenderSnapshot& /*snapshot*/) {
-    // M6-4 仍不消费快照：清屏是固定颜色的固定链路（M7 接快照）。
+  void VulkanBackend::present(const RenderSnapshot& snapshot) {
+    // 清屏固定，draw 次数与内容由快照决定；事件泵在 host 阶段 1。
     if (!impl_->window.has_value()) {
       return;
     }
-    impl_->window->pollEvents();
     if (!impl_->swapchain.has_value() || !impl_->device.has_value() || !impl_->surface.has_value() ||
         !impl_->commandPool.has_value()) {
       return;
@@ -290,7 +321,7 @@ namespace yr::render {
         return;
       }
     }
-    impl_->renderFrame();
+    impl_->renderFrame(snapshot);
   }
 
   const char* VulkanBackend::name() const noexcept {
@@ -299,6 +330,12 @@ namespace yr::render {
 
   BackendStats VulkanBackend::last_frame_stats() const noexcept {
     return impl_->stats;
+  }
+
+  void VulkanBackend::pollEvents() {
+    if (impl_->window.has_value()) {
+      impl_->window->pollEvents();
+    }
   }
 
   bool VulkanBackend::shouldClose() const noexcept {

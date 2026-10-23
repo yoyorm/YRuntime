@@ -128,7 +128,7 @@ namespace yr::engine {
   void MainLoop::extractRender() {
     // 阶段 10：取当前帧 0-based 序号，再全量抽取；frame_index 是唯一由本阶段写入的字段。
     snapshot_.frame_index = frameIndex();
-    renderExtract_.extract(sceneTree_, snapshot_);
+    renderExtract_.extract(sceneTree_, camera_, snapshot_);
   }
 
   void MainLoop::present() {

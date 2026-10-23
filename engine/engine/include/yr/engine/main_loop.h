@@ -72,6 +72,10 @@ namespace yr::engine {
     [[nodiscard]] render::RenderSnapshot& snapshot() noexcept { return snapshot_; }
     [[nodiscard]] const render::RenderSnapshot& snapshot() const noexcept { return snapshot_; }
 
+    // host 计算的相机；阶段 10 原样写入快照。默认 identity。
+    [[nodiscard]] const render::CameraPod& camera() const noexcept { return camera_; }
+    void setCamera(const render::CameraPod& camera) noexcept { camera_ = camera; }
+
     // 组合持有：记录本帧各阶段耗时、环形窗口与周期报告。构造后、tick 前可配置报告频率 /
     // CSV 路径 / 静默（setReportInterval(0)）。
     [[nodiscard]] FrameStats& stats() noexcept { return stats_; }
@@ -123,6 +127,7 @@ namespace yr::engine {
     // 渲染接线：backend_ 非拥有（装配者拥有）；snapshot_ 每帧阶段 10 重建。
     render::RendererBackend* backend_ = nullptr;
     render::RenderSnapshot snapshot_;
+    render::CameraPod camera_{};
     RenderExtractSystem renderExtract_;
 
     // 帧统计：tick 全程计时 + 每阶段计时，endFrame 汇总入环。

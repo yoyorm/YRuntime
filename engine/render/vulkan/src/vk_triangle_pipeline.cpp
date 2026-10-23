@@ -51,8 +51,12 @@ namespace yr::render::vk {
     vertexShader_ = createShaderModule(raiiDevice, vertexWords);
     fragmentShader_ = createShaderModule(raiiDevice, fragmentWords);
 
-    // 空 layout：M6-4b 不用 descriptor / push constant。
-    const ::vk::PipelineLayoutCreateInfo layoutInfo{};
+    // 空 descriptor layout + 80 字节 push constant：MVP 与颜色逐 draw 推送。
+    const ::vk::PushConstantRange pushConstantRange{::vk::ShaderStageFlagBits::eVertex |
+                                                        ::vk::ShaderStageFlagBits::eFragment,
+                                                    0, static_cast<std::uint32_t>(sizeof(PushConstants))};
+    ::vk::PipelineLayoutCreateInfo layoutInfo{};
+    layoutInfo.setPushConstantRanges(pushConstantRange);
     layout_ = ::vk::raii::PipelineLayout(raiiDevice, layoutInfo);
 
     ::vk::PipelineShaderStageCreateInfo vertexStage{};

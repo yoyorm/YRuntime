@@ -26,8 +26,9 @@ namespace yr::engine {
 
   } // namespace
 
-  void RenderExtractSystem::extract(const scene::SceneTree& tree, render::RenderSnapshot& out) const {
-    out.camera = render::CameraPod{}; // M5 固定默认：view/proj 均 identity，真实投影留到 M7
+  void RenderExtractSystem::extract(const scene::SceneTree& tree, const render::CameraPod& camera,
+                                    render::RenderSnapshot& out) const {
+    out.camera = camera;
     out.items.clear();
 
     const scene::Node* const root = tree.root();

@@ -16,7 +16,7 @@
 | **M4 场景树与主循环** | ✅ 已完成 / 收口（2026-10-17）——Node/SceneTree/Transform/MainLoop/Clock/FrameStats + Engine + `apps/runtime_headless` + 10000 帧集成测试；剩余的 `NodePath`/headless 平台层为非阻塞遗留 |
 | **M5 渲染契约与 NullBackend** | ✅ 已完成 / 收口 —— `yr_render_iface` + `yr_render_null` + `render_extract` + headless 注入 |
 | **M6 最小 Vulkan Bootstrap** | ✅ 已完成 / 收口（2026-10-23）—— M6-1 外壳 + M6-2 Surface / Device / 队列 + M6-3 Swapchain / 清屏上屏 + M6-4 N 帧在飞 + 硬编码三角形 + M6-5 健壮性（resize / 最小化手测、soak） |
-| **M7 Snapshot 驱动画面** | 🔨 **下一主线**（首个主要作品节点） |
+| **M7 Snapshot 驱动画面** | 🔨 进行中（7b 完成；下一步 7c 输入驱动） |
 | M8 ~ M11 | ⬜ 未开始 |
 
 **远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend ✅ → M6 最小 Vulkan bootstrap ✅ → M7 Snapshot 驱动画面（首个主要作品节点）🔨 → M8 序列化 → M9 资源系统 → M10 任务系统 → M11 工具链打磨。**当前唯一任务：M7。**
@@ -30,11 +30,13 @@
 
 ### M7 的范围与自测
 
+进度：7b 完成
+
 M6 的硬编码三角形只证明"渲染链路能跑"；M7 才把 Runtime 和渲染接起来。
 
-1. **接线**：`apps/render_demo` 从裸循环改成 `Engine` / `MainLoop` 驱动；阶段 11 的 `present` 消费阶段 10 产出的快照。
+1. **接线**：`apps/render_demo` 从裸循环改成 `MainLoop` 驱动（host 自持 `SceneTree` / `EventBus` / `Clock`）；阶段 11 的 `present` 消费阶段 10 产出的快照。
 2. **消费快照**：Vulkan 后端按 `DrawItem` 画多个对象（`object` id + `world` 变换），不再画硬编码三角形。
-3. **退出路径**：删除 `VulkanBackend::shouldClose()` 临时接口；退出改由 `MainLoop::requestQuit()` 驱动。
+3. **退出路径**：`shouldClose()` 保留为 host 级平台查询，由 `DemoLoop::pollInput` 消费后调 `MainLoop::requestQuit()`；`present()` 不再泵事件。
 4. **相机**：`CameraPod` 的 view/projection 进入渲染路径（M5 里默认 identity）。
 
 收口时必须能脱稿回答：

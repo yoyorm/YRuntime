@@ -43,7 +43,7 @@ ALLOWED_DEPS: dict[str, set[str]] = {
     "engine":        {"scene", "asset", "event", "serialize", "object", "job",
                       "render_iface", "core"},
     "render_null":   {"render_iface", "core"},
-    "render_vulkan": {"render_iface", "core"},
+    "render_vulkan": {"math", "render_iface", "core"},
 }
 
 # 目录 → 层名。engine/ 下按目录分；render 的三个后端在 engine/render/ 下。

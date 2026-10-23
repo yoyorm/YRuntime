@@ -42,6 +42,15 @@ namespace {
     return transformIsIdentity(camera.view) && transformIsIdentity(camera.proj);
   }
 
+  bool sameTransform(const yr::render::TransformPod& lhs, const yr::render::TransformPod& rhs) {
+    for (std::size_t index = 0; index < 16; ++index) {
+      if (lhs.m[index] != rhs.m[index]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   void collectPreorder(const Node& node, std::vector<const Node*>& out) {
     out.push_back(&node);
     for (std::size_t child = 0; child < node.childCount(); ++child) {
@@ -91,7 +100,7 @@ TEST_CASE("render_extract: preorder抽取每个树内节点且矩阵逐元素一
   RenderSnapshot snapshot;
   snapshot.frame_index = 42;
   RenderExtractSystem extractor;
-  extractor.extract(tree, snapshot);
+  extractor.extract(tree, CameraPod{}, snapshot);
 
   REQUIRE(snapshot.items.size() == expected.size());
   CHECK(snapshot.frame_index == 42); // extract 不改 frame_index
@@ -120,12 +129,12 @@ TEST_CASE("render_extract: 重复抽取清空旧条目且统计确定", "[engine
 
   RenderSnapshot snapshot;
   RenderExtractSystem extractor;
-  extractor.extract(tree, snapshot);
+  extractor.extract(tree, CameraPod{}, snapshot);
   const std::size_t firstCount = snapshot.items.size();
   REQUIRE(firstCount == 2);
   const std::uint64_t firstObject = snapshot.items[0].object.value;
 
-  extractor.extract(tree, snapshot); // 第二次不得累加
+  extractor.extract(tree, CameraPod{}, snapshot); // 第二次不得累加
   CHECK(snapshot.items.size() == firstCount);
   CHECK(snapshot.items[0].object.value == firstObject);
 }
@@ -136,9 +145,25 @@ TEST_CASE("render_extract: 空树安全，items 空且相机默认 identity", "[
   snapshot.frame_index = 9;
 
   RenderExtractSystem extractor;
-  extractor.extract(tree, snapshot);
+  extractor.extract(tree, CameraPod{}, snapshot);
 
   CHECK(snapshot.items.empty());
   CHECK(snapshot.frame_index == 9);
   CHECK(cameraIsIdentity(snapshot.camera));
+}
+
+TEST_CASE("render_extract: 非 identity 相机原样拷入快照", "[engine][render][extract]") {
+  SceneTree tree;
+  RenderSnapshot snapshot;
+  CameraPod camera;
+  for (std::size_t index = 0; index < 16; ++index) {
+    camera.view.m[index] = static_cast<float>(index) * -0.25F;
+    camera.proj.m[index] = static_cast<float>(index) + 1.5F;
+  }
+
+  RenderExtractSystem extractor;
+  extractor.extract(tree, camera, snapshot);
+
+  CHECK(sameTransform(snapshot.camera.view, camera.view));
+  CHECK(sameTransform(snapshot.camera.proj, camera.proj));
 }

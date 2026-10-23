@@ -1,9 +1,11 @@
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <yr/math/mat4.h>
 #include <yr/math/vec3.h>
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <type_traits>
 
@@ -133,4 +135,43 @@ TEST_CASE("mat4: 相等与不等", "[core][mat4]") {
   CHECK(a == b);
   CHECK(a != c);
   CHECK(a != Mat4::identity());
+}
+
+TEST_CASE("mat4: perspective 缩放与 Vulkan 深度区间", "[core][mat4]") {
+  constexpr float fovY = 1.0F;
+  constexpr float aspect = 16.0F / 9.0F;
+  constexpr float nearPlane = 0.1F;
+  constexpr float farPlane = 100.0F;
+  const Mat4 projection = Mat4::perspective(fovY, aspect, nearPlane, farPlane);
+
+  const float f = 1.0F / std::tan(fovY * 0.5F);
+  CHECK(projection[0] == Catch::Approx(f / aspect));
+  CHECK(projection[5] == Catch::Approx(f));
+  CHECK(projection[11] == -1.0F);
+  CHECK(projection[15] == 0.0F);
+
+  // 透视除法后：near 平面映射到 0，far 平面映射到 1。
+  const auto ndcDepth = [&projection](float eyeZ) {
+    const Vec3 clip = projection.transformPoint(Vec3{0.0F, 0.0F, eyeZ});
+    const float w = -eyeZ; // m[11] = -1，且 x/y 为 0。
+    return clip.z / w;
+  };
+  CHECK(ndcDepth(-nearPlane) == Catch::Approx(0.0F).margin(1e-6F));
+  CHECK(ndcDepth(-farPlane) == Catch::Approx(1.0F).margin(1e-6F));
+}
+
+TEST_CASE("mat4: lookAt 从 +Z 看原点等于平移 -Z", "[core][mat4]") {
+  const Vec3 eye{0.0F, 0.0F, 4.0F};
+  const Mat4 view = Mat4::lookAt(eye, Vec3{0.0F, 0.0F, 0.0F}, Vec3{0.0F, 1.0F, 0.0F});
+
+  const Mat4 expected = translation(0.0F, 0.0F, -4.0F);
+  for (std::size_t i = 0; i < 16; ++i) {
+    CHECK(view[i] == expected[i]);
+  }
+
+  // eye 变换后落在原点（相机空间原点）。
+  const Vec3 transformedEye = view.transformPoint(eye);
+  CHECK(transformedEye.x == Catch::Approx(0.0F).margin(1e-6F));
+  CHECK(transformedEye.y == Catch::Approx(0.0F).margin(1e-6F));
+  CHECK(transformedEye.z == Catch::Approx(0.0F).margin(1e-6F));
 }

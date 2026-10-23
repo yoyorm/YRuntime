@@ -76,7 +76,7 @@ target_include_directories(yr_render_vulkan
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(yr_render_vulkan
     PUBLIC yr::render_iface
-    PRIVATE Vulkan::Vulkan glfw)
+    PRIVATE yr::math Vulkan::Vulkan glfw)
 
 # validation 层只在 Debug 构建启用（见 doc/layers/render.md）。
 target_compile_definitions(yr_render_vulkan PRIVATE

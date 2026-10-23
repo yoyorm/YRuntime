@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 
 #include <yr/math/vec3.h>
@@ -23,6 +24,48 @@ namespace yr::math {
 
     // identity 工厂
     [[nodiscard]] static constexpr Mat4 identity() noexcept { return Mat4{}; }
+
+    // 透视投影：右手、深度 [0, 1]（Vulkan NDC），fovY 为垂直视场角（弧度）。
+    [[nodiscard]] static Mat4 perspective(float fovYRadians, float aspect, float nearPlane, float farPlane) noexcept {
+      Mat4 result;
+      for (float& value : result.m_) {
+        value = 0.0F;
+      }
+      const float f = 1.0F / std::tan(fovYRadians * 0.5F);
+      result[0] = f / aspect;
+      result[5] = f;
+      result[10] = farPlane / (nearPlane - farPlane);
+      result[11] = -1.0F;
+      result[14] = (farPlane * nearPlane) / (nearPlane - farPlane);
+      result[15] = 0.0F;
+      return result;
+    }
+
+    // 视图矩阵：右手 lookAt，eye 为相机位置。
+    [[nodiscard]] static Mat4 lookAt(const Vec3& eye, const Vec3& target, const Vec3& up) noexcept {
+      const Vec3 f = (target - eye).normalized();
+      const Vec3 s = cross(f, up).normalized();
+      const Vec3 u = cross(s, f);
+
+      Mat4 result;
+      for (float& value : result.m_) {
+        value = 0.0F;
+      }
+      result[0] = s.x;
+      result[4] = s.y;
+      result[8] = s.z;
+      result[12] = -dot(s, eye);
+      result[1] = u.x;
+      result[5] = u.y;
+      result[9] = u.z;
+      result[13] = -dot(u, eye);
+      result[2] = -f.x;
+      result[6] = -f.y;
+      result[10] = -f.z;
+      result[14] = dot(f, eye);
+      result[15] = 1.0F;
+      return result;
+    }
 
     // 平坦索引访问原始存储：index = col * 4 + row。
     [[nodiscard]] constexpr float& operator[](std::size_t index) noexcept { return m_[index]; }
@@ -73,6 +116,6 @@ namespace yr::math {
     return result;
   }
 
-  // TODO(M4 / M6-M7)：inverse、perspective / ortho / lookAt、TRS 合成与分解。
+  // TODO(M?)：inverse、ortho、TRS 合成与分解。
 
 } // namespace yr::math
