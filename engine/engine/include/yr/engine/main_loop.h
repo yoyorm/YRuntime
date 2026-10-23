@@ -46,6 +46,9 @@ namespace yr::engine {
     // 最近一次已执行帧的 0-based 序号；未 tick 时为 0。
     [[nodiscard]] std::uint64_t frameIndex() const noexcept { return frameIndex_ == 0 ? 0 : frameIndex_ - 1; }
 
+    // 本帧 realDelta，tick 开始时写入；tick 外为上一帧值。
+    [[nodiscard]] double delta() const noexcept { return realDelta_; }
+
     [[nodiscard]] bool shouldQuit() const noexcept { return quitRequested_; }
     void requestQuit() noexcept { quitRequested_ = true; }
 

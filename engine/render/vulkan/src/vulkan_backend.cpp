@@ -345,6 +345,28 @@ namespace yr::render {
     return impl_->window->shouldClose();
   }
 
+  bool VulkanBackend::isKeyDown(Key key) const noexcept {
+    if (!impl_->window.has_value()) {
+      return false;
+    }
+    int glfwKey = GLFW_KEY_UNKNOWN;
+    switch (key) {
+    case Key::W:
+      glfwKey = GLFW_KEY_W;
+      break;
+    case Key::A:
+      glfwKey = GLFW_KEY_A;
+      break;
+    case Key::S:
+      glfwKey = GLFW_KEY_S;
+      break;
+    case Key::D:
+      glfwKey = GLFW_KEY_D;
+      break;
+    }
+    return glfwGetKey(impl_->window->nativeHandle(), glfwKey) == GLFW_PRESS;
+  }
+
   std::uint32_t VulkanBackend::validationErrorCount() const noexcept {
     if (impl_->instance.has_value()) {
       return impl_->instance->debugStats().errors;

@@ -1,5 +1,6 @@
 // render_demo 正式运行入口：M7b 由 MainLoop 驱动，Vulkan 后端按快照中的 DrawItem 逐个绘制。
 
+#include <algorithm>
 #include <charconv>
 #include <cstddef>
 #include <cstdint>
@@ -23,22 +24,43 @@
 
 namespace {
 
-  // host 驱动 MainLoop：阶段 1 泵窗口事件，窗口关闭转成 requestQuit。
+  // host 驱动 MainLoop：阶段 1 泵窗口事件，WASD 平移中间节点；窗口关闭转成 requestQuit。
   class DemoLoop final : public yr::engine::MainLoop {
   public:
-    DemoLoop(yr::scene::SceneTree& tree, yr::evt::EventBus& events, yr::render::VulkanBackend& backend)
-        : MainLoop(tree, events), backend_(backend) {}
+    DemoLoop(yr::scene::SceneTree& tree, yr::evt::EventBus& events, yr::render::VulkanBackend& backend,
+             yr::scene::Node& movable)
+        : MainLoop(tree, events), backend_(backend), movable_(movable) {}
 
   protected:
     void pollInput() override {
       backend_.pollEvents();
       if (backend_.shouldClose()) {
         requestQuit();
+        return;
       }
+
+      const float dx = (backend_.isKeyDown(yr::render::Key::D) ? 1.0F : 0.0F) -
+                       (backend_.isKeyDown(yr::render::Key::A) ? 1.0F : 0.0F);
+      const float dy = (backend_.isKeyDown(yr::render::Key::W) ? 1.0F : 0.0F) -
+                       (backend_.isKeyDown(yr::render::Key::S) ? 1.0F : 0.0F);
+      if (dx == 0.0F && dy == 0.0F) {
+        return; // 无按键不改位置，避免无谓的 transform 失效
+      }
+
+      // 长帧（拖窗口 / 断点）会把位移放大成瞬移，clamp dt 到 100ms。
+      const float dt = std::clamp(static_cast<float>(delta()), 0.0F, 0.1F);
+      constexpr float kSpeed = 2.0F; // units/s
+      const yr::math::Vec3& current = movable_.position();
+      yr::math::Vec3 next = current + yr::math::Vec3{dx, dy, 0.0F} * (kSpeed * dt);
+      next.x = std::clamp(next.x, -2.0F, 2.0F);
+      next.y = std::clamp(next.y, -1.5F, 2.0F);
+      movable_.setPosition(next);
     }
 
   private:
     yr::render::VulkanBackend& backend_;
+    // 非拥有：树由 main 持有，且比 loop 活得更久。
+    yr::scene::Node& movable_;
   };
 
   struct Options {
@@ -111,6 +133,8 @@ int main(int argc, char** argv) {
   left->setPosition(yr::math::Vec3{-1.2F, 0.0F, 0.0F});
   middle->setPosition(yr::math::Vec3{0.0F, 1.2F, 0.0F});
   right->setPosition(yr::math::Vec3{1.2F, 0.0F, 0.0F});
+  // 树接管所有权后，movable 仍指向同一对象；loop 不拥有它。
+  yr::scene::Node* const movable = middle.get();
   if (!(root->addChild(std::move(left)) && root->addChild(std::move(middle)) && root->addChild(std::move(right))) ||
       !tree.setRoot(std::move(root))) {
     YR_LOG_ERROR("render_demo", "场景构建失败");
@@ -126,7 +150,7 @@ int main(int argc, char** argv) {
                                                    yr::math::Vec3{0.0F, 1.0F, 0.0F}));
 
   yr::evt::EventBus events;
-  DemoLoop loop(tree, events, backend);
+  DemoLoop loop(tree, events, backend, *movable);
   loop.setBackend(&backend); // 阶段 11 调 present
   loop.setCamera(camera);
   yr::engine::Clock clock;

@@ -69,6 +69,7 @@ namespace {
     using MainLoop::MainLoop;
 
     std::vector<Phase> phases;
+    double pollInputDelta = -1.0;
 
   protected:
     void beginFrame() override {
@@ -77,6 +78,7 @@ namespace {
     }
     void pollInput() override {
       phases.push_back(Phase::kPollInput);
+      pollInputDelta = delta();
       MainLoop::pollInput();
     }
     void flushMessages() override {
@@ -290,6 +292,19 @@ TEST_CASE("main_loop: onUpdate receives tick's real delta narrowed to float", "[
 
   CHECK(rawRoot->updateCount == 1);
   CHECK(rawRoot->lastDelta == static_cast<float>(realDelta));
+}
+
+TEST_CASE("main_loop: delta() exposes the injected real delta, including inside pollInput",
+          "[engine][main_loop][delta]") {
+  yr::scene::SceneTree tree;
+  yr::evt::EventBus bus;
+  RecordingMainLoop loop(tree, bus);
+
+  constexpr double realDelta = 0.025;
+  loop.tick(realDelta);
+
+  CHECK(loop.pollInputDelta == Catch::Approx(realDelta));
+  CHECK(loop.delta() == Catch::Approx(realDelta));
 }
 
 TEST_CASE("main_loop: queueFree in onUpdate is applied in phase 9 before tick returns",
