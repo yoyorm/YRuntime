@@ -4,7 +4,7 @@
 Runtime，再以 renderer-neutral 的渲染契约把游戏状态接到渲染后端，形成
 `游戏状态 → Runtime → RenderSnapshot → Renderer → GPU` 的链路。
 
-![status](https://img.shields.io/badge/status-M4%20complete-brightgreen)
+![status](https://img.shields.io/badge/status-M7%20complete-brightgreen)
 ![CI](https://github.com/yoyorm/YRuntime/actions/workflows/ci.yml/badge.svg)
 ![cxx](https://img.shields.io/badge/C%2B%2B-20-00599C?logo=c%2B%2B&logoColor=white)
 ![platform](https://img.shields.io/badge/platform-Linux-lightgrey)
@@ -25,9 +25,9 @@ Runtime，再以 renderer-neutral 的渲染契约把游戏状态接到渲染后�
 | `yr_object` | Object / ObjectDB / Variant / ClassDB |
 | `yr_event` | 单线程 EventBus |
 | `yr_scene` | Node / SceneTree |
-| `yr_engine` | Engine / MainLoop / FrameStats（`World`、`RenderExtract` 规划中） |
-| `yr_render_iface` · `yr_render_null` · `yr_render_vulkan` | RenderSnapshot 契约、NullBackend、Vulkan 后端（均规划中，M5 起） |
-| `apps/runtime_headless` | 正式 headless host（M4 可运行物）；`render_demo` 与 `tools/` 打包 / 查看工具规划中 |
+| `yr_engine` | Engine / MainLoop / FrameStats / `RenderExtractSystem`（`World` 规划中） |
+| `yr_render_iface` · `yr_render_null` · `yr_render_vulkan` | RenderSnapshot 契约、NullBackend、Vulkan 后端（M5/M6/M7 已落地） |
+| `apps/runtime_headless` | 正式 headless host（M4 可运行物）；`apps/render_demo`（M7）与 `tools/` 打包 / 查看工具（规划中） |
 
 依赖方向由构建系统强制，完整分层见 [`doc/01-architecture.md`](doc/01-architecture.md)。
 
@@ -42,10 +42,26 @@ Runtime，再以 renderer-neutral 的渲染契约把游戏状态接到渲染后�
 | M4 场景树与主循环 | 完成 | Node / SceneTree / Transform / MainLoop / Clock / FrameStats + Engine + `yr_runtime_headless --frames N` 与 10000 帧集成测试 |
 | M5 渲染契约与 NullBackend | 完成 | RenderSnapshot + RendererBackend 及 dump/replay |
 | M6 最小 Vulkan Bootstrap | 完成 | 窗口 + 清屏 + 硬编码三角形；N 帧在飞 |
-| M7 Snapshot 驱动画面 | 未开始 | Runtime 移动 Node → 画面变化 |
-| M8+ 序列化 / 资源 / 任务 / 工具链 | 未开始 | 见路线图 |
+| M7 Snapshot 驱动画面 | 完成 | MainLoop 接线 + DrawItem/Camera + WASD + dump/replay + 帧统计；双/三缓冲按 D22 推迟 |
+| M8+ 序列化 / 资源 / 基础 PBR / 任务 / 工具链 | 未开始 | 见路线图 |
 
 进度同时维护在根 README 与 [`doc/02-roadmap.md`](doc/02-roadmap.md)。
+
+## M7 Demo
+
+![M7 键盘移动](doc/media/m7-render-demo.gif)
+
+![M7 截图](doc/media/m7-snapshot.png)
+
+```bash
+cmake --preset debug-vk
+cmake --build --preset debug-vk
+./build/debug-vk/bin/yr_render_demo          # WASD 移动中间节点
+
+# 快照 dump / replay：两边应显示同一帧
+./build/debug-vk/bin/yr_render_demo --frames 600 --dump-snapshot /tmp/m7.yrsnap
+./build/debug-vk/bin/yr_render_demo --replay-snapshot /tmp/m7.yrsnap --frames 600
+```
 
 ## 构建与测试
 

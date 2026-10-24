@@ -16,30 +16,29 @@
 | **M4 场景树与主循环** | ✅ 已完成 / 收口（2026-10-17）——Node/SceneTree/Transform/MainLoop/Clock/FrameStats + Engine + `apps/runtime_headless` + 10000 帧集成测试；剩余的 `NodePath`/headless 平台层为非阻塞遗留 |
 | **M5 渲染契约与 NullBackend** | ✅ 已完成 / 收口 —— `yr_render_iface` + `yr_render_null` + `render_extract` + headless 注入 |
 | **M6 最小 Vulkan Bootstrap** | ✅ 已完成 / 收口（2026-10-23）—— M6-1 外壳 + M6-2 Surface / Device / 队列 + M6-3 Swapchain / 清屏上屏 + M6-4 N 帧在飞 + 硬编码三角形 + M6-5 健壮性（resize / 最小化手测、soak） |
-| **M7 Snapshot 驱动画面** | 🔨 进行中（7c 完成：WASD 移动 Node；下一步 7d dump/replay） |
+| **M7 Snapshot 驱动画面** | ✅ 已完成 / 收口（2026-10-24）—— 7a/7b/7c/7d/7e：MainLoop 接线、DrawItem/Camera、WASD、dump/replay、帧统计、600s soak、resize、GIF/PNG；双/三缓冲按 D22 推迟 |
 | M8 ~ M11 | ⬜ 未开始（M9 后插入 M9.5 基础 PBR，D21） |
 
-**远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend ✅ → M6 最小 Vulkan bootstrap ✅ → M7 Snapshot 驱动画面（首个主要作品节点）🔨 → M8 序列化 → M9 资源系统 → M9.5 基础 PBR 内容（D21）→ M10 任务系统 → M11 工具链打磨。**当前唯一任务：M7。**
+**远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend ✅ → M6 最小 Vulkan bootstrap ✅ → M7 Snapshot 驱动画面（首个主要作品节点）✅ → M8 序列化 → M9 资源系统 → M9.5 基础 PBR 内容（D21）→ M10 任务系统 → M11 工具链打磨。**当前唯一任务：M8。**
 
 进度**只在两处维护**：根 `README.md` 的里程碑表（对外）+ `02-roadmap.md` 的 checkbox（对内）。
 别的地方不要重复记录，否则一定会漂移。
 
 ---
 
-## 2. 下一步：M7 Snapshot 驱动画面（M6 已完成）
+## 2. 下一步：M8 序列化（M7 已收口）
 
-### M7 的范围与自测
+M7 已收口（2026-10-24）：7a/7b/7c/7d/7e 完成——MainLoop 接线、DrawItem/Camera、WASD、dump/replay、帧统计、600s soak、resize、GIF/PNG。
+双/三缓冲按 D22 推迟；LightPod / Camera Node / Light Node / 真实 AssetHandle 归 M9.5/M9（D21）。
+收口证据：`doc/media/m7-render-demo.gif` / `m7-snapshot.png`；详细清单见 `02-roadmap.md` M7。
 
-进度：7b 完成
+### M8 的第一步
 
-M6 的硬编码三角形只证明"渲染链路能跑"；M7 才把 Runtime 和渲染接起来。
+1. 先定 `.yrscn` 文本格式（段结构、引用、错误位置），在对话里过一遍再写 parser；
+2. 再写 `TextWriter` / `TextReader` + `PackedScene` + round-trip；
+3. 详细清单与验收见 `02-roadmap.md` M8。
 
-1. **接线**：`apps/render_demo` 从裸循环改成 `MainLoop` 驱动（host 自持 `SceneTree` / `EventBus` / `Clock`）；阶段 11 的 `present` 消费阶段 10 产出的快照。
-2. **消费快照**：Vulkan 后端按 `DrawItem` 画多个对象（`object` id + `world` 变换），不再画硬编码三角形。
-3. **退出路径**：`shouldClose()` 保留为 host 级平台查询，由 `DemoLoop::pollInput` 消费后调 `MainLoop::requestQuit()`；`present()` 不再泵事件。
-4. **相机**：`CameraPod` 的 view/projection 进入渲染路径（M5 里默认 identity）。
-
-收口时必须能脱稿回答：
+### M7 复盘题（已收口，供面试自测）
 
 1. 为什么阶段 10 抽快照、阶段 11 才 present？如果反过来会破坏什么？
 2. `DrawItem::object` 为什么是 `RenderObjectId` 而不是 `Object*`？
@@ -130,7 +129,7 @@ AI 已能写实现，瓶颈不再是"会不会写 API"，而是"能不能判断�
 | `00-vision.md` | 怀疑方向、或想砍功能时 |
 | `03-learning-map.md` | 卡住、需要补知识时 |
 | `06-decisions.md` | 要做取舍前，先查有没有已经定过的 |
-| `07-portfolio.md` | 首个视觉节点（M7）之后再修订，现在不用看 |
+| `07-portfolio.md` | M7 已收口，现已修订；下一个视觉节点是 M9.5 |
 
 > **一次开工实际需要的阅读量 ≈ 30 行。** 如果你发现自己在一次读 500 行文档，停下来 ——
 > 那是在用"准备"代替"动手"。

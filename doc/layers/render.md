@@ -34,7 +34,7 @@
   | `DrawItem::mesh` | 网格引用；M5 为内建 / 无效 |
   | `DrawItem::material` | 材质引用；M5 为内建 / 无效 |
   | `CameraPod::view` / `proj` | 视图 / 投影矩阵，各为一个 `TransformPod`（同一矩阵约定） |
-  | `RenderSnapshot::frame_index` | 递增帧序号（M5 单缓冲，单调不保证由后端强制） |
+  | `RenderSnapshot::frame_index` | 递增帧序号（M5/M7 单缓冲；snapshot ring 按 D22 推迟） |
   | `RenderSnapshot::camera` | M5 **单相机**，固定默认值 |
   | `RenderSnapshot::items` | 本帧待绘条目；M5 按前序遍历顺序即确定，无排序键 |
 
@@ -94,7 +94,8 @@
   - **确定性判据**：固定字段序 + **不复用结构体内存布局**（逐字段写，天然绕开 padding / 对齐），因此同一输入两次编码**逐字节相同**。
   - **解码严格性**：magic 必须匹配、`version == 1`、长度必须**恰好**匹配（多一个字节也算非法）；任一不满足返回 `false` 且 `out` 保持不变（内部先解码到局部变量，全部通过才 `out = std::move(...)`）。
 - **设计原因**：dump / replay 是"契约真的完备"的可执行证据；不 memcpy 结构体使格式与 ABI / 编译器布局无关。
-- **遗留 / 已知缺口**：无 CLI（`--dump-snapshot` / `--replay-snapshot`）接入（推迟）；无版本迁移逻辑。
+- **CLI 接入（M7d）**：`render_demo --dump-snapshot PATH` 在阶段 11 把**首个进入 present 阶段的快照**（正常路径下就是实际送显的那一帧）编码后写入文件（只写一次；写入失败置 `dumpFailed_`、请求退出并以 1 退出）；`--replay-snapshot PATH` 在 Vulkan 初始化后、创建 `SceneTree` 之前分流，只读文件 + `decodeSnapshot` + `VulkanBackend::present`，**不创建** `SceneTree` / `EventBus` / `MainLoop` / `ObjectDB`。两个 flag 互斥（同时出现按用法错误以 2 退出）；文件格式仍是 version 1。
+- **遗留 / 已知缺口**：无版本迁移逻辑。
 
 ## NullBackend（`yr::render::NullBackend`）
 
@@ -148,7 +149,9 @@
 - **OOD / Suboptimal → 重建**：`needsRecreate()` 用 surface 能力 + 与 `create` 共用的 `computeExtent()` 现算期望 extent，与 `extent_` 比较（不拿窗口像素尺寸直接比）。acquire 的 OOD 路径**不 reset fence、不推进 slot**，`waitForFences` 失败或 acquire 其它失败同样不推进。present 的 OOD / Suboptimal（含 acquire 的 Suboptimal）在推进 slot 后重建。重建先 `waitIdle`（旧 `FrameSync` 的同步对象可能仍被 pending 提交引用），再 `swapchain->recreate(...)`，然后按新 `format` 无条件重建 `TrianglePipeline`，用新的 `imageCount` 重建 `FrameSync` 并复位 `frameSlot_ = 0`。swapchain 重建抛异常时旧链保持完整；若 swapchain 已换新而 `TrianglePipeline` / `FrameSync` 构造失败，对应 `optional` 为空，`present()` 下一帧发现缺失会再走一次重建恢复。重建异常只记日志，下一帧继续尝试。
 - **`shutdown()` 先 `waitIdle` 再销毁同步对象**：fence / semaphore / command buffer 不能在提交仍 pending 时释放。
 - **M7b 的 `present` 消费快照**：draw 次数与每个 item 的 MVP / 颜色都来自 `RenderSnapshot`；`last_frame_stats()` 每帧按快照更新（见上）。
+- **单快照 vs frame-in-flight（M7/D22）**：`kFramesInFlight = 2` 缓冲的是 command buffer / fence / semaphore，不是 `RenderSnapshot`；`present()` 同步到 submit，GPU 执行异步。backend 在 record 阶段把 camera/world 复制进 command buffer/push constant，不保留快照指针，因此 M7 单快照安全；snapshot ring 按 D22 推迟到出现真实异步消费者。
 - **`shouldClose()` 是 host 级平台查询**：不属于 `RendererBackend` 契约；M7a 起由 `DemoLoop::pollInput` 在阶段 1 泵事件后消费并调 `requestQuit()`。`pollEvents()` 同样只由 host 在阶段 1 调用，`present()` 不再泵事件。
+- **`Key` / `isKeyDown()` 是 host 级输入查询（M7c）**：`Key` 只覆盖 W/A/S/D，`isKeyDown()` 在 `pollEvents()` 之后读取当前按键状态；二者不属于 `RendererBackend` 契约，公开头仍保持 GLFW-free。
 - `create_vulkan_backend()` 与 `create_null_backend()` 同形（返回 `std::unique_ptr<RendererBackend>`）；`initialize` 把 Vulkan-Hpp 抛出的异常翻译成"日志 + `false`"，构造窗口/instance 失败不会泄漏半成品。
 
 ### M6 结构约束（跨 M6-1~M6-5）

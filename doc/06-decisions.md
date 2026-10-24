@@ -32,6 +32,7 @@
 | D19 | 删除文字冒险；M4 后 Contract/Null → Vulkan Bootstrap → Snapshot；Yo_Renderer 只选择性借鉴；快照数据式契约 | 暂定 | M4~M7 |
 | D20 | AI 协作下的学习重心：契约与边界归人，API 机制归 AI | 暂定 | M6 起 |
 | D21 | 复用 Yo_Renderer 的基础 PBR 内容（无 IBL/skybox/GUI），重构进 Runtime/Asset 链路 | 暂定 | M9.5 |
+| D22 | Snapshot ring 推迟到出现真实异步消费者 | 暂定 | M7 收口 / 后续 |
 
 ---
 
@@ -479,6 +480,21 @@ CI 首次运行时 `apt-get install libcatch2-dev` 退出码 100，job 失败。
 **后果**：+ 画面从“彩色图元”变成真实 PBR 场景，Asset/Snapshot/延迟释放链路被真实消费者验证；+ 与引擎岗的“资源生命周期 + 解耦”叙事一致。− 引入 descriptor set、pipeline、upload、shadow pass 等约 2~3k LOC 渲染代码；− 若控制不好会向图形项目漂移。
 
 **什么情况下改回来**：若 M9.5 超过 4 周仍未出图，先降级为 PBR-min（无 shadow），把 IBL/skybox/GUI 永久留在 Stretch；若后续目标转为图形岗，另立项目，不在此处扩张。
+
+---
+
+## D22 · Snapshot ring 推迟到出现真实异步消费者
+**状态**：暂定 · **里程碑**：M7 收口 / 后续
+
+**背景**：M7 当前是单线程：`MainLoop` 阶段 10 写单份 `snapshot_`，阶段 11 同步调用 `backend->present()`；backend 在 record 阶段把 camera / world 复制进 command buffer / push constant，不保留 `RenderSnapshot` 指针。没有异步消费者时，双/三缓冲只会成为同 tick 写读的结构，无法实际制造 1~2 帧时间差。backend 的 `kFramesInFlight = 2` 是 CPU/GPU 提交重叠，不是 Runtime/Backend 的时间解耦。
+
+**决策**：M7 以单快照收口；snapshot ring 推迟到出现真实异步消费者时再做。触发条件：独立渲染线程、延迟消费、per-frame UBO 直接引用快照内存、多消费者/多视图等。届时再决定 ring 数量、所有权、同步方式（fence / sequence / queue），并写新的 ADR。
+
+**理由**：避免为不存在的消费者提前抽象；当前单快照在同步 `present` + record 时复制下是安全的；ring 的尺寸/同步策略应由真实 lag 决定。M7 的核心验收（键盘、validation、dump/replay、零 Vulkan include）不受影响。
+
+**后果**：+ 不引入未使用的结构；+ 面试可讲清“为什么现在不做”；− M7 的“时间解耦”仍停留在设计层，§4.11 的双/三缓冲要标为推迟；− 若后续加渲染线程，需要补 ring + 测试。
+
+**什么情况下改回来**：出现上述触发条件；或 E14 显示 snapshot/extract copy 成为瓶颈；或 M9.5 决定让 GPU 直接引用 snapshot 内存而不复制。
 
 ---
 

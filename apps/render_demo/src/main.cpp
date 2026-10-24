@@ -1,35 +1,79 @@
-// render_demo 正式运行入口：M7b 由 MainLoop 驱动，Vulkan 后端按快照中的 DrawItem 逐个绘制。
+// render_demo 正式运行入口：M7b 由 MainLoop 驱动、M7c 键盘移动 Node、M7d 快照 dump / replay。
+// Vulkan 后端按快照中的 DrawItem 逐个绘制。
 
 #include <algorithm>
 #include <charconv>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <fstream>
+#include <iterator>
 #include <memory>
 #include <numbers>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <utility>
+#include <vector>
 
 #include <yr/core/log.h>
+#include <yr/core/timer.h>
 #include <yr/engine/clock.h>
 #include <yr/engine/main_loop.h>
 #include <yr/event/event_bus.h>
 #include <yr/math/mat4.h>
 #include <yr/math/vec3.h>
 #include <yr/render/snapshot.h>
+#include <yr/render/snapshot_io.h>
 #include <yr/render/vk/vulkan_backend.h>
 #include <yr/scene/node.h>
 #include <yr/scene/scene_tree.h>
 
 namespace {
 
+  [[nodiscard]] bool writeBytes(const std::string& path, const std::vector<std::uint8_t>& bytes) {
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    if (!file) {
+      return false;
+    }
+    if (!bytes.empty()) {
+      file.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    }
+    return file.good();
+  }
+
+  // 空文件也返回 true；截断 / 非法格式交给 decodeSnapshot 判定。
+  [[nodiscard]] bool readBytes(const std::string& path, std::vector<std::uint8_t>& out) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+      return false;
+    }
+    out.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+    return !file.bad();
+  }
+
+  // 与 runtime_headless 相同的日志格式：ns / us / ms 三档，避免统计摘要刷出长小数。
+  [[nodiscard]] std::string formatDuration(yr::core::Duration duration) {
+    const long long nanoseconds = duration.count();
+    char buffer[32] = {};
+    if (nanoseconds < 1000) {
+      std::snprintf(buffer, sizeof(buffer), "%lldns", nanoseconds);
+    } else if (nanoseconds < 1000000) {
+      std::snprintf(buffer, sizeof(buffer), "%.1fus", static_cast<double>(nanoseconds) / 1000.0);
+    } else {
+      std::snprintf(buffer, sizeof(buffer), "%.1fms", static_cast<double>(nanoseconds) / 1000000.0);
+    }
+    return std::string(buffer);
+  }
+
   // host 驱动 MainLoop：阶段 1 泵窗口事件，WASD 平移中间节点；窗口关闭转成 requestQuit。
   class DemoLoop final : public yr::engine::MainLoop {
   public:
     DemoLoop(yr::scene::SceneTree& tree, yr::evt::EventBus& events, yr::render::VulkanBackend& backend,
-             yr::scene::Node& movable)
-        : MainLoop(tree, events), backend_(backend), movable_(movable) {}
+             yr::scene::Node& movable, std::string dumpPath)
+        : MainLoop(tree, events), backend_(backend), movable_(movable), dumpPath_(std::move(dumpPath)) {}
+
+    [[nodiscard]] bool dumpFailed() const noexcept { return dumpFailed_; }
 
   protected:
     void pollInput() override {
@@ -57,14 +101,36 @@ namespace {
       movable_.setPosition(next);
     }
 
+    // 只 dump 首个进入 present 阶段的快照：颜色按 ObjectID 取，重放同一份数据才能逐像素一致。
+    void present() override {
+      if (!dumpPath_.empty() && !dumped_ && !dumpFailed_) {
+        const std::vector<std::uint8_t> bytes = yr::render::encodeSnapshot(snapshot());
+        if (writeBytes(dumpPath_, bytes)) {
+          dumped_ = true;
+          YR_LOG_INFO("render_demo", "dump_snapshot path=" + dumpPath_ + " bytes=" + std::to_string(bytes.size()) +
+                                         " items=" + std::to_string(snapshot().items.size()));
+        } else {
+          dumpFailed_ = true;
+          requestQuit();
+          YR_LOG_ERROR("render_demo", "dump_snapshot 写入失败：" + dumpPath_);
+        }
+      }
+      MainLoop::present();
+    }
+
   private:
     yr::render::VulkanBackend& backend_;
     // 非拥有：树由 main 持有，且比 loop 活得更久。
     yr::scene::Node& movable_;
+    std::string dumpPath_;
+    bool dumped_ = false;
+    bool dumpFailed_ = false;
   };
 
   struct Options {
     std::uint64_t frames = 0; // 0 = 直到窗口关闭
+    std::string dumpSnapshot;
+    std::string replaySnapshot;
     bool help = false;
   };
 
@@ -77,10 +143,14 @@ namespace {
   }
 
   void printUsage(std::FILE* stream, const char* program) {
-    std::fprintf(stream, "usage: %s [--frames N]\n", program);
+    std::fprintf(stream,
+                 "usage: %s [--frames N] [--dump-snapshot PATH] [--replay-snapshot PATH]\n"
+                 "  --dump-snapshot PATH     dump the first presented RenderSnapshot\n"
+                 "  --replay-snapshot PATH   replay a dumped snapshot without a SceneTree\n",
+                 program);
   }
 
-  // 手写参数解析：只支持帧数与 help，不引入 CLI 库。
+  // 手写参数解析：只支持帧数、dump/replay 与 help，不引入 CLI 库。
   [[nodiscard]] bool parseArgs(int argc, char** argv, Options& options) {
     for (int i = 1; i < argc; ++i) {
       const std::string_view arg = argv[i];
@@ -96,13 +166,66 @@ namespace {
           return false;
         }
         options.frames = value;
+      } else if (arg == "--dump-snapshot") {
+        if (i + 1 >= argc) {
+          return false;
+        }
+        options.dumpSnapshot = argv[++i];
+      } else if (arg == "--replay-snapshot") {
+        if (i + 1 >= argc) {
+          return false;
+        }
+        options.replaySnapshot = argv[++i];
       } else if (arg == "--help" || arg == "-h") {
         options.help = true;
       } else {
         return false;
       }
     }
-    return true;
+    // dump 与 replay 语义互斥：一次运行不可能既产生又消费同一帧。
+    return options.dumpSnapshot.empty() || options.replaySnapshot.empty();
+  }
+
+  // replay 路径只依赖快照与后端：不建 SceneTree / EventBus / MainLoop / ObjectDB。
+  [[nodiscard]] int runReplay(yr::render::VulkanBackend& backend, const Options& options) {
+    std::vector<std::uint8_t> bytes;
+    if (!readBytes(options.replaySnapshot, bytes)) {
+      YR_LOG_ERROR("render_demo", "replay_snapshot 读取失败：" + options.replaySnapshot);
+      backend.shutdown();
+      return 1;
+    }
+
+    yr::render::RenderSnapshot snapshot;
+    if (!yr::render::decodeSnapshot(bytes.data(), bytes.size(), snapshot)) {
+      YR_LOG_ERROR("render_demo", "replay_snapshot 解码失败：" + options.replaySnapshot);
+      backend.shutdown();
+      return 1;
+    }
+
+    YR_LOG_INFO("render_demo", "replay_snapshot frame_index=" + std::to_string(snapshot.frame_index) +
+                                   " items=" + std::to_string(snapshot.items.size()));
+
+    std::uint64_t frames = 0;
+    while (true) {
+      backend.pollEvents();
+      if (backend.shouldClose()) {
+        break;
+      }
+      backend.present(snapshot);
+      ++frames;
+      if (options.frames != 0 && frames >= options.frames) {
+        break;
+      }
+    }
+
+    const yr::render::BackendStats backendStats = backend.last_frame_stats();
+    backend.shutdown();
+    const std::uint32_t errors = backend.validationErrorCount();
+    YR_LOG_INFO("render_demo", "replay frames=" + std::to_string(frames) +
+                                   " items=" + std::to_string(backendStats.items) +
+                                   " draw_calls=" + std::to_string(backendStats.draw_calls) +
+                                   " validation_errors=" + std::to_string(errors));
+    return errors == 0 ? 0 : 1;
   }
 
 } // namespace
@@ -122,6 +245,11 @@ int main(int argc, char** argv) {
   yr::render::VulkanBackend backend;
   if (!backend.initialize({})) {
     return 1;
+  }
+
+  // replay 在初始化之后、建场景之前分流：证明快照 + 后端即可出画。
+  if (!options.replaySnapshot.empty()) {
+    return runReplay(backend, options);
   }
 
   // 场景：root 下 3 个子节点沿 X 轴排开，便于验证逐 item 的 world 变换。
@@ -150,10 +278,13 @@ int main(int argc, char** argv) {
                                                    yr::math::Vec3{0.0F, 1.0F, 0.0F}));
 
   yr::evt::EventBus events;
-  DemoLoop loop(tree, events, backend, *movable);
+  DemoLoop loop(tree, events, backend, *movable, options.dumpSnapshot);
   loop.setBackend(&backend); // 阶段 11 调 present
   loop.setCamera(camera);
   yr::engine::Clock clock;
+
+  // soak 时不刷周期报告，退出时统一打一帧摘要；窗口仍是默认的最近 4096 帧。
+  loop.stats().setReportInterval(0);
 
   std::uint64_t ticks = 0;
   while (!loop.shouldQuit()) {
@@ -163,10 +294,25 @@ int main(int argc, char** argv) {
       break;
     }
   }
+
+  // last_frame_stats / validation 都必须在 shutdown 前/后按各自契约取：前者会被 shutdown 清零。
+  const yr::render::BackendStats backendStats = backend.last_frame_stats();
+  const yr::engine::FrameStats& stats = loop.stats();
   backend.shutdown();
 
   const std::uint32_t errors = backend.validationErrorCount();
-  YR_LOG_INFO("render_demo",
-              "frames=" + std::to_string(loop.frameCount()) + " validation_errors=" + std::to_string(errors));
-  return errors == 0 ? 0 : 1;
+  std::string summary = "frames=" + std::to_string(loop.frameCount());
+  summary += " | stats_window=last " + std::to_string(stats.windowCount()) + "/" + std::to_string(stats.windowSize()) +
+             " frames";
+  summary += " total p50=" + formatDuration(stats.totalP50()) + " p95=" + formatDuration(stats.totalP95());
+  summary += " extract_render p50=" + formatDuration(stats.phaseP50(yr::engine::Phase::kExtractRender)) +
+             " p95=" + formatDuration(stats.phaseP95(yr::engine::Phase::kExtractRender));
+  summary += " present p50=" + formatDuration(stats.phaseP50(yr::engine::Phase::kPresent)) +
+             " p95=" + formatDuration(stats.phaseP95(yr::engine::Phase::kPresent));
+  summary += " | items=" + std::to_string(backendStats.items) +
+             " draw_calls=" + std::to_string(backendStats.draw_calls) +
+             " triangles=" + std::to_string(backendStats.triangles);
+  summary += " validation_errors=" + std::to_string(errors);
+  YR_LOG_INFO("render_demo", summary);
+  return errors == 0 && !loop.dumpFailed() ? 0 : 1;
 }

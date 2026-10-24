@@ -41,12 +41,12 @@ graph TD
     AST["yr_asset<br/><i>yr::asset</i><br/>Resource·AssetDatabase·Loader/Saver·Pak"]
 
     SCN["yr_scene<br/><i>yr::scene</i><br/>Node·SceneTree·PackedScene·SceneSerializer"]
-    ENG["yr_engine<br/><i>yr::engine</i><br/>Engine·MainLoop·FrameStats<br/>World·RenderExtract（规划中）"]
+    ENG["yr_engine<br/><i>yr::engine</i><br/>Engine·MainLoop·FrameStats<br/>World（规划中）·RenderExtract（已实现）"]
 
     RNULL["yr_render_null"]
     RVK["yr_render_vulkan<br/>最小重写 + 选择性借鉴 Yo_Renderer 底层"]
 
-    APPS["apps/runtime_headless（已实现）<br/>apps/render_demo（M7 规划）"]
+    APPS["apps/runtime_headless（已实现）<br/>apps/render_demo（M7 已实现）"]
     TOOLS["tools/yr_pack · yr_scene_conv · yr_inspect（规划中）"]
     TESTS["tests/ 每层一个 Catch2 target"]
 
@@ -637,7 +637,7 @@ std::unique_ptr<RendererBackend> create_null_backend();  // 工厂在各自 targ
 }
 ```
 
-**规划与兑现**：上面的结构是 M5 冻结的最小版（与 `engine/render/iface` 一致）。`uploads` / `releases` / `LightPod` / `sort_key` / 多相机 / 双三缓冲均为**规划**，分别在 M7 / M9 引入（见 `02-roadmap.md` M5 的"明确不做"表）。§7 的解耦方案保持不变。
+**规划与兑现**：上面的结构是 M5 冻结的最小版（与 `engine/render/iface` 一致）。`uploads` / `releases` / `LightPod` / `sort_key` / 多相机 / 双三缓冲均为**规划**，分别在 M7 / M9 引入（见 `02-roadmap.md` M5 的"明确不做"表）；其中双/三缓冲 M7 未做，按 D22 推迟到出现真实异步消费者。§7 的解耦方案保持不变。
 
 **四条硬性规则**（写进 CI 检查）：
 1. `RenderSnapshot` 里**不允许**出现 `yr::scene::*` / `yr::obj::Object*` 类型 → 只能传 ID 和值。
@@ -645,7 +645,7 @@ std::unique_ptr<RendererBackend> create_null_backend();  // 工厂在各自 targ
 3. Backend **不允许**回调 Runtime（不能持有 `SceneTree*`）。需要交互就返回数据，由 Runtime 下一帧读。
 4. Runtime 侧**不允许** include `<vulkan/...>`、`<GLFW/...>`。
 
-**快照传递**：单缓冲起步（M5），M7 引入双/三缓冲 + Backend 可在独立线程消费（对照 §4.10 的 command queue）。
+**快照传递**：单缓冲起步（M5）；M7 仍单缓冲（同步 `present` + record 时复制），双/三缓冲与 Backend 独立线程消费推迟到出现真实异步消费者（D22，对照 §4.10 的 command queue）。
 **Godot 对照**：`servers/rendering/rendering_server.h`（Server 模式：`RenderingServer` 收命令、场景侧只持 `RID`）、`servers/server_wrap_mt_common.h`（**多线程 Server 包装的宏魔法，M7/stretch 精读**）、`core/templates/command_queue_mt.h`。
 **Yo_Renderer 对照**：它现在的 `RenderServer::render(items, vp, cameraPos, const void* lightsData, count, frame)`
 就是"没有契约的契约"（`06-decisions.md` D7 / Yo_Renderer 的 V6）。M6/M7 的任务之一就是把它换成上面的 `RenderSnapshot`。
@@ -748,12 +748,12 @@ sequenceDiagram
 1. **数据解耦**：传 POD 快照，不传对象指针 → Runtime 类型变化不影响 Backend。
 2. **生命周期解耦**：Backend 用 `AssetHandle` 自己缓存 GPU 资源；Runtime 卸载资源时发一条 `ReleaseRequest`，
    Backend 在**自己的帧边界**延迟释放（对照 Yo_Renderer 的 `VulkanResourceTable` generation + 延迟销毁）。
-3. **时间解耦**：双缓冲 + frame index，Backend 可以落后 Runtime 1~2 帧，两者不必同步 tick。
+3. **时间解耦**：双缓冲 + frame index，Backend 可以落后 Runtime 1~2 帧，两者不必同步 tick。**当前状态**：M7 仍是单快照 + 同步 `present`；snapshot ring 按 D22 推迟，等独立渲染线程/延迟消费出现。
 
 **验证解耦是否真的成立的三个测试**（写进 CI）：
 - `yr_render_null` + 全部核心测试在**无 GPU 的 CI runner** 上跑通。
 - `grep -r "vulkan\|GLFW" engine/ --include=*.h --include=*.cpp` 只命中 `engine/render/vulkan/`。
-- 把 `RenderSnapshot` 序列化成文件 → 下一帧从文件重放给 Backend（**快照可重放 = 契约完备**，这是个很漂亮的 demo）。
+- 把 `RenderSnapshot` 序列化成文件 → 从文件重放给 Backend（**快照可重放 = 契约完备**）。M7d 已跑通：506B、live/replay `AE=0`。
 
 ---
 

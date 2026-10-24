@@ -19,11 +19,10 @@
 | 学校/竞赛/推免材料 | 完成度 | 里程碑进度表 + 测试数 + benchmark 数据（**副产品**） |
 
 **定位一句话（可直接用于简历/自我介绍）**：
-> 独立设计并实现了一个 C++20 游戏运行时（YRuntime）：从零实现句柄/反射/事件/场景树/序列化/异步资源/任务调度/主循环等模块，
-> 用分层 CMake target + CI 强制依赖方向，Catch2 + ASan/TSan 覆盖核心逻辑，并以此为基底跑通 headless scene simulation、
-> renderer-neutral 快照 dump/replay 与场景序列化 round-trip；
-> 最后以最小重写 + 选择性借鉴自研 Vulkan PBR 渲染器底层机制的方式接入可替换 Backend，实现
-> `游戏状态 → Runtime → RenderSnapshot → Renderer → GPU` 的完整链路；
+> 独立设计并实现了一个 C++20 游戏运行时（YRuntime）：从零实现句柄/反射/事件/场景树/主循环等模块，
+> 用分层 CMake target + CI 强制依赖方向，Catch2 + ASan 覆盖核心逻辑；当前已完成 M0~M7，
+> 跑通 headless scene simulation 与 `游戏状态 → Runtime → RenderSnapshot → Renderer → GPU` 的 Vulkan 画面链路，
+> 并用快照 dump/replay 证明渲染契约自包含；M8~M10（序列化 / 异步资源 / 任务调度）与 M9.5 基础 PBR 按路线图继续推进；
 > 全程以 Godot 4.x 源码为参照系，能说清每个模块"Godot 怎么做 / 我怎么做 / 为什么不同"。
 
 （把 LOC、测试数等占位符在项目后期填成真实数字。**不要写没有证据支撑的形容词**，比如"高性能""工业级"。）
@@ -75,12 +74,14 @@
 | M4 | headless 世界 tick 10000 帧 | **asciinema 录屏** + FrameStats CSV + p50/p95/max 表 | `doc/media/` |
 | M5 | renderer-neutral 快照 dump/replay + 渲染解耦 | 博客素材 | `doc/media/` |
 | M6 | 最小 Vulkan bootstrap（窗口 + 清屏 + 硬编码三角形） | 截图 / GIF | `doc/media/` |
-| **M7** | **Runtime 驱动的 Vulkan 画面** ← 首个主要视觉作品节点 | **GIF + 截图 + 架构图** | `doc/media/` |
+| **M7** | **Runtime 驱动的 Vulkan 画面 + WASD + dump/replay + 帧统计** ← 首个主要视觉作品节点 | **GIF + PNG + Mermaid 架构图** | `doc/media/m7-render-demo.gif` / `m7-snapshot.png` |
 | M8 | 手写 `.yrscn` + save→load→save round-trip | 截图 + 格式规范（写进 `yr/serialize/` 头注释） | `doc/media/` |
 | M9 | 慢 IO 下异步加载不卡帧（E10）+ AssetHandle→GPU 桥接 | 帧时间曲线图（Python 画） | `benchmarks/README.md` |
 | M9.5 | 基础 PBR 内容（ToyCar + 平行光/点光 + 单张阴影，D21） | 截图 / GIF | `doc/media/` |
 | M10 | 并行加速比曲线 + false sharing 实测（E11/E12） | 数据表 + 图 | `benchmarks/README.md` |
 | M11 | `.yrpak` 打包 + 完整文档（覆盖率徽章可选） | README + CI | 根目录 |
+
+> **M7 收口（2026-10-24）**：600s soak / 34113 帧 / validation 0；extract p50 1.5us；present p50 17.2ms（FIFO 下含 fence/present 等待）；dump/replay 506B / AE=0；resize 960×540 ↔ 1280×720 通过。双/三缓冲按 D22 推迟，等真实异步消费者。
 
 **视觉素材规范**
 - 架构图：Mermaid（GitHub 原生渲染，可 diff，可维护）；**不要**用画图软件截图（改一次要重画一次）。

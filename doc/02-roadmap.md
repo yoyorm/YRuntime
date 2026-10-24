@@ -385,11 +385,11 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 | 内容 | 推迟到 | 理由 |
 |---|---|---|
 | `uploads` / `releases` | M9 | 资源系统出现才有上传/释放请求 |
-| `LightPod` | M7 | 无光照消费者，字段现在定是猜 |
-| 相机 fov/near/far、多相机 | M7 | 单相机固定默认够 M5 |
-| `sort_key` 位段 | M7 | M5 用前序遍历顺序即确定 |
-| 双/三缓冲交换协议 | M7 | 由 Vulkan frame-in-flight 决定 |
-| 独立渲染线程、静态/version 标记 | M7 stretch | 无体验、无消费者 |
+| `LightPod` | M9.5 | 无光照消费者，字段现在定是猜（D21） |
+| 相机 fov/near/far、多相机 | M9.5 / stretch | 单相机固定默认够 M5；Camera Node 归 M9.5，多相机留 stretch |
+| `sort_key` 位段 | stretch | M9.5 只做 opaque/mask，暂无透明排序消费者 |
+| 双/三缓冲交换协议 | D22 推迟 | 当前单线程同步 present；出现异步消费者再做 |
+| 独立渲染线程、静态/version 标记 | stretch | 无体验、无消费者 |
 
 **验收标准**
 - headless + `NullBackend` 跑 headless scene simulation 1000 帧，快照统计正常，CI 全绿。
@@ -442,31 +442,33 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 
 **目标**：`VulkanBackend` 真正消费 M5 的 `RenderSnapshot`，形成 `游戏状态 → Runtime → RenderSnapshot → RendererBackend → GPU` 的完整链路。**Runtime 里移动一个 Node，画面同步变化**——这是本项目第一个主要作品节点。
 
-- [ ] `VulkanBackend` 完整实现 `RendererBackend`：`present(snapshot)` → DrawItem / Camera / Light 转为 GPU 提交
-- [ ] **AssetHandle → GPU 桥接（临时版）**：先用 backend 内建 triangle / default material ID 响应 `AssetHandle`；正式 `AssetUID` / `AssetDatabase` 到 M9 再接
-- [ ] 相机 / 光照从快照取，删掉 Backend 内部对"场景"的假设（Backend 不得持有 `SceneTree*`）
-- [ ] 快照传递引入双 / 三缓冲（落实 §4.11 的"时间解耦"），frame index 单调递增
+- [x] `VulkanBackend` 完整实现 `RendererBackend`：`present(snapshot)` → DrawItem / Camera；Light 归 M9.5（D21）
+- [x] M7 渲染层用 backend 内建 triangle；`DrawItem.mesh/material` 仍是占位，真实 `AssetUID` / `AssetDatabase` 与 GPU 资源桥接归 M9/M9.5（D21）
+- [x] 相机从快照取，Backend 不持有 `SceneTree*`；`LightPod` 归 M9.5（D21）
+- [ ] 快照传递双 / 三缓冲：**推迟（D22）**；当前单线程同步 `present`，backend 在 record 时复制快照；出现异步消费者再做
 - [x] `apps/render_demo`：Runtime 里搭一个场景（几个带 Transform 的 Node），键盘控制 Node → 画面变化（7c 完成；Camera Node / Light Node 归 M9.5）
 - [ ] `apps/render_demo`：Camera Node / Light Node 接入（M9.5，D21）
-- [ ] validation layer 零 error；`--dump-snapshot` + `--replay-snapshot` 在真后端也能跑，且与实时运行一致
-- [ ] `RenderSnapshot` 结构自 M5 起**未因后端需要而修改**（若改了 → 写 ADR 复盘，这本身是有价值的产出）
-- [ ] 帧时间统计：CPU 侧 extract / GPU 侧 present 分别可见
-- [ ] 录屏 + 截图进 `doc/media/`，README 更新架构图
-- [ ] 明确**不做**：视锥剔除、PBR、IBL、shadow、glTF、ImGui、独立渲染线程（PBR 内容见 M9.5；其余列入 stretch）
+- [x] validation layer 零 error；`--dump-snapshot` + `--replay-snapshot` 在真后端也能跑，且与实时运行一致（7d 完成）
+- [x] `RenderSnapshot` 结构自 M5 起**未因后端需要而修改**（M7 未改结构；M9.5 的 `LightPod` / `eye` 是刻意扩展，届时写 ADR）
+- [x] 帧时间统计：extract / present 阶段 p50/p95 可见（present 是 CPU 侧阶段耗时，含 fence/present 等待，不是纯 GPU 时间）
+- [x] 录屏 + 截图进 `doc/media/`（`m7-render-demo.gif` / `m7-snapshot.png`），README 更新
+- [x] 明确**不做**：视锥剔除、PBR、IBL、shadow、glTF、ImGui、独立渲染线程（PBR 内容见 M9.5；双缓冲按 D22 推迟；其余列入 stretch）
 
 **验收标准**
-- `apps/render_demo` 运行：键盘移动一个 Node → 画面同步变化；validation layer 零 error；连续跑 10 分钟无崩溃无泄漏。
+- `apps/render_demo` 运行：键盘移动一个 Node → 画面同步变化；validation layer 零 error；连续跑 10 分钟无崩溃无泄漏（已跑 600s / 34113 帧 / validation 0）。
 - **`engine/` 目录（除 `render/vulkan/`）零 Vulkan/GLFW include**（CI 硬门禁）。
 - 快照重放：把 M5 dump 的快照喂给 `VulkanBackend`，画面与实时运行一致。
 - Runtime 侧（`render_demo` 的游戏逻辑）只通过 Node / SceneTree 的 public API 驱动画面，不直接碰 Vulkan。
 
 **Stretch（做完上面才考虑）**：独立渲染线程（Runtime 主线程写快照，渲染线程消费，对照 `server_wrap_mt_common.h`）；视锥剔除放进 `RenderExtractSystem`；ImGui 只读检视器；阴影 / IBL 接回。
 
-**产出物**：**可视化 Demo + 录屏 + 更新后的架构图**。简历第一条能写的东西。
+**产出物**：**可视化 Demo + 录屏 + 更新后的架构图**。简历第一条能写的东西。素材见 `doc/media/m7-render-demo.gif` 与 `m7-snapshot.png`。
 **学习点**：数据契约如何真正被消费、GPU 资源生命周期与延迟销毁、frame-in-flight、命令录制、Backend 不回调 Runtime 的约束。
 **常见坑**：① Backend 想回调 Runtime 拿数据（"就一个 getter"）→ 破坏解耦，改成快照字段；② 资源加载与帧循环竞争（上传时机）；③ GLFW / 窗口事件与 Runtime 输入系统的职责划分；④ 借来的旧代码 `ObjectDB` / `Ref` 与 YRuntime 版本冲突 → 统一到 `yr::render::vk` 命名空间。
 **Godot 对照**：`servers/rendering/rendering_server_default.h`、`drivers/vulkan/`、`servers/display/display_server_wrapper.h`。
-**降级方案**：不做双缓冲、场景只用 3 个立方体 + 一个相机。**"Runtime 驱动画面"这一条不能降级**，它是本阶段全部意义。
+**降级方案**：不做双缓冲（D22）、场景只用 3 个立方体 + 一个相机。**"Runtime 驱动画面"这一条不能降级**，它是本阶段全部意义。
+
+> **M7 收口（2026-10-24）**：7a/7b/7c/7d/7e 完成——MainLoop 接线、DrawItem/Camera、WASD、dump/replay（506B / AE=0）、帧统计、600s soak（34113 帧 / validation 0）、resize（960×540 ↔ 1280×720）、GIF/PNG、README。双/三缓冲按 D22 推迟；LightPod / Camera Node / Light Node / 真实 AssetHandle 归 M9.5/M9（D21）。`RenderSnapshot` 结构未因后端需要而修改。
 
 ---
 

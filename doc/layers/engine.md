@@ -48,6 +48,7 @@
   | `void tick(double realDelta)` | 执行 0→13 一次；`realDelta` 是本帧墙钟秒数，由调用方注入；**不读取 quit 标志** | — |
   | `uint64_t frameCount() const` | 已执行的 tick 数（`beginFrame` 累加） | — |
   | `uint64_t frameIndex() const` | 最近一次已执行帧的 0-based 序号；未 tick 时为 0 | — |
+  | `double delta() const` | 本帧 `realDelta`，tick 开始时写入；tick 外为上一帧值 | — |
   | `bool shouldQuit() const` / `void requestQuit()` | 退出标志，由外层驱动 | — |
   | `double timeScale() const` / `void setTimeScale(double)` | 只影响 `gameDelta_`；负值 clamp 到 0 | — |
   | `bool isPaused() const` / `void setPaused(bool)` | 独立布尔 | — |
@@ -55,7 +56,7 @@
   | `double accumulator() const` | 当前未消费的物理累积（诊断用），spiral 截断后始终 `< physicsStep` | — |
   | `SceneTree& tree()` / `EventBus& events()` | 返回注入的引用 | — |
   | `void setBackend(render::RendererBackend*) noexcept` | 注入非拥有后端；`nullptr` 使阶段 11 回到 no-op | — |
-  | `RenderSnapshot& snapshot()` / `const RenderSnapshot& snapshot() const` | 阶段 10 产出的当前帧快照；下一次 `tick` 才被覆写 | — |
+  | `RenderSnapshot& snapshot()` / `const RenderSnapshot& snapshot() const` | 阶段 10 产出的当前帧快照；下一次 `tick` 才被覆写（M7 单缓冲；snapshot ring 按 D22 推迟） | — |
   | `FrameStats& stats() const` | 帧统计；构造后、tick 前可配置 | — |
 
 - **时间模型**：
