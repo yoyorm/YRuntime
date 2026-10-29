@@ -4,7 +4,8 @@ add_library(yr_scene
     src/scene_classes.cpp
     src/packed_scene.cpp
     src/scene_reader.cpp
-    src/scene_writer.cpp)
+    src/scene_writer.cpp
+    src/scene_reference.cpp)
 add_library(yr::scene ALIAS yr_scene)
 
 target_include_directories(yr_scene PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

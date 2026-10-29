@@ -116,19 +116,19 @@ namespace {
     return &badEncodeClass();
   }
 
-  constexpr std::string_view kManualScene = "[scene format=1]\n"
+  constexpr std::string_view kManualScene = "[scene]\n"
                                             "\n"
                                             "[node name=\"Root\" type=\"Node\"]\n"
                                             "\n"
                                             "[node name=\"Child\" type=\"Node\" parent=\".\"]\n"
                                             "position = Vector3(0, 1, 0)\n";
 
-  constexpr std::string_view kUnknownPropertyScene = "[scene format=1]\n"
+  constexpr std::string_view kUnknownPropertyScene = "[scene]\n"
                                                      "[node name=\"Root\" type=\"Node\"]\n"
                                                      "mystery = 42\n"
                                                      "position = Vector3(1, 2, 3)\n";
 
-  constexpr std::string_view kCanonicalTree = "[scene format=1]\n"
+  constexpr std::string_view kCanonicalTree = "[scene]\n"
                                               "\n"
                                               "[node name=\"Root\" type=\"Node\"]\n"
                                               "position = Vector3(0, 0, 0)\n"
@@ -176,7 +176,7 @@ TEST_CASE("scene format: save -> load -> save is byte-identical", "[scene][scene
   CHECK(first.text == second.text);
   CHECK(first.text == kCanonicalTree);
   CHECK(first.text.back() == '\n');
-  CHECK(first.text.find("[scene format=1]\n") == 0);
+  CHECK(first.text.find("[scene]\n") == 0);
   CHECK(first.text.find("parent=\".\"") != std::string::npos);
   CHECK(first.text.find("parent=\"Player\"") != std::string::npos);
 }
@@ -283,7 +283,7 @@ TEST_CASE("scene format: unknown property is a warning and parsing continues", "
 }
 
 TEST_CASE("scene format: unknown class is an error and does not crash", "[scene][scene_format]") {
-  const SceneLoadResult result = load("[scene format=1]\n[node name=\"Root\" type=\"Gadget\"]\n");
+  const SceneLoadResult result = load("[scene]\n[node name=\"Root\" type=\"Gadget\"]\n");
   CHECK_FALSE(result.ok());
   REQUIRE_FALSE(result.diagnostics.empty());
   CHECK(result.diagnostics.back().line == 2);
@@ -293,7 +293,7 @@ TEST_CASE("scene format: unknown class is an error and does not crash", "[scene]
 TEST_CASE("scene format: '.' and '..' are reserved node names", "[scene][scene_format]") {
   for (const char* name : {".", ".."}) {
     CAPTURE(name);
-    const std::string text = std::string("[scene format=1]\n[node name=\"") + name + "\" type=\"Node\"]\n";
+    const std::string text = std::string("[scene]\n[node name=\"") + name + "\" type=\"Node\"]\n";
     const SceneLoadResult result = load(text);
     CHECK_FALSE(result.ok());
     REQUIRE_FALSE(result.diagnostics.empty());
@@ -305,7 +305,7 @@ TEST_CASE("scene format: '.' and '..' are reserved node names", "[scene][scene_f
 
 TEST_CASE("scene format: parent must exist and appear before the child", "[scene][scene_format]") {
   SECTION("parent appears later") {
-    const SceneLoadResult result = load("[scene format=1]\n"
+    const SceneLoadResult result = load("[scene]\n"
                                         "[node name=\"Root\" type=\"Node\"]\n"
                                         "[node name=\"Child\" type=\"Node\" parent=\"Later\"]\n"
                                         "[node name=\"Later\" type=\"Node\" parent=\".\"]\n");
@@ -315,7 +315,7 @@ TEST_CASE("scene format: parent must exist and appear before the child", "[scene
   }
 
   SECTION("parent path does not exist") {
-    const SceneLoadResult result = load("[scene format=1]\n"
+    const SceneLoadResult result = load("[scene]\n"
                                         "[node name=\"Root\" type=\"Node\"]\n"
                                         "[node name=\"Child\" type=\"Node\" parent=\"Ghost\"]\n");
     CHECK_FALSE(result.ok());
@@ -325,7 +325,7 @@ TEST_CASE("scene format: parent must exist and appear before the child", "[scene
 }
 
 TEST_CASE("scene format: duplicate sibling names are an error", "[scene][scene_format]") {
-  const SceneLoadResult result = load("[scene format=1]\n"
+  const SceneLoadResult result = load("[scene]\n"
                                       "[node name=\"Root\" type=\"Node\"]\n"
                                       "[node name=\"A\" type=\"Node\" parent=\".\"]\n"
                                       "[node name=\"A\" type=\"Node\" parent=\".\"]\n");
@@ -336,7 +336,7 @@ TEST_CASE("scene format: duplicate sibling names are an error", "[scene][scene_f
 }
 
 TEST_CASE("scene format: duplicate property is an error", "[scene][scene_format]") {
-  const SceneLoadResult result = load("[scene format=1]\n"
+  const SceneLoadResult result = load("[scene]\n"
                                       "[node name=\"Root\" type=\"Node\"]\n"
                                       "position = Vector3(0, 0, 0)\n"
                                       "position = Vector3(1, 1, 1)\n");
@@ -346,31 +346,23 @@ TEST_CASE("scene format: duplicate property is an error", "[scene][scene_format]
   CHECK(result.diagnostics.back().message.find("重复属性") != std::string::npos);
 }
 
-TEST_CASE("scene format: missing, wrong or duplicate scene headers are errors", "[scene][scene_format]") {
+TEST_CASE("scene format: missing or duplicate scene headers are errors", "[scene][scene_format]") {
   SECTION("no header") {
     const SceneLoadResult result = load("[node name=\"Root\" type=\"Node\"]\n");
     CHECK_FALSE(result.ok());
   }
-  SECTION("wrong format") {
-    const SceneLoadResult result = load("[scene format=2]\n");
-    CHECK_FALSE(result.ok());
-  }
-  SECTION("missing format") {
-    const SceneLoadResult result = load("[scene]\n");
-    CHECK_FALSE(result.ok());
-  }
   SECTION("duplicate header") {
-    const SceneLoadResult result = load("[scene format=1]\n[scene format=1]\n");
+    const SceneLoadResult result = load("[scene]\n[scene]\n");
     CHECK_FALSE(result.ok());
   }
   SECTION("no root node") {
-    const SceneLoadResult result = load("[scene format=1]\n");
+    const SceneLoadResult result = load("[scene]\n");
     CHECK_FALSE(result.ok());
   }
 }
 
 TEST_CASE("scene format: unknown header field and section are warnings", "[scene][scene_format]") {
-  const SceneLoadResult result = load("[scene format=1 extra=yes]\n"
+  const SceneLoadResult result = load("[scene extra=yes]\n"
                                       "[bogus weird syntax]\n"
                                       "[node name=\"Root\" type=\"Node\"]\n"
                                       "position = Vector3(0, 0, 0)\n");
@@ -417,7 +409,7 @@ TEST_CASE("scene classes: Node metadata is registered and exposes position", "[s
 }
 
 TEST_CASE("scene format: BOM / CRLF input and istream overload load", "[scene][scene_format]") {
-  std::istringstream stream(std::string("\xEF\xBB\xBF[scene format=1]\r\n[node name=\"Root\" type=\"Node\"]\r\n"));
+  std::istringstream stream(std::string("\xEF\xBB\xBF[scene]\r\n[node name=\"Root\" type=\"Node\"]\r\n"));
   const SceneReader reader(classes());
   const SceneLoadResult result = reader.read(stream);
   REQUIRE(result.ok());

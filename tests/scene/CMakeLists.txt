@@ -7,7 +7,8 @@ add_executable(YrTests_scene
     test_queue_free.cpp
     test_process.cpp
     test_transform.cpp
-    test_scene_format.cpp)
+    test_scene_format.cpp
+    test_scene_reference.cpp)
 
 target_link_libraries(YrTests_scene PRIVATE
     yr::scene

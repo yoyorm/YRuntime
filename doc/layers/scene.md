@@ -135,14 +135,18 @@
 - **设计原因**：SoA 式集中存储为后续并行刷新留空间；`Node` 不直接暴露 `TransformStore`，只经 `SceneTree` 转发。
 - **遗留 / 已知缺口**：并发刷新未实现（当前单线程前序 DFS）。
 
-## .scn 文本场景（M8a）
+## .scn 文本场景（M8a / M8b）
 
-- **职责**：把 Node 树持久化为人类可读/可手写的文本，并两阶段实例化回 Node 树。v1 格式规范的唯一来源是 `scene_format.h` 的头注释。
+- **职责**：把 Node 树 / `PackedScene` 持久化为人类可读/可手写的文本，并两阶段实例化回 Node 树。格式规范的唯一来源是 `scene_format.h` 的头注释。
 - **代码**：
   - `scene_reader.h`：`SceneReader` / `SceneLoadResult` / `SceneDiagnostic`；从 `string_view` / `istream` 解析，诊断带 1-based line/column。
-  - `packed_scene.h`：`PackedScene` 纯数据记录（类型 / 名字 / parent path / 属性）；`instantiate(const ClassDB&)` 第一遍创建、第二遍按 `parent_index` 挂接，失败返回 `nullptr` 且不留半成品。
-  - `scene_writer.h`：`SceneWriter::write(const Node&) -> SceneWriteResult`；先校验整棵树（name 规则、同级唯一、root 无 parent、`classInfo()` 是 Node、serialized 属性有 getter 且可编码），失败返回 `ok=false` + 具体节点/问题，**不产出半份 text**；成功后输出 canonical 文本，属性按 `ClassInfo` 顺序（基类在前），只写 `kSerialized`。
+  - `packed_scene.h`：`PackedScene` 纯数据 IR：`nodes`、`ext_resources`、`sub_resources`、`connections`；`instantiate(const ClassDB&)` 只看 nodes，第一遍创建、第二遍按 `parent_index` 挂接，失败返回 `nullptr` 且不留半成品。
+  - `scene_reference.h`：`SceneReference` / `SceneValue` / `ResolveResult`；`resolveReferences(PackedScene&)` 建 ext/sub id 表 → 回填 `SceneReference.index` → DFS 三色检测 sub_resource 环（自引用也报）。
+  - `scene_writer.h`：`SceneWriter::write(const Node&)`（内部构造 ext/sub/connection 为空的 IR）与 `SceneWriter::write(const PackedScene&)`；先校验 ext/sub id/type/path、引用 index/id、connection、node 树，失败返回 `ok=false` + 具体节点/问题，**不产出半份 text**；成功后输出 canonical 文本。
   - `scene_classes.h`：`register_scene_classes()` 幂等注册 Node（含 `position` 属性）；必须在 `globalClassDB().freeze()` 前调用。
-- **格式**：`[scene format=1]` + 前序 `[node name/type/parent]` + `position = Vector3(...)`；`save → load → save` 逐字节相同。
+- **格式**：`[scene]` → `[ext_resource]*` → `[sub_resource]*` → `[node]*`（前序）→ `[connection]*`；section 间空行，文件末尾一个换行。不做版本号与迁移（D24）。
+- **引用**：sub_resource 属性可写 `ExtResource("id")` / `SubResource("id")`；node 属性不允许引用语法。未解析 id / 自引用 / sub 环 → error，行列来自引用处。
+- **connection**：`from` / `to` 是相对根的 node path（`.` = 根），解析成 node index；同 from/to/signal/method 重复 → error。
+- **canonical 顺序**：sub_resource 属性按属性名升序；node 属性在 Node 树版本按 ClassInfo 顺序（基类在前），IR 版本保持存储顺序。`save → load → save` 逐字节相同。
 - **依赖**：`scene → serialize`（`VariantCodec`）；`serialize → object`，不反向依赖 scene/render。
-- **v1 范围**：只支持 Node / position / 父子路径；未知属性 warning，未知 class error；`.scnb` 仅保留扩展名，不实现。
+- **范围**：M8a 支持 Node / position / 父子路径；M8b 支持 ext/sub 引用与 connection。`.scnb` 仅保留扩展名，不实现。

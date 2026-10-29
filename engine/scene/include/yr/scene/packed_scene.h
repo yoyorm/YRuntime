@@ -7,6 +7,8 @@
 
 #include <yr/core/string_id.h>
 #include <yr/object/variant.h>
+#include <yr/scene/scene_format.h>
+#include <yr/scene/scene_reference.h>
 
 namespace yr::obj {
   class ClassDB;
@@ -15,8 +17,6 @@ namespace yr::obj {
 namespace yr::scene {
 
   class Node;
-
-  inline constexpr std::size_t kInvalidParent = static_cast<std::size_t>(-1);
 
   struct SceneProperty {
     core::StringId name;
@@ -33,6 +33,31 @@ namespace yr::scene {
     std::vector<SceneProperty> properties;
   };
 
+  struct PackedExtResource {
+    std::string id;
+    core::StringId type;
+    std::string path; // 必须以 "res://" 开头
+    std::string uid;  // 可选
+  };
+
+  struct PackedSubResourceProperty {
+    core::StringId name;
+    SceneValue value;
+  };
+
+  struct PackedSubResource {
+    std::string id;
+    core::StringId type;
+    std::vector<PackedSubResourceProperty> properties; // 源文件顺序
+  };
+
+  struct PackedConnection {
+    std::size_t from = kInvalidIndex;
+    std::size_t to = kInvalidIndex;
+    core::StringId signal;
+    core::StringId method;
+  };
+
   class PackedScene {
   public:
     // 两阶段实例化：先按 ClassDB 创建全部节点，再按 parent_index 挂接。
@@ -41,6 +66,9 @@ namespace yr::scene {
 
     // 前序顺序；nodes[0] 是根。
     std::vector<PackedNode> nodes;
+    std::vector<PackedExtResource> ext_resources;
+    std::vector<PackedSubResource> sub_resources;
+    std::vector<PackedConnection> connections;
   };
 
 } // namespace yr::scene

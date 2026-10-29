@@ -17,7 +17,7 @@
 | **M5 渲染契约与 NullBackend** | ✅ 已完成 / 收口 —— `yr_render_iface` + `yr_render_null` + `render_extract` + headless 注入 |
 | **M6 最小 Vulkan Bootstrap** | ✅ 已完成 / 收口（2026-10-23）—— M6-1 外壳 + M6-2 Surface / Device / 队列 + M6-3 Swapchain / 清屏上屏 + M6-4 N 帧在飞 + 硬编码三角形 + M6-5 健壮性（resize / 最小化手测、soak） |
 | **M7 Snapshot 驱动画面** | ✅ 已完成 / 收口（2026-10-24）—— 7a/7b/7c/7d/7e：MainLoop 接线、DrawItem/Camera、WASD、dump/replay、帧统计、600s soak、resize、GIF/PNG；双/三缓冲按 D22 推迟 |
-| **M8 序列化** | 🔨 进行中（M8a 完成：`.scn` 文本 + Node/position + round-trip；350 tests；下一步 M8b 引用/版本/二进制） |
+| **M8 序列化** | 🔨 进行中（M8a `.scn` 文本；M8b 引用/连接；364 tests；下一步 M8c 二进制/工具链） |
 | M9 ~ M11 | ⬜ 未开始（M9 后插入 M9.5 基础 PBR，D21） |
 
 **远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend ✅ → M6 最小 Vulkan bootstrap ✅ → M7 Snapshot 驱动画面（首个主要作品节点）✅ → M8 序列化（进行中）→ M9 资源系统 → M9.5 基础 PBR 内容（D21）→ M10 任务系统 → M11 工具链打磨。**当前唯一任务：M8。**
@@ -35,11 +35,14 @@ M7 已收口（2026-10-24）：7a/7b/7c/7d/7e 完成——MainLoop 接线、Draw
 
 M8a 已完成（2026-10-27）：`yr_serialize` + `VariantCodec`；Node 元数据；`.scn` `SceneReader`/`SceneWriter`/`PackedScene` + 两阶段 instantiate；350/350 tests。
 
-下一步 **M8b**：
+M8b 已完成（2026-10-29）：`ExtResource` / `SubResource` / `SceneReference`；两遍解析 + DFS 环检测；`[connection]` 的 from/to 解析；364/364 tests。文本格式不做版本号与迁移（D24）。
 
-1. `ExtResource` / `SubResource` / `NodeRef` 引用解析；
-2. `format_version` + 未知属性/默认值 + migrator；
-3. 再进入 M8c：`.scnb`、`yr_scene_conv`、headless 从 `.scn` 加载、1000 节点 benchmark。
+下一步 **M8c**：
+
+1. `.scnb` 二进制（magic + version + 长度前缀 + 对齐/字节序）；
+2. `yr_scene_conv` 文本 ↔ 二进制 + `--validate`；
+3. headless 从 `.scn` 加载；
+4. 1000 节点 benchmark；默认值省略与 JSON 调试导出按剩余清单跟进。
 
 详细清单与验收见 `02-roadmap.md` M8。
 

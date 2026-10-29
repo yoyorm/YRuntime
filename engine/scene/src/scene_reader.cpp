@@ -1,11 +1,10 @@
 #include <yr/scene/scene_reader.h>
 
 #include <algorithm>
-#include <charconv>
 #include <cstddef>
 #include <iterator>
 #include <string>
-#include <system_error>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -20,6 +19,7 @@
 #include <yr/scene/node.h>
 #include <yr/scene/scene_classes.h>
 #include <yr/scene/scene_format.h>
+#include <yr/scene/scene_reference.h>
 #include <yr/serialize/variant_codec.h>
 
 namespace yr::scene {
@@ -28,10 +28,31 @@ namespace yr::scene {
 
     using Severity = SceneDiagnostic::Severity;
 
+    enum class SectionKind { kNone, kScene, kNode, kExtResource, kSubResource, kConnection };
+
     struct Attribute {
       std::string key;
       std::string value;
       std::size_t offset = 0;
+    };
+
+    struct ParsedProperty {
+      std::string_view name;
+      std::string_view value;
+      std::size_t name_start = 0;
+      std::size_t value_start = 0;
+      std::size_t error_offset = 0;
+      std::string error;
+      bool ok = false;
+    };
+
+    struct ParsedReference {
+      bool ok = false;
+      ReferenceKind kind = ReferenceKind::kNone;
+      std::string id;
+      std::size_t consumed = 0;
+      std::size_t error_offset = 0;
+      std::string error;
     };
 
     [[nodiscard]] bool isSpace(char c) noexcept {
@@ -48,6 +69,12 @@ namespace yr::scene {
 
     void addDiagnostic(SceneLoadResult& result, Severity severity, int line, int column, std::string message) {
       result.diagnostics.push_back(SceneDiagnostic{severity, line, column, std::move(message)});
+    }
+
+    void appendDiagnostics(SceneLoadResult& result, std::vector<SceneDiagnostic>&& diagnostics) {
+      for (SceneDiagnostic& diagnostic : diagnostics) {
+        result.diagnostics.push_back(std::move(diagnostic));
+      }
     }
 
     void skipSpaces(std::string_view text, std::size_t& pos) noexcept {
@@ -196,6 +223,110 @@ namespace yr::scene {
       return true;
     }
 
+    // 解析 `name = value`；value 一直取到行尾（已去注释/右空白）。
+    [[nodiscard]] ParsedProperty parsePropertyLine(std::string_view line, std::size_t pos) {
+      ParsedProperty parsed;
+      parsed.name_start = pos;
+      if (pos >= line.size() || !isNameStart(line[pos])) {
+        parsed.error = "属性名非法";
+        parsed.error_offset = pos;
+        return parsed;
+      }
+
+      ++pos;
+      while (pos < line.size() && isNameChar(line[pos])) {
+        ++pos;
+      }
+      parsed.name = line.substr(parsed.name_start, pos - parsed.name_start);
+
+      skipSpaces(line, pos);
+      if (pos >= line.size() || line[pos] != '=') {
+        parsed.error = "属性行缺少 '='";
+        parsed.error_offset = pos;
+        return parsed;
+      }
+      ++pos;
+      skipSpaces(line, pos);
+
+      parsed.value_start = pos;
+      if (pos >= line.size()) {
+        parsed.error = "属性缺少值";
+        parsed.error_offset = pos;
+        return parsed;
+      }
+      parsed.value = line.substr(pos);
+      parsed.ok = true;
+      return parsed;
+    }
+
+    [[nodiscard]] bool looksLikeReference(std::string_view value) noexcept {
+      return value.substr(0, 11) == "ExtResource" || value.substr(0, 11) == "SubResource";
+    }
+
+    // 解析 ExtResource("id") / SubResource("id")；括号内允许空格。
+    [[nodiscard]] ParsedReference parseReference(std::string_view text) {
+      ParsedReference parsed;
+      std::size_t pos = 0;
+      if (text.substr(0, 11) == "ExtResource") {
+        parsed.kind = ReferenceKind::kExtResource;
+      } else if (text.substr(0, 11) == "SubResource") {
+        parsed.kind = ReferenceKind::kSubResource;
+      } else {
+        parsed.error = "不是引用值";
+        return parsed;
+      }
+      pos = 11;
+
+      skipSpaces(text, pos);
+      if (pos >= text.size() || text[pos] != '(') {
+        parsed.error = "引用缺少 '('";
+        parsed.error_offset = pos;
+        return parsed;
+      }
+      ++pos;
+      skipSpaces(text, pos);
+      if (pos >= text.size() || text[pos] != '"') {
+        parsed.error = "引用 id 缺少开引号";
+        parsed.error_offset = pos;
+        return parsed;
+      }
+      ++pos;
+      const std::size_t idStart = pos;
+      while (pos < text.size() && text[pos] != '"') {
+        ++pos;
+      }
+      if (pos >= text.size()) {
+        parsed.error = "引用 id 未闭合";
+        parsed.error_offset = idStart;
+        return parsed;
+      }
+      parsed.id = std::string(text.substr(idStart, pos - idStart));
+      ++pos;
+
+      skipSpaces(text, pos);
+      if (pos >= text.size() || text[pos] != ')') {
+        parsed.error = "引用缺少 ')'";
+        parsed.error_offset = pos;
+        return parsed;
+      }
+      ++pos;
+      skipSpaces(text, pos);
+      if (pos != text.size()) {
+        parsed.error = "引用后存在多余字符";
+        parsed.error_offset = pos;
+        return parsed;
+      }
+      if (!isValidReferenceId(parsed.id)) {
+        parsed.error = "引用 id 非法";
+        parsed.error_offset = idStart;
+        return parsed;
+      }
+
+      parsed.consumed = pos;
+      parsed.ok = true;
+      return parsed;
+    }
+
     [[nodiscard]] std::string registeredClassList(const obj::ClassDB& classes) {
       std::vector<std::string_view> names;
       for (const core::StringId id : classes.allClasses()) {
@@ -218,11 +349,17 @@ namespace yr::scene {
     SceneLoadResult result;
     bool sawHeader = false;
     bool skipSection = false;
-    std::size_t currentNode = kInvalidParent;
+    SectionKind sectionKind = SectionKind::kNone;
+    bool sawNode = false;
+    bool sawConnection = false;
+    std::size_t currentNode = kInvalidIndex;
+    std::size_t currentSub = kInvalidIndex;
     const obj::ClassInfo* currentInfo = nullptr;
     std::string rootName;
     std::unordered_map<std::string, std::size_t> paths;
     std::unordered_set<std::string> seenProperties;
+    std::unordered_set<std::string> extIds;
+    std::unordered_set<std::string> subIds;
     core::StringInterner& interner = core::globalStringInterner();
 
     int lineNumber = 0;
@@ -256,247 +393,552 @@ namespace yr::scene {
                       std::move(message));
       };
 
-      if (pos < line.size()) {
-        if (line[pos] == '[') {
-          std::size_t cursor = pos + 1;
-          skipSpaces(line, cursor);
-          const std::size_t sectionStart = cursor;
-          while (cursor < line.size() && !isSpace(line[cursor]) && line[cursor] != ']' && line[cursor] != '=') {
-            ++cursor;
-          }
-          if (sectionStart == cursor) {
-            errorAt(pos, "section 缺少名字");
+      if (pos >= line.size()) {
+        if (newline == std::string_view::npos) {
+          break;
+        }
+        start = newline + 1;
+        continue;
+      }
+
+      if (line[pos] == '[') {
+        std::size_t cursor = pos + 1;
+        skipSpaces(line, cursor);
+        const std::size_t sectionStart = cursor;
+        while (cursor < line.size() && !isSpace(line[cursor]) && line[cursor] != ']' && line[cursor] != '=') {
+          ++cursor;
+        }
+        if (sectionStart == cursor) {
+          errorAt(pos, "section 缺少名字");
+          return result;
+        }
+        const std::string_view section = line.substr(sectionStart, cursor - sectionStart);
+        const bool knownSection = section == "scene" || section == "ext_resource" || section == "sub_resource" ||
+                                  section == "node" || section == "connection";
+
+        std::vector<Attribute> attributes;
+        // 未知 section 只跳过、不解析其字段；否则未来的 section 语法会变成硬错误。
+        if (knownSection) {
+          std::string parseError;
+          if (!parseAttributes(line, cursor, attributes, parseError)) {
+            errorAt(cursor, std::move(parseError));
             return result;
           }
-          const std::string_view section = line.substr(sectionStart, cursor - sectionStart);
+        }
 
-          std::vector<Attribute> attributes;
-          // 未知 section 只跳过、不解析其字段；否则未来的 section 语法会变成硬错误。
-          if (section == "scene" || section == "node") {
-            std::string parseError;
-            if (!parseAttributes(line, cursor, attributes, parseError)) {
-              errorAt(cursor, std::move(parseError));
-              return result;
-            }
+        if (section == "scene") {
+          if (sawHeader) {
+            errorAt(sectionStart, "重复的 [scene]");
+            return result;
+          }
+          if (!result.scene.nodes.empty() || !result.scene.ext_resources.empty() ||
+              !result.scene.sub_resources.empty() || !result.scene.connections.empty()) {
+            errorAt(sectionStart, "[scene] 必须是第一个 section");
+            return result;
           }
 
-          if (section == "scene") {
-            if (sawHeader) {
-              errorAt(sectionStart, "重复的 [scene]");
-              return result;
-            }
-            if (!result.scene.nodes.empty()) {
-              errorAt(sectionStart, "[scene] 必须是第一个 section");
-              return result;
-            }
+          sawHeader = true;
+          skipSection = false;
+          sectionKind = SectionKind::kScene;
+          currentNode = kInvalidIndex;
+          currentSub = kInvalidIndex;
+          currentInfo = nullptr;
+          seenProperties.clear();
 
-            sawHeader = true;
-            skipSection = false;
-            currentNode = kInvalidParent;
-            currentInfo = nullptr;
+          for (const Attribute& attribute : attributes) {
+            warningAt(attribute.offset, "未知 header 字段 '" + attribute.key + "'，跳过");
+          }
+        } else if (section == "ext_resource") {
+          if (!sawHeader) {
+            errorAt(sectionStart, "第一个 section 必须是 [scene]");
+            return result;
+          }
+          if (sawNode) {
+            errorAt(sectionStart, "ext_resource 必须在 node 之前");
+            return result;
+          }
 
-            bool sawFormat = false;
-            std::int64_t format = 0;
-            for (const Attribute& attribute : attributes) {
-              if (attribute.key != "format") {
-                warningAt(attribute.offset, "未知 header 字段 '" + attribute.key + "'，跳过");
-                continue;
-              }
-              if (sawFormat) {
-                errorAt(attribute.offset, "重复的 format");
+          skipSection = false;
+          sectionKind = SectionKind::kExtResource;
+          currentNode = kInvalidIndex;
+          currentSub = kInvalidIndex;
+          currentInfo = nullptr;
+          seenProperties.clear();
+
+          PackedExtResource resource;
+          bool sawType = false;
+          bool sawId = false;
+          bool sawPath = false;
+          bool sawUid = false;
+          std::size_t idOffset = sectionStart;
+          for (const Attribute& attribute : attributes) {
+            if (attribute.key == "type") {
+              if (sawType) {
+                errorAt(attribute.offset, "重复的 ext_resource.type");
                 return result;
               }
-              sawFormat = true;
-              const auto parsed =
-                  std::from_chars(attribute.value.data(), attribute.value.data() + attribute.value.size(), format);
-              if (parsed.ec != std::errc{} || parsed.ptr != attribute.value.data() + attribute.value.size()) {
-                errorAt(attribute.offset, "format 必须是整数");
+              sawType = true;
+              resource.type = interner.intern(attribute.value);
+            } else if (attribute.key == "id") {
+              if (sawId) {
+                errorAt(attribute.offset, "重复的 ext_resource.id");
                 return result;
               }
-            }
-            if (!sawFormat) {
-              errorAt(sectionStart, "缺少 format");
-              return result;
-            }
-            if (format != kSceneFormatVersion) {
-              errorAt(sectionStart, "只支持 format=1");
-              return result;
-            }
-          } else if (section == "node") {
-            if (!sawHeader) {
-              errorAt(sectionStart, "第一个 section 必须是 [scene format=1]");
-              return result;
-            }
-
-            skipSection = false;
-            PackedNode packed;
-            bool sawName = false;
-            bool sawType = false;
-            bool sawParent = false;
-
-            for (const Attribute& attribute : attributes) {
-              if (attribute.key == "name") {
-                if (sawName) {
-                  errorAt(attribute.offset, "重复的 node.name");
-                  return result;
-                }
-                sawName = true;
-                packed.name = attribute.value;
-              } else if (attribute.key == "type") {
-                if (sawType) {
-                  errorAt(attribute.offset, "重复的 node.type");
-                  return result;
-                }
-                sawType = true;
-                packed.type = interner.intern(attribute.value);
-              } else if (attribute.key == "parent") {
-                if (sawParent) {
-                  errorAt(attribute.offset, "重复的 node.parent");
-                  return result;
-                }
-                sawParent = true;
-                packed.parent_path = attribute.value;
-              } else {
-                warningAt(attribute.offset, "未知 node 字段 '" + attribute.key + "'，跳过");
-              }
-            }
-
-            if (!sawName) {
-              errorAt(sectionStart, "node 缺少 name");
-              return result;
-            }
-            if (!isValidNodeName(packed.name)) {
-              errorAt(sectionStart, "node name 非法：不能为空、不能是 '.' 或 '..'、不能含 '/'、'\"' 或换行");
-              return result;
-            }
-            if (!sawType) {
-              errorAt(sectionStart, "node 缺少 type");
-              return result;
-            }
-
-            const obj::ClassInfo* const info = classes_.getClass(packed.type);
-            if (info == nullptr) {
-              errorAt(sectionStart,
-                      "未知 class '" + std::string(packed.type.view()) + "'；已注册：" + registeredClassList(classes_));
-              return result;
-            }
-            if (!info->isA(&nodeClassInfo())) {
-              errorAt(sectionStart, "class '" + std::string(packed.type.view()) + "' 不是 Node");
-              return result;
-            }
-
-            const bool isRoot = result.scene.nodes.empty();
-            std::string fullPath;
-            if (isRoot) {
-              if (sawParent) {
-                errorAt(sectionStart, "根节点不能有 parent");
+              sawId = true;
+              resource.id = attribute.value;
+              idOffset = attribute.offset;
+            } else if (attribute.key == "path") {
+              if (sawPath) {
+                errorAt(attribute.offset, "重复的 ext_resource.path");
                 return result;
               }
-              fullPath = packed.name;
+              sawPath = true;
+              resource.path = attribute.value;
+            } else if (attribute.key == "uid") {
+              if (sawUid) {
+                errorAt(attribute.offset, "重复的 ext_resource.uid");
+                return result;
+              }
+              sawUid = true;
+              resource.uid = attribute.value;
             } else {
-              if (!sawParent || packed.parent_path.empty()) {
-                errorAt(sectionStart, "非根节点缺少 parent");
+              warningAt(attribute.offset, "未知 ext_resource 字段 '" + attribute.key + "'，跳过");
+            }
+          }
+
+          if (!sawType) {
+            errorAt(sectionStart, "ext_resource 缺少 type");
+            return result;
+          }
+          if (resource.type.view().empty()) {
+            errorAt(sectionStart, "ext_resource.type 不能为空");
+            return result;
+          }
+          if (!sawId) {
+            errorAt(sectionStart, "ext_resource 缺少 id");
+            return result;
+          }
+          if (!isValidReferenceId(resource.id)) {
+            errorAt(sectionStart, "ext_resource.id 非法：只允许 [A-Za-z0-9_.-]");
+            return result;
+          }
+          if (!extIds.insert(resource.id).second) {
+            errorAt(idOffset, "重复的 ext_resource id '" + resource.id + "'");
+            return result;
+          }
+          if (!sawPath) {
+            errorAt(sectionStart, "ext_resource 缺少 path");
+            return result;
+          }
+          if (resource.path.empty() || !resource.path.starts_with("res://")) {
+            errorAt(sectionStart, "ext_resource.path 必须以 res:// 开头");
+            return result;
+          }
+
+          result.scene.ext_resources.push_back(std::move(resource));
+        } else if (section == "sub_resource") {
+          if (!sawHeader) {
+            errorAt(sectionStart, "第一个 section 必须是 [scene]");
+            return result;
+          }
+          if (sawNode) {
+            errorAt(sectionStart, "sub_resource 必须在 node 之前");
+            return result;
+          }
+
+          skipSection = false;
+          sectionKind = SectionKind::kSubResource;
+          currentNode = kInvalidIndex;
+          currentSub = kInvalidIndex;
+          currentInfo = nullptr;
+          seenProperties.clear();
+
+          PackedSubResource resource;
+          bool sawType = false;
+          bool sawId = false;
+          std::size_t idOffset = sectionStart;
+          for (const Attribute& attribute : attributes) {
+            if (attribute.key == "type") {
+              if (sawType) {
+                errorAt(attribute.offset, "重复的 sub_resource.type");
                 return result;
               }
-
-              if (packed.parent_path == ".") {
-                packed.parent_index = 0;
-                fullPath = rootName + "/" + packed.name;
-              } else {
-                const std::string parentPath = rootName + "/" + packed.parent_path;
-                const auto parent = paths.find(parentPath);
-                if (parent == paths.end()) {
-                  errorAt(sectionStart, "父路径不存在或父在子后：'" + packed.parent_path + "'");
-                  return result;
-                }
-                packed.parent_index = parent->second;
-                fullPath = parentPath + "/" + packed.name;
+              sawType = true;
+              resource.type = interner.intern(attribute.value);
+            } else if (attribute.key == "id") {
+              if (sawId) {
+                errorAt(attribute.offset, "重复的 sub_resource.id");
+                return result;
               }
+              sawId = true;
+              resource.id = attribute.value;
+              idOffset = attribute.offset;
+            } else {
+              warningAt(attribute.offset, "未知 sub_resource 字段 '" + attribute.key + "'，跳过");
             }
+          }
 
-            if (paths.find(fullPath) != paths.end()) {
-              errorAt(sectionStart, "同级重名：'" + packed.name + "'");
+          if (!sawType) {
+            errorAt(sectionStart, "sub_resource 缺少 type");
+            return result;
+          }
+          if (resource.type.view().empty()) {
+            errorAt(sectionStart, "sub_resource.type 不能为空");
+            return result;
+          }
+          if (!sawId) {
+            errorAt(sectionStart, "sub_resource 缺少 id");
+            return result;
+          }
+          if (!isValidReferenceId(resource.id)) {
+            errorAt(sectionStart, "sub_resource.id 非法：只允许 [A-Za-z0-9_.-]");
+            return result;
+          }
+          if (!subIds.insert(resource.id).second) {
+            errorAt(idOffset, "重复的 sub_resource id '" + resource.id + "'");
+            return result;
+          }
+
+          result.scene.sub_resources.push_back(std::move(resource));
+          currentSub = result.scene.sub_resources.size() - 1;
+        } else if (section == "node") {
+          if (!sawHeader) {
+            errorAt(sectionStart, "第一个 section 必须是 [scene]");
+            return result;
+          }
+          if (sawConnection) {
+            errorAt(sectionStart, "node 必须在 connection 之前");
+            return result;
+          }
+
+          skipSection = false;
+          PackedNode packed;
+          bool sawName = false;
+          bool sawType = false;
+          bool sawParent = false;
+
+          for (const Attribute& attribute : attributes) {
+            if (attribute.key == "name") {
+              if (sawName) {
+                errorAt(attribute.offset, "重复的 node.name");
+                return result;
+              }
+              sawName = true;
+              packed.name = attribute.value;
+            } else if (attribute.key == "type") {
+              if (sawType) {
+                errorAt(attribute.offset, "重复的 node.type");
+                return result;
+              }
+              sawType = true;
+              packed.type = interner.intern(attribute.value);
+            } else if (attribute.key == "parent") {
+              if (sawParent) {
+                errorAt(attribute.offset, "重复的 node.parent");
+                return result;
+              }
+              sawParent = true;
+              packed.parent_path = attribute.value;
+            } else {
+              warningAt(attribute.offset, "未知 node 字段 '" + attribute.key + "'，跳过");
+            }
+          }
+
+          if (!sawName) {
+            errorAt(sectionStart, "node 缺少 name");
+            return result;
+          }
+          if (!isValidNodeName(packed.name)) {
+            errorAt(sectionStart, "node name 非法：不能为空、不能是 '.' 或 '..'、不能含 '/'、'\"' 或换行");
+            return result;
+          }
+          if (!sawType) {
+            errorAt(sectionStart, "node 缺少 type");
+            return result;
+          }
+
+          const obj::ClassInfo* const info = classes_.getClass(packed.type);
+          if (info == nullptr) {
+            errorAt(sectionStart,
+                    "未知 class '" + std::string(packed.type.view()) + "'；已注册：" + registeredClassList(classes_));
+            return result;
+          }
+          if (!info->isA(&nodeClassInfo())) {
+            errorAt(sectionStart, "class '" + std::string(packed.type.view()) + "' 不是 Node");
+            return result;
+          }
+
+          const bool isRoot = result.scene.nodes.empty();
+          std::string fullPath;
+          if (isRoot) {
+            if (sawParent) {
+              errorAt(sectionStart, "根节点不能有 parent");
+              return result;
+            }
+            fullPath = packed.name;
+          } else {
+            if (!sawParent || packed.parent_path.empty()) {
+              errorAt(sectionStart, "非根节点缺少 parent");
               return result;
             }
 
-            result.scene.nodes.push_back(std::move(packed));
-            const std::size_t index = result.scene.nodes.size() - 1;
-            if (isRoot) {
-              rootName = result.scene.nodes.front().name;
+            if (packed.parent_path == ".") {
+              packed.parent_index = 0;
+              fullPath = rootName + "/" + packed.name;
+            } else {
+              const std::string parentPath = rootName + "/" + packed.parent_path;
+              const auto parent = paths.find(parentPath);
+              if (parent == paths.end()) {
+                errorAt(sectionStart, "父路径不存在或父在子后：'" + packed.parent_path + "'");
+                return result;
+              }
+              packed.parent_index = parent->second;
+              fullPath = parentPath + "/" + packed.name;
             }
-            paths.emplace(std::move(fullPath), index);
-            currentNode = index;
-            currentInfo = info;
-            seenProperties.clear();
-          } else {
-            if (!sawHeader) {
-              errorAt(sectionStart, "第一个 section 必须是 [scene format=1]");
+          }
+
+          if (paths.find(fullPath) != paths.end()) {
+            errorAt(sectionStart, "同级重名：'" + packed.name + "'");
+            return result;
+          }
+
+          result.scene.nodes.push_back(std::move(packed));
+          const std::size_t index = result.scene.nodes.size() - 1;
+          if (isRoot) {
+            rootName = result.scene.nodes.front().name;
+          }
+          paths.emplace(std::move(fullPath), index);
+          sawNode = true;
+          sectionKind = SectionKind::kNode;
+          currentNode = index;
+          currentSub = kInvalidIndex;
+          currentInfo = info;
+          seenProperties.clear();
+        } else if (section == "connection") {
+          if (!sawHeader) {
+            errorAt(sectionStart, "第一个 section 必须是 [scene]");
+            return result;
+          }
+          if (!sawNode || result.scene.nodes.empty()) {
+            errorAt(sectionStart, "connection 必须在 node 之后");
+            return result;
+          }
+
+          skipSection = false;
+          sectionKind = SectionKind::kConnection;
+          currentNode = kInvalidIndex;
+          currentSub = kInvalidIndex;
+          currentInfo = nullptr;
+          seenProperties.clear();
+
+          std::string from;
+          std::string to;
+          std::string signalName;
+          std::string methodName;
+          bool sawFrom = false;
+          bool sawTo = false;
+          bool sawSignal = false;
+          bool sawMethod = false;
+          for (const Attribute& attribute : attributes) {
+            if (attribute.key == "from") {
+              if (sawFrom) {
+                errorAt(attribute.offset, "重复的 connection.from");
+                return result;
+              }
+              sawFrom = true;
+              from = attribute.value;
+            } else if (attribute.key == "to") {
+              if (sawTo) {
+                errorAt(attribute.offset, "重复的 connection.to");
+                return result;
+              }
+              sawTo = true;
+              to = attribute.value;
+            } else if (attribute.key == "signal") {
+              if (sawSignal) {
+                errorAt(attribute.offset, "重复的 connection.signal");
+                return result;
+              }
+              sawSignal = true;
+              signalName = attribute.value;
+            } else if (attribute.key == "method") {
+              if (sawMethod) {
+                errorAt(attribute.offset, "重复的 connection.method");
+                return result;
+              }
+              sawMethod = true;
+              methodName = attribute.value;
+            } else {
+              warningAt(attribute.offset, "未知 connection 字段 '" + attribute.key + "'，跳过");
+            }
+          }
+
+          if (!sawFrom || from.empty()) {
+            errorAt(sectionStart, "connection 缺少 from");
+            return result;
+          }
+          if (!sawTo || to.empty()) {
+            errorAt(sectionStart, "connection 缺少 to");
+            return result;
+          }
+          if (!sawSignal || signalName.empty()) {
+            errorAt(sectionStart, "connection 缺少 signal");
+            return result;
+          }
+          if (!sawMethod || methodName.empty()) {
+            errorAt(sectionStart, "connection 缺少 method");
+            return result;
+          }
+
+          const auto resolveNodePath = [&paths, &rootName](const std::string& path, std::size_t& index) -> bool {
+            if (path == ".") {
+              index = 0;
+              return true;
+            }
+            const auto found = paths.find(rootName + "/" + path);
+            if (found == paths.end()) {
+              return false;
+            }
+            index = found->second;
+            return true;
+          };
+
+          std::size_t fromIndex = kInvalidIndex;
+          std::size_t toIndex = kInvalidIndex;
+          if (!resolveNodePath(from, fromIndex)) {
+            errorAt(sectionStart, "connection.from 找不到节点路径：'" + from + "'");
+            return result;
+          }
+          if (!resolveNodePath(to, toIndex)) {
+            errorAt(sectionStart, "connection.to 找不到节点路径：'" + to + "'");
+            return result;
+          }
+
+          const core::StringId signalId = interner.intern(signalName);
+          const core::StringId methodId = interner.intern(methodName);
+          for (const PackedConnection& existing : result.scene.connections) {
+            if (existing.from == fromIndex && existing.to == toIndex && existing.signal == signalId &&
+                existing.method == methodId) {
+              errorAt(sectionStart, "重复的 connection");
               return result;
             }
-            warningAt(sectionStart, "未知 section '" + std::string(section) + "'，跳过");
-            skipSection = true;
-            currentNode = kInvalidParent;
-            currentInfo = nullptr;
           }
-        } else if (!skipSection && sawHeader && currentNode != kInvalidParent) {
-          const std::size_t nameStart = pos;
-          if (!isNameStart(line[pos])) {
-            errorAt(pos, "属性名非法");
-            return result;
-          }
-          ++pos;
-          while (pos < line.size() && isNameChar(line[pos])) {
-            ++pos;
-          }
-          const std::string_view propertyName = line.substr(nameStart, pos - nameStart);
 
-          skipSpaces(line, pos);
-          if (pos >= line.size() || line[pos] != '=') {
-            errorAt(pos, "属性行缺少 '='");
+          result.scene.connections.push_back(PackedConnection{fromIndex, toIndex, signalId, methodId});
+          sawConnection = true;
+        } else {
+          if (!sawHeader) {
+            errorAt(sectionStart, "第一个 section 必须是 [scene]");
             return result;
           }
-          ++pos;
-          skipSpaces(line, pos);
-
-          const std::size_t valueStart = pos;
-          if (valueStart >= line.size()) {
-            errorAt(valueStart, "属性缺少值");
-            return result;
-          }
-          const std::string_view valueText = line.substr(valueStart);
-          const yr::ser::VariantDecodeResult decoded = yr::ser::VariantCodec::decode(valueText);
-          if (!decoded.ok) {
-            errorAt(valueStart + decoded.error_offset, decoded.error);
-            return result;
-          }
-          if (decoded.consumed != valueText.size()) {
-            errorAt(valueStart + decoded.consumed, "值后存在多余字符");
+          warningAt(sectionStart, "未知 section '" + std::string(section) + "'，跳过");
+          skipSection = true;
+          sectionKind = SectionKind::kNone;
+          currentNode = kInvalidIndex;
+          currentSub = kInvalidIndex;
+          currentInfo = nullptr;
+        }
+      } else {
+        // 属性行归属当前 section。
+        if (!skipSection) {
+          if (!sawHeader) {
+            errorAt(pos, "第一个 section 必须是 [scene]");
             return result;
           }
 
-          if (!seenProperties.insert(std::string(propertyName)).second) {
-            errorAt(nameStart, "重复属性：'" + std::string(propertyName) + "'");
-            return result;
-          }
+          switch (sectionKind) {
+          case SectionKind::kNode: {
+            const ParsedProperty parsed = parsePropertyLine(line, pos);
+            if (!parsed.ok) {
+              errorAt(parsed.error_offset, std::move(parsed.error));
+              return result;
+            }
+            if (!seenProperties.insert(std::string(parsed.name)).second) {
+              errorAt(parsed.name_start, "重复属性：'" + std::string(parsed.name) + "'");
+              return result;
+            }
+            if (looksLikeReference(parsed.value)) {
+              errorAt(parsed.value_start, "node 属性暂不支持引用");
+              return result;
+            }
 
-          const core::StringId propertyId = interner.intern(propertyName);
-          const obj::PropertyInfo* const property = currentInfo->findProperty(propertyId);
-          if (property == nullptr) {
-            warningAt(nameStart, "未知属性 '" + std::string(propertyName) + "'，跳过");
-          } else if ((property->flags & obj::kReadOnly) != 0) {
-            warningAt(nameStart, "只读属性 '" + std::string(propertyName) + "'，跳过");
-          } else if (decoded.value.type() != property->type) {
-            errorAt(valueStart, "属性类型不匹配：'" + std::string(propertyName) + "'");
-            return result;
-          } else {
-            result.scene.nodes[currentNode].properties.push_back(SceneProperty{propertyId, decoded.value});
+            const yr::ser::VariantDecodeResult decoded = yr::ser::VariantCodec::decode(parsed.value);
+            if (!decoded.ok) {
+              errorAt(parsed.value_start + decoded.error_offset, decoded.error);
+              return result;
+            }
+            if (decoded.consumed != parsed.value.size()) {
+              errorAt(parsed.value_start + decoded.consumed, "值后存在多余字符");
+              return result;
+            }
+
+            const core::StringId propertyId = interner.intern(parsed.name);
+            const obj::PropertyInfo* const property = currentInfo->findProperty(propertyId);
+            if (property == nullptr) {
+              warningAt(parsed.name_start, "未知属性 '" + std::string(parsed.name) + "'，跳过");
+            } else if ((property->flags & obj::kReadOnly) != 0) {
+              warningAt(parsed.name_start, "只读属性 '" + std::string(parsed.name) + "'，跳过");
+            } else if (decoded.value.type() != property->type) {
+              errorAt(parsed.value_start, "属性类型不匹配：'" + std::string(parsed.name) + "'");
+              return result;
+            } else {
+              result.scene.nodes[currentNode].properties.push_back(SceneProperty{propertyId, decoded.value});
+            }
+            break;
           }
-        } else if (!skipSection && !sawHeader) {
-          errorAt(pos, "第一个 section 必须是 [scene format=1]");
-          return result;
-        } else if (!skipSection) {
-          errorAt(pos, "属性行出现在 node 之前");
-          return result;
+          case SectionKind::kSubResource: {
+            const ParsedProperty parsed = parsePropertyLine(line, pos);
+            if (!parsed.ok) {
+              errorAt(parsed.error_offset, std::move(parsed.error));
+              return result;
+            }
+            if (!seenProperties.insert(std::string(parsed.name)).second) {
+              errorAt(parsed.name_start, "重复属性：'" + std::string(parsed.name) + "'");
+              return result;
+            }
+
+            SceneValue value;
+            if (looksLikeReference(parsed.value)) {
+              const ParsedReference reference = parseReference(parsed.value);
+              if (!reference.ok) {
+                errorAt(parsed.value_start + reference.error_offset, reference.error);
+                return result;
+              }
+              value.reference.kind = reference.kind;
+              value.reference.id = reference.id;
+              value.reference.index = kInvalidIndex;
+              value.reference.source_line = lineNumber;
+              value.reference.source_column = static_cast<int>(columnOffset + parsed.value_start + 1);
+            } else {
+              const yr::ser::VariantDecodeResult decoded = yr::ser::VariantCodec::decode(parsed.value);
+              if (!decoded.ok) {
+                errorAt(parsed.value_start + decoded.error_offset, decoded.error);
+                return result;
+              }
+              if (decoded.consumed != parsed.value.size()) {
+                errorAt(parsed.value_start + decoded.consumed, "值后存在多余字符");
+                return result;
+              }
+              value.value = decoded.value;
+            }
+
+            result.scene.sub_resources[currentSub].properties.push_back(
+                PackedSubResourceProperty{interner.intern(parsed.name), std::move(value)});
+            break;
+          }
+          case SectionKind::kScene:
+            errorAt(pos, "scene 段不允许属性行");
+            return result;
+          case SectionKind::kExtResource:
+            errorAt(pos, "ext_resource 段不允许属性行");
+            return result;
+          case SectionKind::kConnection:
+            errorAt(pos, "connection 段不允许属性行");
+            return result;
+          case SectionKind::kNone:
+            errorAt(pos, "属性行出现在 node 之前");
+            return result;
+          }
         }
       }
 
@@ -507,9 +949,14 @@ namespace yr::scene {
     }
 
     if (!sawHeader) {
-      addDiagnostic(result, Severity::kError, lineNumber == 0 ? 1 : lineNumber, 1, "缺少 [scene format=1]");
+      addDiagnostic(result, Severity::kError, lineNumber == 0 ? 1 : lineNumber, 1, "缺少 [scene]");
     } else if (result.scene.nodes.empty()) {
       addDiagnostic(result, Severity::kError, lineNumber == 0 ? 1 : lineNumber, 1, "没有根节点");
+    }
+
+    if (!result.hasErrors()) {
+      ResolveResult resolution = resolveReferences(result.scene);
+      appendDiagnostics(result, std::move(resolution.diagnostics));
     }
     return result;
   }

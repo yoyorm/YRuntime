@@ -528,7 +528,6 @@ class PackedScene; // 纯数据 IR
 struct SerializeContext {
   ClassDB* classes; AssetDatabase* assets;
   std::vector<std::string> warnings;          // 未知属性、类型不匹配 → 收集而不是中断
-  uint32_t format_version;
 };
 
 class SceneSerializer {
@@ -539,24 +538,29 @@ class SceneSerializer {
 }
 ```
 
-**三个必须提前想清楚的难题**（面试常问，也是 M8 的真正工作量所在）：
+**两个必须提前想清楚的难题**（面试常问，也是 M8 的真正工作量所在）：
 | 难题 | 方案 |
 |---|---|
 | **引用**：场景里两个节点指向同一个资源，存两份还是存一份？ | 引入 **node index 表**（对照 Godot `.tscn` 的 `[node name=... parent=...]` + `ExtResource(id)` / `SubResource(id)`）。外部资源存路径/UID，内嵌子资源存 ID，节点间引用存 node index。 |
-| **版本兼容**：老存档在新版本打不开 | 文件头写 `format_version`；未知属性 → warning + 跳过（不报错）；缺失属性 → 用 ClassDB 里的默认值；破坏性变更写**显式 migrator** 函数链 |
 | **循环引用**：A 引用 B，B 引用 A | 两遍法：第一遍写所有对象并分配 ID，第二遍写引用（只写 ID）。Godot `.tscn` 就是这个结构 |
 
-**文本格式长什么样**（先设计格式，再写代码；这一段自己定，别抄 Godot）：
+> **版本策略（D24）**：当前 `.scn` 不做文本版本号与迁移链；未知字段 warning + 跳过、缺失属性用默认值。等出现外部存档/已发布资产再引入。
+
+**文本格式长什么样**：
 ```
-[scene format=1]
+[scene]
+[ext_resource type="Material" id="mat_ground" path="res://assets/ground.yrres"]
+[sub_resource type="Material" id="mat_local"]
+albedo = ExtResource("mat_ground")
 [node name="Root" type="Node"]
 [node name="Player" type="Node" parent="."]
 position = Vector3(1, 2, 3)
 [node name="Camera" type="Node" parent="Player"]
 position = Vector3(0, 2, 4)
+[connection from="Player" to="Player/Camera" signal="hit" method="on_hit"]
 ```
 
-> **v1 以 `engine/scene/include/yr/scene/scene_format.h` 为准**：M8a 只支持 Node / position / parent 路径；`ExtResource`、`NodeRef`、`index`、`rotation` 等是 M8b+ 的扩展。
+> **以 `engine/scene/include/yr/scene/scene_format.h` 为准**：支持 Node / position / parent 路径、`ExtResource` / `SubResource` 表、`[connection]` 的 from/to（NodeRef 的唯一消费者）。引用只存在于 scene IR，不进入 `Variant`；`index`、`rotation`、NodePath 属性仍属后续里程碑。
 **Godot 对照**：`scene/resources/resource_format_text.cpp/.h`（`.tscn` 文本格式读写，**M8 必读**）、`core/io/resource_format_binary.cpp`（`.res` 二进制）、`scene/resources/packed_scene.h/.cpp`（`PackedScene` = 场景的内存中间表示，节点数据 + 连接 + 编辑信息）。
 **学习点**：格式设计、visitor 模式、版本迁移、round-trip 测试、字节序与对齐（二进制格式）。
 
