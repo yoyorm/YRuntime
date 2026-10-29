@@ -75,13 +75,15 @@
 | M5 | renderer-neutral 快照 dump/replay + 渲染解耦 | 博客素材 | `doc/media/` |
 | M6 | 最小 Vulkan bootstrap（窗口 + 清屏 + 硬编码三角形） | 截图 / GIF | `doc/media/` |
 | **M7** | **Runtime 驱动的 Vulkan 画面 + WASD + dump/replay + 帧统计** ← 首个主要视觉作品节点 | **GIF + PNG + Mermaid 架构图** | `doc/media/m7-render-demo.gif` / `m7-snapshot.png` |
-| M8 | 手写 `.yrscn` + save→load→save round-trip | 截图 + 格式规范（写进 `yr/serialize/` 头注释） | `doc/media/` |
+| M8 | 手写 `.scn` + save→load→save round-trip（M8a 完成；后续引用/版本/二进制） | 截图 + 格式规范（写进 `engine/scene/include/yr/scene/scene_format.h` 头注释） | `doc/media/` |
 | M9 | 慢 IO 下异步加载不卡帧（E10）+ AssetHandle→GPU 桥接 | 帧时间曲线图（Python 画） | `benchmarks/README.md` |
 | M9.5 | 基础 PBR 内容（ToyCar + 平行光/点光 + 单张阴影，D21） | 截图 / GIF | `doc/media/` |
 | M10 | 并行加速比曲线 + false sharing 实测（E11/E12） | 数据表 + 图 | `benchmarks/README.md` |
 | M11 | `.yrpak` 打包 + 完整文档（覆盖率徽章可选） | README + CI | 根目录 |
 
 > **M7 收口（2026-10-24）**：600s soak / 34113 帧 / validation 0；extract p50 1.5us；present p50 17.2ms（FIFO 下含 fence/present 等待）；dump/replay 506B / AE=0；resize 960×540 ↔ 1280×720 通过。双/三缓冲按 D22 推迟，等真实异步消费者。
+
+> **M8a（2026-10-27）**：`.scn` v1 + Node/position + parent path + `PackedScene` 两阶段 instantiate + `VariantCodec` + reader/writer 诊断；350/350 tests。M8 剩余：ExtResource/SubResource/NodeRef、version/migrator、`.scnb`、`yr_scene_conv`、headless、benchmark。
 
 **视觉素材规范**
 - 架构图：Mermaid（GitHub 原生渲染，可 diff，可维护）；**不要**用画图软件截图（改一次要重画一次）。

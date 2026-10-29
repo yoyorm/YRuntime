@@ -17,9 +17,10 @@
 | **M5 渲染契约与 NullBackend** | ✅ 已完成 / 收口 —— `yr_render_iface` + `yr_render_null` + `render_extract` + headless 注入 |
 | **M6 最小 Vulkan Bootstrap** | ✅ 已完成 / 收口（2026-10-23）—— M6-1 外壳 + M6-2 Surface / Device / 队列 + M6-3 Swapchain / 清屏上屏 + M6-4 N 帧在飞 + 硬编码三角形 + M6-5 健壮性（resize / 最小化手测、soak） |
 | **M7 Snapshot 驱动画面** | ✅ 已完成 / 收口（2026-10-24）—— 7a/7b/7c/7d/7e：MainLoop 接线、DrawItem/Camera、WASD、dump/replay、帧统计、600s soak、resize、GIF/PNG；双/三缓冲按 D22 推迟 |
-| M8 ~ M11 | ⬜ 未开始（M9 后插入 M9.5 基础 PBR，D21） |
+| **M8 序列化** | 🔨 进行中（M8a 完成：`.scn` 文本 + Node/position + round-trip；350 tests；下一步 M8b 引用/版本/二进制） |
+| M9 ~ M11 | ⬜ 未开始（M9 后插入 M9.5 基础 PBR，D21） |
 
-**远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend ✅ → M6 最小 Vulkan bootstrap ✅ → M7 Snapshot 驱动画面（首个主要作品节点）✅ → M8 序列化 → M9 资源系统 → M9.5 基础 PBR 内容（D21）→ M10 任务系统 → M11 工具链打磨。**当前唯一任务：M8。**
+**远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend ✅ → M6 最小 Vulkan bootstrap ✅ → M7 Snapshot 驱动画面（首个主要作品节点）✅ → M8 序列化（进行中）→ M9 资源系统 → M9.5 基础 PBR 内容（D21）→ M10 任务系统 → M11 工具链打磨。**当前唯一任务：M8。**
 
 进度**只在两处维护**：根 `README.md` 的里程碑表（对外）+ `02-roadmap.md` 的 checkbox（对内）。
 别的地方不要重复记录，否则一定会漂移。
@@ -32,11 +33,15 @@ M7 已收口（2026-10-24）：7a/7b/7c/7d/7e 完成——MainLoop 接线、Draw
 双/三缓冲按 D22 推迟；LightPod / Camera Node / Light Node / 真实 AssetHandle 归 M9.5/M9（D21）。
 收口证据：`doc/media/m7-render-demo.gif` / `m7-snapshot.png`；详细清单见 `02-roadmap.md` M7。
 
-### M8 的第一步
+M8a 已完成（2026-10-27）：`yr_serialize` + `VariantCodec`；Node 元数据；`.scn` `SceneReader`/`SceneWriter`/`PackedScene` + 两阶段 instantiate；350/350 tests。
 
-1. 先定 `.yrscn` 文本格式（段结构、引用、错误位置），在对话里过一遍再写 parser；
-2. 再写 `TextWriter` / `TextReader` + `PackedScene` + round-trip；
-3. 详细清单与验收见 `02-roadmap.md` M8。
+下一步 **M8b**：
+
+1. `ExtResource` / `SubResource` / `NodeRef` 引用解析；
+2. `format_version` + 未知属性/默认值 + migrator；
+3. 再进入 M8c：`.scnb`、`yr_scene_conv`、headless 从 `.scn` 加载、1000 节点 benchmark。
+
+详细清单与验收见 `02-roadmap.md` M8。
 
 ### M7 复盘题（已收口，供面试自测）
 

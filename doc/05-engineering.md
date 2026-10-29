@@ -394,7 +394,7 @@ CI 门禁用 `clang-format-18 --dry-run -Werror $(git ls-files '*.h' '*.cpp')`�
 
 ```
 assets_src/        # 源资源（可编辑格式：.png/.gltf/.md 等）——M11 引入
-assets/            # 运行时资源（.yrscn/.yrres/.json/.txt）——M8 起
+assets/            # 运行时资源（.scn/.yrres/.json/.txt）——M8 起
 build/<preset>/assets/   # 构建时拷贝（或 yr_pack 产物 .yrpak）
 ```
 | 规则 | 理由 |

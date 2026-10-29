@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <yr/core/assert.h>
+#include <yr/core/string_interner.h>
 #include <yr/scene/node.h>
 #include <yr/scene/scene_tree.h>
 #include <yr/scene/transform_store.h>
@@ -12,6 +13,10 @@ namespace yr::scene {
     if (transform_.valid() && transformOwner_ != nullptr) {
       transformOwner_->destroyTransform(transform_);
     }
+  }
+
+  void Node::setName(std::string_view name) {
+    name_ = core::globalStringInterner().intern(name);
   }
 
   namespace {

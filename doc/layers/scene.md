@@ -18,7 +18,9 @@
   |---|---|---|
   | `Node* parent() const` | 非拥有；无父返回 `nullptr` | — |
   | `SceneTree* tree() const` / `bool isInsideTree() const` | 所属树 / 是否在树内 | — |
-  | `StringId name() const` | 名字（当前只读） | — |
+  | `StringId name() const` | 名字（`setName` 写入，全局驻留） | — |
+  | `void setName(std::string_view)` | 写入并驻留名字；不触发树级副作用 | — |
+  | `const obj::ClassInfo* classInfo() const` | Node 的静态元数据（name `"Node"`，parent `Object`） | — |
   | `size_t childCount() const` | 子节点数 | — |
   | `Node* childAt(size_t) const` | 按下标取子 | 越界 = Debug assert + `nullptr` |
   | `bool addChild(std::unique_ptr<Node>&&)` | 成功即转移所有权并入树 | 见"不变量"四种拒绝 |
@@ -49,7 +51,7 @@
   - 三个回调契约：不得抛异常，不得修改正在传播的 parent。
 - **Godot 对照**：`scene/main/node.h` / `node.cpp`（`_propagate_ready` / `_propagate_enter_tree` / `queue_free`）。
 - **遗留 / 已知缺口**：
-  - `NodePath`（`path()`）未实现；`name` 只读，名字唯一性未实现。
+  - `NodePath`（`path()`）未实现；名字唯一性由 scene loader 校验，`Node` 本身不强制。
   - `requestReady`（显式再次 ready）未实现。
   - `onUpdate` 派发是**前序**，尚未提供 `setProcess` 开关与 priority 排序。
   - 第一版不搬 Godot 的 `owner`、internal child、groups、multiplayer、editor 逻辑。
@@ -132,3 +134,15 @@
 - **不变量 / 顺序**：`SceneTree` 必须比持有其 handle 的 `Node` 活得更久（`transformOwner_` 契约）。
 - **设计原因**：SoA 式集中存储为后续并行刷新留空间；`Node` 不直接暴露 `TransformStore`，只经 `SceneTree` 转发。
 - **遗留 / 已知缺口**：并发刷新未实现（当前单线程前序 DFS）。
+
+## .scn 文本场景（M8a）
+
+- **职责**：把 Node 树持久化为人类可读/可手写的文本，并两阶段实例化回 Node 树。v1 格式规范的唯一来源是 `scene_format.h` 的头注释。
+- **代码**：
+  - `scene_reader.h`：`SceneReader` / `SceneLoadResult` / `SceneDiagnostic`；从 `string_view` / `istream` 解析，诊断带 1-based line/column。
+  - `packed_scene.h`：`PackedScene` 纯数据记录（类型 / 名字 / parent path / 属性）；`instantiate(const ClassDB&)` 第一遍创建、第二遍按 `parent_index` 挂接，失败返回 `nullptr` 且不留半成品。
+  - `scene_writer.h`：`SceneWriter::write(const Node&) -> SceneWriteResult`；先校验整棵树（name 规则、同级唯一、root 无 parent、`classInfo()` 是 Node、serialized 属性有 getter 且可编码），失败返回 `ok=false` + 具体节点/问题，**不产出半份 text**；成功后输出 canonical 文本，属性按 `ClassInfo` 顺序（基类在前），只写 `kSerialized`。
+  - `scene_classes.h`：`register_scene_classes()` 幂等注册 Node（含 `position` 属性）；必须在 `globalClassDB().freeze()` 前调用。
+- **格式**：`[scene format=1]` + 前序 `[node name/type/parent]` + `position = Vector3(...)`；`save → load → save` 逐字节相同。
+- **依赖**：`scene → serialize`（`VariantCodec`）；`serialize → object`，不反向依赖 scene/render。
+- **v1 范围**：只支持 Node / position / 父子路径；未知属性 warning，未知 class error；`.scnb` 仅保留扩展名，不实现。

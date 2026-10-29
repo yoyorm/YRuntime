@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <string_view>
 #include <vector>
 
 #include <yr/core/handle.h>
@@ -25,7 +26,7 @@ namespace yr::scene {
   //
   // Transform 仅平移；读取与槽生命周期契约见 doc/layers/scene.md。
   //
-  // name 目前只读，名字唯一性未实现。
+  // name 可写（setName 驻留到全局 StringInterner）；唯一性由 scene loader 校验，Node 不强制。
 
   class Node : public yr::obj::Object {
   public:
@@ -44,6 +45,11 @@ namespace yr::scene {
     [[nodiscard]] bool isInsideTree() const noexcept { return tree_ != nullptr; }
 
     [[nodiscard]] core::StringId name() const noexcept { return name_; }
+
+    // 名字驻留到全局 StringInterner；空串变成有效空 StringId
+    void setName(std::string_view name);
+
+    [[nodiscard]] const yr::obj::ClassInfo* classInfo() const noexcept override;
 
     [[nodiscard]] std::size_t childCount() const noexcept { return children_.size(); }
 

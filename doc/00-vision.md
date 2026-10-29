@@ -81,7 +81,7 @@
 
 ### 4.1 运行时能力
 - [ ] headless scene simulation 跑 10000 帧（创建/删除/移动 Node），无泄漏、无崩溃，ASan+UBSan 干净，结束时 ObjectDB 活对象归零。
-- [ ] `.yrscn` save→load→save **逐字节 round-trip** 一致；`RenderSnapshot` + `NullBackend` dump/replay 统计确定。
+- [ ] `.scn` save→load→save **逐字节 round-trip** 一致；`RenderSnapshot` + `NullBackend` dump/replay 统计确定。
 - [ ] 帧循环各阶段耗时可打印，能指出"哪一阶段最贵"。
 
 ### 4.2 架构与代码质量

@@ -515,9 +515,15 @@ class PakFileAccess : public IFileAccess { /* 从 .yrpak 读，M11 */ };
 namespace yr::ser {
 class IWriter { /* 结构化输出：begin_object/name/value/begin_array/end_* */ };
 class IReader { /* 对称的输入 + 未知字段跳过 + 错误位置报告 */ };
-class TextWriter : public IWriter;   // 人类可读、可 diff、可手写（.yrscn / .yrres）
-class BinaryWriter : public IWriter; // 紧凑、快、带版本头（.yrscnb）
+class TextWriter : public IWriter;   // 人类可读、可 diff、可手写（.scn / .yrres）
+class BinaryWriter : public IWriter; // 紧凑、快、带版本头（.scnb）
 class JsonWriter : public IWriter;   // 调试/互操作，复用 nlohmann_json
+class VariantCodec;                  // Variant ↔ 文本/二进制值
+}
+
+// Scene 结构、PackedScene 与场景存读档属于 scene 层；yr_serialize 不反向依赖 scene。
+namespace yr::scene {
+class PackedScene; // 纯数据 IR
 
 struct SerializeContext {
   ClassDB* classes; AssetDatabase* assets;
@@ -527,8 +533,8 @@ struct SerializeContext {
 
 class SceneSerializer {
  public:
-  static bool save(const scene::Node* root, IWriter&, SerializeContext&);
-  static Ref<scene::Node> load(IReader&, SerializeContext&);
+  static bool save(const Node* root, ser::IWriter&, SerializeContext&);
+  static std::unique_ptr<Node> load(ser::IReader&, SerializeContext&);
 };
 }
 ```
@@ -542,15 +548,15 @@ class SceneSerializer {
 
 **文本格式长什么样**（先设计格式，再写代码；这一段自己定，别抄 Godot）：
 ```
-[yrscene format=1]
-[ext_resource type="Material" uid="mat_ground" path="res://assets/ground.yrres" id=1]
+[scene format=1]
 [node name="Root" type="Node"]
-[node name="Player" parent="." index=0]
-prop_int = 42
-prop_vec3 = Vector3(1, 2, 3)
-[node name="Camera" parent="Player" type="Camera3D" index=0]
-target = NodePath("../Player")
+[node name="Player" type="Node" parent="."]
+position = Vector3(1, 2, 3)
+[node name="Camera" type="Node" parent="Player"]
+position = Vector3(0, 2, 4)
 ```
+
+> **v1 以 `engine/scene/include/yr/scene/scene_format.h` 为准**：M8a 只支持 Node / position / parent 路径；`ExtResource`、`NodeRef`、`index`、`rotation` 等是 M8b+ 的扩展。
 **Godot 对照**：`scene/resources/resource_format_text.cpp/.h`（`.tscn` 文本格式读写，**M8 必读**）、`core/io/resource_format_binary.cpp`（`.res` 二进制）、`scene/resources/packed_scene.h/.cpp`（`PackedScene` = 场景的内存中间表示，节点数据 + 连接 + 编辑信息）。
 **学习点**：格式设计、visitor 模式、版本迁移、round-trip 测试、字节序与对齐（二进制格式）。
 
@@ -818,6 +824,6 @@ sequenceDiagram
 | Q1 | 数学库：GLM vs 自研 `Vec3/Mat4/Transform3D` | M4 | 自研最小 `Vec3/Mat4/Transform3D`（学习价值高，且序列化要对齐），GLM 只在 Vulkan 后端用 |
 | Q2 | 属性系统是"每对象存值"还是"成员变量 + 指针适配" | M2 | 后者（零开销、与 C++ 代码自然），前者留给"动态附加属性" stretch |
 | Q3 | 场景树是否引入 ECS/SoA 数据层 | M4/M5 | Transform 用 SoA 平行数组（性能 + 并行），其余保持 Object 树 |
-| Q4 | 文本格式自研 vs JSON | M8 | 自研 `.yrscn`（可 diff、可手写、学习价值），JSON 仅作调试导出 |
+| Q4 | 文本格式自研 vs JSON | M8 | 自研 `.scn`（可 diff、可手写、学习价值），JSON 仅作调试导出 |
 | Q5 | 是否引入 `ObjectDB`（全局 ID→Object* 表） | M2 | 引入，WeakRef 与 deferred call 都需要它 |
 | Q6 | Backend 是否独立线程 | M7 | 先同线程跑通，再上独立线程（对照 Godot `server_wrap_mt_common.h`） |
