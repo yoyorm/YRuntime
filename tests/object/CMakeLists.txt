@@ -2,7 +2,8 @@ add_executable(YrTests_object
     test_object_db.cpp
     test_variant.cpp
     test_class_info.cpp
-    test_class_db.cpp)
+    test_class_db.cpp
+    test_ref_counted.cpp)
 
 target_link_libraries(YrTests_object PRIVATE
     yr::object
