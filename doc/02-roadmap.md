@@ -478,7 +478,9 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 
 > **M8a 完成（2026-10-27）**：`yr_serialize` + `VariantCodec`（text）；Node `ClassInfo`/factory/`position`/`classInfo`/`setName`；`.scn` `SceneReader` / `SceneWriter` / `PackedScene` + 两阶段 instantiate；reader/writer 诊断与整树校验；350/350 tests。
 >
-> **M8b 完成（2026-10-29）**：`[scene]` + `ExtResource` / `SubResource` / `SceneReference`；两遍解析 + DFS 环检测；`[connection]` 的 from/to node path → index（NodeRef 的真实消费者）；`SceneWriter::write(PackedScene)`；364/364 tests。按 D24 不做文本版本号与迁移链。M8 剩余：headless 集成、1000 节点文本场景 benchmark。
+> **M8b 完成（2026-10-29）**：`[scene]` + `ExtResource` / `SubResource` / `SceneReference`；两遍解析 + DFS 环检测；`[connection]` 的 from/to node path → index（NodeRef 的真实消费者）；`SceneWriter::write(PackedScene)`；364/364 tests。按 D24 不做文本版本号与迁移链。M8c 前剩余：headless 集成、1000 节点文本场景 benchmark。
+>
+> **M8c 完成（2026-10-31）**：`yr_runtime_headless --scene` 从 `.scn` 加载；样例 2 节点 / 140 B / 71 µs；1000 节点 / 73,886 B / 15,898 µs（10 帧）。M8 收口。
 
 - [ ] `yr/serialize/writer.h` / `reader.h`：`IWriter`/`IReader` 抽象 —— **M8a 决定先不抽**，直接 `SceneReader`/`SceneWriter` + `VariantCodec`；等第二个消费者出现再抽象
 - [x] `TextWriter`/`TextReader`：自定义 `.scn`。格式写进 `engine/scene/include/yr/scene/scene_format.h` 的头注释（唯一真相源）
@@ -488,7 +490,7 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 - [x] `yr/scene/packed_scene.h`：`PackedScene`（节点数据表 + 父子关系 + ext/sub + 连接），`instantiate()` 生成真实 Node 树
 - [x] 版本策略：不做文本版本号与迁移链，保持格式简洁（D24）；未知属性仍 warning + 跳过，缺失属性用默认值
 - [x] 测试：round-trip（save→load→save 逐字节相同）、手写文件加载、未知属性容忍、循环引用、深层嵌套
-- [ ] 把 M4 的 headless 运行改成从 `.scn` 加载场景
+- [x] 把 M4 的 headless 运行改成从 `.scn` 加载场景
 
 **验收标准**
 - **确定性 round-trip**：`save → load → save` 文本逐字节一致。

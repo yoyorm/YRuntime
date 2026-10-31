@@ -17,33 +17,25 @@
 | **M5 渲染契约与 NullBackend** | ✅ 已完成 / 收口 —— `yr_render_iface` + `yr_render_null` + `render_extract` + headless 注入 |
 | **M6 最小 Vulkan Bootstrap** | ✅ 已完成 / 收口（2026-10-23）—— M6-1 外壳 + M6-2 Surface / Device / 队列 + M6-3 Swapchain / 清屏上屏 + M6-4 N 帧在飞 + 硬编码三角形 + M6-5 健壮性（resize / 最小化手测、soak） |
 | **M7 Snapshot 驱动画面** | ✅ 已完成 / 收口（2026-10-24）—— 7a/7b/7c/7d/7e：MainLoop 接线、DrawItem/Camera、WASD、dump/replay、帧统计、600s soak、resize、GIF/PNG；双/三缓冲按 D22 推迟 |
-| **M8 序列化** | 🔨 进行中（M8a 文本；M8b 引用/连接；364 tests；下一步 M8c headless 加载 / benchmark） |
+| **M8 序列化** | ✅ 已完成 / 收口（2026-10-31）—— M8a 文本；M8b 引用/连接；M8c headless `--scene` 加载与 1000 节点 benchmark；364 tests |
 | M9 ~ M11 | ⬜ 未开始（M9 后插入 M9.5 基础 PBR，D21） |
 
-**远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend ✅ → M6 最小 Vulkan bootstrap ✅ → M7 Snapshot 驱动画面（首个主要作品节点）✅ → M8 序列化（进行中）→ M9 资源系统 → M9.5 基础 PBR 内容（D21）→ M10 任务系统 → M11 工具链打磨。**当前唯一任务：M8。**
+**远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend ✅ → M6 最小 Vulkan bootstrap ✅ → M7 Snapshot 驱动画面（首个主要作品节点）✅ → M8 序列化 ✅ → M9 资源系统 → M9.5 基础 PBR 内容（D21）→ M10 任务系统 → M11 工具链打磨。**当前唯一任务：M9。**
 
 进度**只在两处维护**：根 `README.md` 的里程碑表（对外）+ `02-roadmap.md` 的 checkbox（对内）。
 别的地方不要重复记录，否则一定会漂移。
 
 ---
 
-## 2. 下一步：M8 序列化（M7 已收口）
+## 2. 下一步：M9 资源系统（M8 已收口）
 
-M7 已收口（2026-10-24）：7a/7b/7c/7d/7e 完成——MainLoop 接线、DrawItem/Camera、WASD、dump/replay、帧统计、600s soak、resize、GIF/PNG。
-双/三缓冲按 D22 推迟；LightPod / Camera Node / Light Node / 真实 AssetHandle 归 M9.5/M9（D21）。
-收口证据：`doc/media/m7-render-demo.gif` / `m7-snapshot.png`；详细清单见 `02-roadmap.md` M7。
+M8 已收口（2026-10-31）：M8a `.scn` 文本 + Node/position/父子路径；M8b 引用/连接；M8c `yr_runtime_headless --scene` 加载（样例 2 节点 / 140 B / 71 µs；1000 节点 / 73,886 B / ~15.9 ms）；364/364 tests。文本格式不做版本号与迁移（D24）；二进制/JSON 不做（D25）。
 
-M8a 已完成（2026-10-27）：`yr_serialize` + `VariantCodec`；Node 元数据；`.scn` `SceneReader`/`SceneWriter`/`PackedScene` + 两阶段 instantiate；350/350 tests。
+下一步 **M9 资源系统**：
 
-M8b 已完成（2026-10-29）：`ExtResource` / `SubResource` / `SceneReference`；两遍解析 + DFS 环检测；`[connection]` 的 from/to 解析；364/364 tests。文本格式不做版本号与迁移（D24）；二进制/JSON 不做（D25）。
-
-下一步 **M8c**：
-
-1. headless 从 `.scn` 加载（`--scene`）；
-2. 1000 节点文本场景 benchmark；
-3. 然后 M8 收口。
-
-详细清单与验收见 `02-roadmap.md` M8。
+1. 先做 `RefCounted` / `Ref` 的最小实现；
+2. 再由用户手写核心（Resource / AssetDatabase / 异步加载边界）；
+3. 详细清单与验收见 `02-roadmap.md` M9。
 
 ### M7 复盘题（已收口，供面试自测）
 

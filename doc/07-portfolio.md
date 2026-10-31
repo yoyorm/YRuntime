@@ -75,7 +75,7 @@
 | M5 | renderer-neutral 快照 dump/replay + 渲染解耦 | 博客素材 | `doc/media/` |
 | M6 | 最小 Vulkan bootstrap（窗口 + 清屏 + 硬编码三角形） | 截图 / GIF | `doc/media/` |
 | **M7** | **Runtime 驱动的 Vulkan 画面 + WASD + dump/replay + 帧统计** ← 首个主要视觉作品节点 | **GIF + PNG + Mermaid 架构图** | `doc/media/m7-render-demo.gif` / `m7-snapshot.png` |
-| M8 | 手写 `.scn` + save→load→save round-trip + 引用/连接（M8a/M8b 完成；后续 headless/benchmark） | 截图 + 格式规范（写进 `engine/scene/include/yr/scene/scene_format.h` 头注释） | `doc/media/` |
+| M8 | 手写 `.scn` + save→load→save round-trip + 引用/连接 + headless 加载（M8 完成） | 截图 + 格式规范（写进 `engine/scene/include/yr/scene/scene_format.h` 头注释） | `doc/media/` |
 | M9 | 慢 IO 下异步加载不卡帧（E10）+ AssetHandle→GPU 桥接 | 帧时间曲线图（Python 画） | `benchmarks/README.md` |
 | M9.5 | 基础 PBR 内容（ToyCar + 平行光/点光 + 单张阴影，D21） | 截图 / GIF | `doc/media/` |
 | M10 | 并行加速比曲线 + false sharing 实测（E11/E12） | 数据表 + 图 | `benchmarks/README.md` |
@@ -85,7 +85,9 @@
 
 > **M8a（2026-10-27）**：`.scn` 文本 + Node/position + parent path + `PackedScene` 两阶段 instantiate + `VariantCodec` + reader/writer 诊断；350/350 tests。
 >
-> **M8b（2026-10-29）**：`ExtResource`/`SubResource`/`SceneReference` + 两遍解析 + DFS 环检测 + `[connection]` 的 from/to 解析；364/364 tests。按 D24 不做文本版本号与迁移。M8 剩余：headless 加载、1000 节点 benchmark。按 D25 不做场景二进制/JSON。
+> **M8b（2026-10-29）**：`ExtResource`/`SubResource`/`SceneReference` + 两遍解析 + DFS 环检测 + `[connection]` 的 from/to 解析；364/364 tests。按 D24 不做文本版本号与迁移。M8c 前剩余：headless 加载、1000 节点 benchmark。按 D25 不做场景二进制/JSON。
+>
+> **M8c（2026-10-31）**：`yr_runtime_headless --scene` 接通 `.scn` 加载；样例 2 节点 / 140 B / 71 µs；1000 节点 / 73,886 B / ~15.9 ms（10 帧）；364/364 tests。
 
 **视觉素材规范**
 - 架构图：Mermaid（GitHub 原生渲染，可 diff，可维护）；**不要**用画图软件截图（改一次要重画一次）。
