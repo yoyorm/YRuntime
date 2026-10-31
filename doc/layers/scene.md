@@ -149,4 +149,4 @@
 - **connection**：`from` / `to` 是相对根的 node path（`.` = 根），解析成 node index；同 from/to/signal/method 重复 → error。
 - **canonical 顺序**：sub_resource 属性按属性名升序；node 属性在 Node 树版本按 ClassInfo 顺序（基类在前），IR 版本保持存储顺序。`save → load → save` 逐字节相同。
 - **依赖**：`scene → serialize`（`VariantCodec`）；`serialize → object`，不反向依赖 scene/render。
-- **范围**：M8a 支持 Node / position / 父子路径；M8b 支持 ext/sub 引用与 connection。`.scnb` 仅保留扩展名，不实现。
+- **范围**：M8a 支持 Node / position / 父子路径；M8b 支持 ext/sub 引用与 connection。场景源格式只做文本.

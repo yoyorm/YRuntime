@@ -45,7 +45,6 @@
 | `std::chrono` 与时间语义 | M1, M4 | A | steady vs system clock；duration cast 精度丢失 | cppreference |
 | 缓存友好数据布局（SoA/AoS、稠密数组、对齐） | M1, M4, M10 | **B** | 为什么遍历比查找更值得优化 | 《Data-Oriented Design》(Richard Fabian) 前 3 章；Mike Acton "Data-Oriented Design and C++" (CppCon 2014) |
 | 手写 lexer/parser（递归下降） | M8 | **B** | token 化、错误位置报告 | 《Crafting Interpreters》第 6 章（扫描器）即可 |
-| 二进制序列化（对齐、字节序、版本头、`static_assert(sizeof)`） | M8 | **B** | 结构体填充陷阱；为什么不能直接 `fwrite(struct)` | Godot `resource_format_binary.cpp` |
 | POD 契约 / ABI 稳定 | M5 | **B** | 为什么跨模块边界传 POD 而不是类 | — |
 | Vulkan（已有基础）：dynamic rendering、sync2、descriptor、frame-in-flight、延迟销毁 | M6/M7 | **B** | 你已会；重点转向"如何被 Runtime 驱动" | 你自己的 Yo_Renderer + vkguide.dev |
 
@@ -126,7 +125,7 @@
 | E6 | Variant 体积与拷贝成本（含 Array/Dict 深拷贝） | M2 | `sizeof(Variant)`；COW 值不值得做？ |
 | E7 | 树遍历策略：递归 vs 显式栈 vs 预排序扁平数组 | M4 | 10k 节点树的 `_process` 派发耗时 |
 | E8 | Transform 脏标记 vs 每帧全量重算 | M4 | 不同"每帧移动节点比例"下的收益曲线（Yo_Renderer roadmap §1.2 的正式答案） |
-| E9 | 文本 vs 二进制场景格式 | M8 | 1000 节点场景：文件大小、save 耗时、load 耗时 |
+| E9 | 文本场景格式的规模与耗时 | M8 | 1000 节点：文件大小、save/load 耗时 |
 | E10 | 同步 vs 异步资源加载（配 ThrottledFileAccess） | M9 | 帧时间 p95 对比；加载 100 个资源的总时长 |
 | E11 | JobSystem 加速比 vs 任务粒度 | M10 | 找到"并行收益 = 0"的任务大小区间 |
 | E12 | false sharing 实测：`JobStats` 加/不加 `alignas(64)` | M10 | 差多少倍？（经典实验，结果通常惊人） |

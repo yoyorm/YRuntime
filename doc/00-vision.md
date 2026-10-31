@@ -99,7 +99,6 @@
 
 ### 4.4 工具链
 - [ ] `tools/yr_pack`：把 `assets/` 打成单个 `.yrpak`（manifest + blob），Runtime 能从 pak 加载。
-- [ ] `tools/yr_scene_conv`：文本场景 ↔ 二进制场景互转，round-trip 一致。
 - [ ] GitHub Actions：push 触发 build + ctest + format check + 架构门禁，README 有徽章。（clang-tidy 可选，见 `05-engineering.md` §1）
 
 ### 4.5 理解与表达（最重要，也最容易被跳过）

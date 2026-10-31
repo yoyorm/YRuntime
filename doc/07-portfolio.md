@@ -75,7 +75,7 @@
 | M5 | renderer-neutral 快照 dump/replay + 渲染解耦 | 博客素材 | `doc/media/` |
 | M6 | 最小 Vulkan bootstrap（窗口 + 清屏 + 硬编码三角形） | 截图 / GIF | `doc/media/` |
 | **M7** | **Runtime 驱动的 Vulkan 画面 + WASD + dump/replay + 帧统计** ← 首个主要视觉作品节点 | **GIF + PNG + Mermaid 架构图** | `doc/media/m7-render-demo.gif` / `m7-snapshot.png` |
-| M8 | 手写 `.scn` + save→load→save round-trip + 引用/连接（M8a/M8b 完成；后续二进制/工具链） | 截图 + 格式规范（写进 `engine/scene/include/yr/scene/scene_format.h` 头注释） | `doc/media/` |
+| M8 | 手写 `.scn` + save→load→save round-trip + 引用/连接（M8a/M8b 完成；后续 headless/benchmark） | 截图 + 格式规范（写进 `engine/scene/include/yr/scene/scene_format.h` 头注释） | `doc/media/` |
 | M9 | 慢 IO 下异步加载不卡帧（E10）+ AssetHandle→GPU 桥接 | 帧时间曲线图（Python 画） | `benchmarks/README.md` |
 | M9.5 | 基础 PBR 内容（ToyCar + 平行光/点光 + 单张阴影，D21） | 截图 / GIF | `doc/media/` |
 | M10 | 并行加速比曲线 + false sharing 实测（E11/E12） | 数据表 + 图 | `benchmarks/README.md` |
@@ -85,7 +85,7 @@
 
 > **M8a（2026-10-27）**：`.scn` 文本 + Node/position + parent path + `PackedScene` 两阶段 instantiate + `VariantCodec` + reader/writer 诊断；350/350 tests。
 >
-> **M8b（2026-10-29）**：`ExtResource`/`SubResource`/`SceneReference` + 两遍解析 + DFS 环检测 + `[connection]` 的 from/to 解析；364/364 tests。按 D24 不做文本版本号与迁移。M8 剩余：`.scnb`、`yr_scene_conv`、headless、benchmark、默认值省略。
+> **M8b（2026-10-29）**：`ExtResource`/`SubResource`/`SceneReference` + 两遍解析 + DFS 环检测 + `[connection]` 的 from/to 解析；364/364 tests。按 D24 不做文本版本号与迁移。M8 剩余：headless 加载、1000 节点 benchmark。按 D25 不做场景二进制/JSON。
 
 **视觉素材规范**
 - 架构图：Mermaid（GitHub 原生渲染，可 diff，可维护）；**不要**用画图软件截图（改一次要重画一次）。
@@ -108,7 +108,7 @@
 | 2 | 句柄与 generation：游戏引擎里最便宜的安全网 | M1 | index+generation 如何用 8 字节解决悬垂与 ABA，附 benchmark |
 | 3 | 用 300 行宏换来一个反射系统（以及我为此付出的调试代价） | M2 | 宏工程的收益/代价权衡，附 `clang -E` 展开分析 |
 | 4 | 一帧里的 14 件事：为什么顺序就是正确性 | M4 | 帧阶段设计 + 结构修改收敛到单一阶段如何消灭一整类 bug |
-| 5 | 自己设计一种场景文件格式：引用、版本与循环三大难题 | M8 | 从 `.tscn` 学到的与我最终选择的格式 |
+| 5 | 自己设计一种场景文件格式：引用、循环与确定性 | M8 | 从 `.tscn` 学到的与我最终选择的格式 |
 | 6 | 异步资源加载：为什么"最后一公里"必须回主线程 | M9~M10 | 线程边界画在数据上而不是函数上，附 Godot `ThreadLoadTask` 对照 |
 | 7 | 我给游戏运行时加线程池踩的 6 个坑 | M10 | TSan/内存序/false sharing/停机死锁/浮点归约确定性 |
 | 8 | 逻辑与渲染之间那条线：POD 快照契约 | M5~M7 | 为什么传对象指针的解耦都是假解耦，附"快照可重放"验证法 |
@@ -153,7 +153,7 @@
 17. 循环引用（A→B→A）怎么序列化？为什么必须两遍法？
 18. 老版本存档在新版本打不开，你的兼容策略是什么？未知属性和缺失属性分别怎么处理？
 19. 为什么文本格式要求"输出逐字节可复现"？哪些实现细节会破坏它？（*要点*：保序容器、浮点格式化精度、时间戳/指针不入文件）
-20. 二进制格式里结构体填充（padding）和字节序怎么处理？为什么不能直接 `fwrite(struct)`？
+20. 为什么场景源格式只做文本？什么时候才需要二进制/cooked 格式？
 21. 资源为什么要 UID 而不只用路径？文件重命名/移动时发生了什么？
 22. 异步加载的完整状态机？为什么解码可以在工作线程而对象构造必须回主线程？（D8）
 23. 同一个资源被并发请求 5 次会发生什么？加载中被请求卸载呢？加载失败后 in-flight 条目怎么清理？
@@ -187,7 +187,7 @@
 **项目条目（3~5 行，按投递岗位裁剪）**
 > **YRuntime · 个人项目**（C++20 / CMake / Vulkan / Linux，XXXXX 行，XX 个测试，CI 全绿）
 > 独立设计实现游戏运行时核心：句柄+generation 的对象生命周期管理、基于宏与类型擦除的反射/属性系统、
-> 类型化事件总线与延迟调用队列、场景树与 14 阶段固定步长主循环、自研文本/二进制场景序列化格式（支持外部/内嵌资源引用与版本迁移）、
+> 类型化事件总线与延迟调用队列、场景树与 14 阶段固定步长主循环、自研文本场景序列化格式（支持外部/内嵌资源引用）、
 > 异步资源数据库（IO/解码并行 + 主线程收尾）、任务依赖调度系统。
 > 以分层 CMake target + CI 脚本强制依赖单向；Catch2 + ASan/UBSan/TSan 覆盖核心逻辑。
 > 将自研 Vulkan PBR 渲染器重构为可替换 RendererBackend（POD 快照契约，Runtime 侧零图形 API 依赖），跑通完整"逻辑—运行时—渲染"链路。

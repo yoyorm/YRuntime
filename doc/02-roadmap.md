@@ -24,7 +24,7 @@
 | M9 | 资源系统 | 2~3 | `yr_asset` | 异步加载不卡帧 + AssetHandle→GPU 资源桥接 | ★★★★ |
 | M9.5 | 基础 PBR 内容 | 2~3 | `yr_render_vulkan`（扩展） | ToyCar PBR + 平行光/点光 + 单张阴影 | ★★★★★ |
 | M10 | 任务系统 | 3~4 | `yr_job` | 并行 vs 串行 benchmark + TSan 干净报告 | ★★★★ |
-| M11 | 工具链与打磨 | 2~4 | `tools/yr_pack` `yr_scene_conv` | `.yrpak` 打包 + 覆盖率 | ★★★ |
+| M11 | 工具链与打磨 | 2~4 | `tools/yr_pack` | `.yrpak` 打包 + 覆盖率 | ★★★ |
 
 **总计 ≈ 28~41 周**（约 7~10 个月）。假期按 3 倍速折算；M9.5 为 2026-10-23 新增（D21）。
 
@@ -478,32 +478,30 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 
 > **M8a 完成（2026-10-27）**：`yr_serialize` + `VariantCodec`（text）；Node `ClassInfo`/factory/`position`/`classInfo`/`setName`；`.scn` `SceneReader` / `SceneWriter` / `PackedScene` + 两阶段 instantiate；reader/writer 诊断与整树校验；350/350 tests。
 >
-> **M8b 完成（2026-10-29）**：`[scene]` + `ExtResource` / `SubResource` / `SceneReference`；两遍解析 + DFS 环检测；`[connection]` 的 from/to node path → index（NodeRef 的真实消费者）；`SceneWriter::write(PackedScene)`；364/364 tests。按 D24 不做文本版本号与迁移链。M8 剩余：`.scnb`、`yr_scene_conv`、headless 集成、1000 节点 benchmark、默认值省略、JSON。
+> **M8b 完成（2026-10-29）**：`[scene]` + `ExtResource` / `SubResource` / `SceneReference`；两遍解析 + DFS 环检测；`[connection]` 的 from/to node path → index（NodeRef 的真实消费者）；`SceneWriter::write(PackedScene)`；364/364 tests。按 D24 不做文本版本号与迁移链。M8 剩余：headless 集成、1000 节点文本场景 benchmark。
 
 - [ ] `yr/serialize/writer.h` / `reader.h`：`IWriter`/`IReader` 抽象 —— **M8a 决定先不抽**，直接 `SceneReader`/`SceneWriter` + `VariantCodec`；等第二个消费者出现再抽象
 - [x] `TextWriter`/`TextReader`：自定义 `.scn`。格式写进 `engine/scene/include/yr/scene/scene_format.h` 的头注释（唯一真相源）
-- [ ] `BinaryWriter`/`BinaryReader`：`.scnb`（magic + version + 长度前缀；处理对齐与字节序，写 `static_assert(sizeof(...))`）
-- [ ] `JsonWriter`：调试导出（用 nlohmann_json，M8 起才引入 third_party）
-- [x] `VariantCodec`：Variant ↔ 文本（bool/int/double/string/Vector3）；二进制留给 M8c
-- [ ] 属性级序列化：遍历 `ClassInfo` 属性表，只序列化 `kSerialized` 且**与默认值不同**的属性（省空间 + diff 干净）
+- [x] `VariantCodec`：Variant ↔ 文本（bool/int/double/string/Vector3）；二进制不做（D25）
+- [x] 属性级序列化：遍历 `ClassInfo` 属性表，只序列化 `kSerialized` 属性（默认值省略不做，保持 canonical 简单）
 - [x] 引用解析：ExtResource（外部资源，存 path/UID）/ SubResource（内嵌子资源）/ NodeRef（同场景节点；用于 `[connection]` 的 from/to）
 - [x] `yr/scene/packed_scene.h`：`PackedScene`（节点数据表 + 父子关系 + ext/sub + 连接），`instantiate()` 生成真实 Node 树
 - [x] 版本策略：不做文本版本号与迁移链，保持格式简洁（D24）；未知属性仍 warning + 跳过，缺失属性用默认值
-- [ ] `tools/yr_scene_conv`：文本 ↔ 二进制互转 + `--validate`
 - [x] 测试：round-trip（save→load→save 逐字节相同）、手写文件加载、未知属性容忍、循环引用、深层嵌套
 - [ ] 把 M4 的 headless 运行改成从 `.scn` 加载场景
 
 **验收标准**
-- **确定性 round-trip**：`yr_scene_conv a.scn → a.scnb → b.scn`，`diff a.scn b.scn` 为空；`save→load→save` 逐字节一致。（这条最难，也最能证明设计正确）
+- **确定性 round-trip**：`save → load → save` 文本逐字节一致。
+- headless 能从 `.scn` 加载并跑固定帧数。
 - 手写一个 20 行的 `.scn`（不经工具生成）能被正确加载。
 - 加载一个含未知属性/未知类的文件 → 不崩溃，warnings 列表准确指出行号与内容。
-- 序列化 1000 节点树的耗时与文件大小记录进 benchmark 报告。
+- 1000 节点文本场景记录文件大小、save/load 耗时。
 
-**产出物**：`yr_scene_conv` + round-trip 测试 + **格式规范**（写在 `engine/scene/include/yr/scene/scene_format.h` 的头注释里，不单独建文档）。**这是面试里最容易讲出深度的模块**（引用/循环/确定性三大难题）。
-**学习点**：格式设计、visitor 模式、token 解析（手写 lexer/parser，不用 lex/yacc）、二进制布局与对齐、确定性输出（保序容器、浮点格式化）。
+**产出物**：round-trip 测试 + headless 加载 + **格式规范**（写在 `engine/scene/include/yr/scene/scene_format.h` 的头注释里，不单独建文档）。**这是面试里最容易讲出深度的模块**（引用/循环/确定性三大难题）。
+**学习点**：格式设计、手写 lexer/parser、round-trip 测试、确定性输出（保序容器、浮点格式化）。
 **常见坑**：① 浮点数文本化精度丢失（用 `%.17g` 或直接存十六进制位模式）；② `Dict` 用 `unordered_map` 导致输出顺序不定 → §4.3 已规定用保序 vector；③ 节点 index 与父子关系混在一起导致解析要两遍（就是要两遍，别抗拒）；④ 字符串转义（`\n`、引号、UTF-8）；⑤ 文件路径平台分隔符。
-**Godot 对照**：`scene/resources/resource_format_text.cpp/.h`（`.tscn` 的完整读写实现，**M8 精读，对照你的格式设计**）、`core/io/resource_format_binary.cpp`（`.res` 二进制 + 版本兼容处理）、`scene/resources/packed_scene.h/.cpp`（`PackedScene::instantiate` 的 node data / connection / edit state 三张表）、`tests/core/io/test_scenes.cpp`（Godot 怎么测场景存读档）、`core/variant/variant_parser.h`。
-**降级方案**：二进制格式推到 M11（先只做文本）；`PackedScene` 先做扁平版（不支持内嵌子资源与场景嵌套实例化）。
+**Godot 对照**：`scene/resources/resource_format_text.cpp/.h`（`.tscn` 的完整读写实现，**M8 精读，对照你的格式设计**）、`scene/resources/packed_scene.h/.cpp`（`PackedScene::instantiate` 的 node data / connection / edit state 三张表）、`tests/core/io/test_scenes.cpp`（Godot 怎么测场景存读档）、`core/variant/variant_parser.h`。
+**降级方案**：二进制不做（D25）；`PackedScene` 先做扁平版（不支持内嵌子资源与场景嵌套实例化）。
 
 ---
 
@@ -514,7 +512,7 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 - [ ] `yr/asset/asset_uid.h`：`AssetUID`（内容哈希或稳定 ID）+ `path ↔ uid` 映射表（对照 Godot `resource_uid.h`）
 - [ ] `yr/asset/resource.h`：`Resource : RefCounted`（source_path / uid / 加载状态 / 元数据）
 - [ ] `yr/asset/file_access.h`：`IFileAccess` 抽象 + `DiskFileAccess` + **`MemoryFileAccess`（测试用，见原则 P5）**
-- [ ] `yr/asset/format_loader.h`：`IResourceFormatLoader` + 按扩展名分派注册表；实现 `.yrres`（M8 的二进制/文本资源）、`.json`、`.txt`、`.scn`
+- [ ] `yr/asset/format_loader.h`：`IResourceFormatLoader` + 按扩展名分派注册表；实现 `.yrres`（资源格式：文本或二进制，M9 再定）、`.json`、`.txt`、`.scn`
 - [ ] `yr/asset/asset_database.h/.cpp`：`AssetDatabase`（同步 `load<T>`、异步 `request_load`、in-flight 合并、`pump()`、`collect_garbage()`、`AssetStats`）
 - [ ] 异步加载：**先做单线程版**（`request_load` 只是入队，`pump()` 里同步执行），M10 再换成 job；这个"错的但能跑的"版本要记进 ADR
 - [ ] 慢 IO 模拟：`ThrottledFileAccess`（每次读 sleep N ms），用来**证明异步加载不卡帧**（这是本里程碑的核心测试）

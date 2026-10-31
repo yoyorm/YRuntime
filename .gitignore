@@ -25,7 +25,6 @@ compile_commands.json
 
 # ===== YRuntime 运行时产物 =====
 *.yrpak
-*.scnb
 /*.csv                     # FrameStats 导出；根目录限定，别用 *.csv（会误伤 notes/evidence）
 
 # ===== 调试 / 剖析产物 =====

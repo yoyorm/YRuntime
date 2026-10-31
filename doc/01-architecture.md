@@ -37,17 +37,17 @@ graph TD
     RIF["yr_render_iface<br/><i>yr::render</i><br/>RenderSnapshot · RendererBackend<br/>纯 POD 契约，零 Runtime 依赖"]
 
     EVT["yr_event<br/><i>yr::evt</i><br/>EventBus（单线程）·MessageQueue（推迟）"]
-    SER["yr_serialize<br/><i>yr::ser</i><br/>VariantCodec·Text/Binary Writer"]
+    SER["yr_serialize<br/><i>yr::ser</i><br/>VariantCodec·Text Writer"]
     AST["yr_asset<br/><i>yr::asset</i><br/>Resource·AssetDatabase·Loader/Saver·Pak"]
 
-    SCN["yr_scene<br/><i>yr::scene</i><br/>Node·SceneTree·PackedScene·SceneSerializer"]
+    SCN["yr_scene<br/><i>yr::scene</i><br/>Node·SceneTree·PackedScene·SceneReader/Writer"]
     ENG["yr_engine<br/><i>yr::engine</i><br/>Engine·MainLoop·FrameStats<br/>World（规划中）·RenderExtract（已实现）"]
 
     RNULL["yr_render_null"]
     RVK["yr_render_vulkan<br/>最小重写 + 选择性借鉴 Yo_Renderer 底层"]
 
     APPS["apps/runtime_headless（已实现）<br/>apps/render_demo（M7 已实现）"]
-    TOOLS["tools/yr_pack · yr_scene_conv · yr_inspect（规划中）"]
+    TOOLS["tools/yr_pack · yr_inspect（规划中）"]
     TESTS["tests/ 每层一个 Catch2 target"]
 
     CORE --> JOB & OBJ & RIF
@@ -121,12 +121,11 @@ YRuntime/
 │   └── render_demo/            # M7：Runtime 驱动的画面（首个主要作品节点）
 ├── tools/
 │   ├── yr_pack/                # assets/ → .yrpak
-│   ├── yr_scene_conv/          # 文本场景 ↔ 二进制场景
 │   └── yr_inspect/             # 反射查看器（M2 产出）
 ├── tests/
 │   ├── core/  object/  event/  serialize/  asset/  scene/  engine/  render/
 │   └── CMakeLists.txt          # 每层一个 Catch2 target，全部注册到 ctest
-├── third_party/                # nlohmann_json（M8 前期用）、GLM、Catch2（若不用系统包）
+├── third_party/                # GLM、Catch2（若不用系统包）；JSON 依赖等有消费者再加（D25）
 ├── assets/                     # 源资源（示例场景、模型、贴图）
 ├── doc/                        # 本目录
 ├── .clang-format  .clang-tidy  .gitignore  .editorconfig
@@ -513,28 +512,15 @@ class PakFileAccess : public IFileAccess { /* 从 .yrpak 读，M11 */ };
 
 ```cpp
 namespace yr::ser {
-class IWriter { /* 结构化输出：begin_object/name/value/begin_array/end_* */ };
-class IReader { /* 对称的输入 + 未知字段跳过 + 错误位置报告 */ };
-class TextWriter : public IWriter;   // 人类可读、可 diff、可手写（.scn / .yrres）
-class BinaryWriter : public IWriter; // 紧凑、快、带版本头（.scnb）
-class JsonWriter : public IWriter;   // 调试/互操作，复用 nlohmann_json
-class VariantCodec;                  // Variant ↔ 文本/二进制值
+class VariantCodec;   // Variant ↔ 文本值
 }
 
 // Scene 结构、PackedScene 与场景存读档属于 scene 层；yr_serialize 不反向依赖 scene。
 namespace yr::scene {
-class PackedScene; // 纯数据 IR
-
-struct SerializeContext {
-  ClassDB* classes; AssetDatabase* assets;
-  std::vector<std::string> warnings;          // 未知属性、类型不匹配 → 收集而不是中断
-};
-
-class SceneSerializer {
- public:
-  static bool save(const Node* root, ser::IWriter&, SerializeContext&);
-  static std::unique_ptr<Node> load(ser::IReader&, SerializeContext&);
-};
+class PackedScene;    // 纯数据 IR
+class SceneReader;
+class SceneWriter;
+struct SceneDiagnostic;
 }
 ```
 
@@ -543,6 +529,8 @@ class SceneSerializer {
 |---|---|
 | **引用**：场景里两个节点指向同一个资源，存两份还是存一份？ | 引入 **node index 表**（对照 Godot `.tscn` 的 `[node name=... parent=...]` + `ExtResource(id)` / `SubResource(id)`）。外部资源存路径/UID，内嵌子资源存 ID，节点间引用存 node index。 |
 | **循环引用**：A 引用 B，B 引用 A | 两遍法：第一遍写所有对象并分配 ID，第二遍写引用（只写 ID）。Godot `.tscn` 就是这个结构 |
+
+> **格式策略（D25）**：场景源格式只做文本 `.scn`；二进制/JSON 导出不进当前计划，等 M9/M11 有 cooked/runtime 消费者再做。
 
 > **版本策略（D24）**：当前 `.scn` 不做文本版本号与迁移链；未知字段 warning + 跳过、缺失属性用默认值。等出现外部存档/已发布资产再引入。
 
@@ -561,8 +549,8 @@ position = Vector3(0, 2, 4)
 ```
 
 > **以 `engine/scene/include/yr/scene/scene_format.h` 为准**：支持 Node / position / parent 路径、`ExtResource` / `SubResource` 表、`[connection]` 的 from/to（NodeRef 的唯一消费者）。引用只存在于 scene IR，不进入 `Variant`；`index`、`rotation`、NodePath 属性仍属后续里程碑。
-**Godot 对照**：`scene/resources/resource_format_text.cpp/.h`（`.tscn` 文本格式读写，**M8 必读**）、`core/io/resource_format_binary.cpp`（`.res` 二进制）、`scene/resources/packed_scene.h/.cpp`（`PackedScene` = 场景的内存中间表示，节点数据 + 连接 + 编辑信息）。
-**学习点**：格式设计、visitor 模式、版本迁移、round-trip 测试、字节序与对齐（二进制格式）。
+**Godot 对照**：`scene/resources/resource_format_text.cpp/.h`（`.tscn` 文本格式读写，**M8 必读**）、`scene/resources/packed_scene.h/.cpp`（`PackedScene` = 场景的内存中间表示，节点数据 + 连接 + 编辑信息）。
+**学习点**：格式设计、手写 lexer/parser、round-trip 测试、确定性输出（保序容器、浮点格式化）。
 
 ### 4.10 `JobSystem` —— 并行
 
@@ -811,10 +799,10 @@ sequenceDiagram
 | M5 | + `yr_render_iface`, `yr_render_null` | 快照契约 + 空后端（renderer-neutral，不碰图形 API） |
 | M6 | + `yr_render_vulkan` | 最小 Vulkan bootstrap（窗口 + 清屏 + 硬编码三角形，不接快照） |
 | M7 | + `apps/render_demo` | **首个主要作品节点**：Snapshot 驱动画面 |
-| M8 | + `yr_serialize` | 文本/二进制 + PackedScene + 场景存读档 |
+| M8 | + `yr_serialize` | 文本 + PackedScene + 场景存读档 |
 | M9 | + `yr_asset` | Resource/AssetDatabase/异步加载 + AssetHandle→GPU 桥接 |
 | M10 | + `yr_job` | JobSystem，回填到 asset/transform |
-| M11 | + `tools/yr_pack`, `yr_scene_conv` | 打包与工具链打磨 |
+| M11 | + `tools/yr_pack` | 打包与工具链打磨 |
 
 > `yr_job` 名义上排在 M10，但 **M9 的异步加载会先逼出一个最简版本**（单线程 IO + 回调）。
 > 这是正常的：先写"错的但能跑的"，再重构。记得在 `06-decisions.md` 记录这次演进。

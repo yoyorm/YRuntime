@@ -126,7 +126,7 @@ TEST_CASE("Node: queue_free during own kProcess is deferred to phase 9", "[scene
 | EventBus | §4.5 那三条重入语义、Subscription RAII、**同输入两次运行日志逐字节相同** |
 | Node/SceneTree | 生命周期顺序（前序/后序）、四种删除场景、遍历中新增、NodePath 解析 |
 | MainLoop | 固定步长累加器（含抖动输入）、暂停/时间缩放、spiral-of-death 上限、阶段顺序（用探针记录实际顺序并断言） |
-| 序列化 | **round-trip 逐字节一致**、手写文件加载、未知属性容忍、版本迁移、循环引用 |
+| 序列化 | **round-trip 逐字节一致**、手写文件加载、未知属性容忍、循环引用 |
 | AssetDatabase | in-flight 合并、失败路径、GC 卸载、慢 IO 不卡帧（ThrottledFileAccess） |
 | JobSystem | 结果与串行一致（含浮点）、优雅停机、`wait_all` 在 worker 调用要 assert、`--jobs 0` 全测试仍过 |
 | RenderSnapshot | dump/replay round-trip、POD 检查（`static_assert(std::is_trivially_copyable_v<...>)`） |

@@ -6,7 +6,7 @@ namespace yr::scene {
 
   // .scn 场景文本格式。本头注释是格式的唯一真相源。
   //
-  // 命名：文本 .scn；二进制 .scnb（M8c 才实现，这里只保留扩展名常量）。
+  // 命名：文本 .scn。
   // 编码：UTF-8；读取忽略开头 BOM，保存不写；读取接受 LF/CRLF，保存一律 LF。
   // 注释：'#' 到行尾（引号内除外）；空行忽略。
   //
@@ -73,13 +73,12 @@ namespace yr::scene {
   // 诊断：line/column 都是 1-based；error 使加载失败，warning 继续。
   // 未知 section → warning + 跳过。
   //
-  // 暂不做：版本号/迁移、.scnb、JSON、NodePath 属性、通用 NodeRef 属性值、
+  // 暂不做：版本号/迁移、二进制格式、JSON、NodePath 属性、通用 NodeRef 属性值、
   // rotation/scale、默认值省略、编辑器/异步加载、游戏存档。
   // NodeRef 只用于 [connection] 的 from/to，不作为任意属性值。
 
   inline constexpr std::string_view kSceneHeader = "[scene]";
   inline constexpr std::string_view kSceneTextExtension = ".scn";
-  inline constexpr std::string_view kSceneBinaryExtension = ".scnb";
 
   // node name 的唯一规则源：reader 校验与 writer 保存共用，避免两套规则漂移。
   // "." / ".." 保留给 parent path（"." = 根），不能作为节点名。
