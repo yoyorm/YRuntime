@@ -94,7 +94,7 @@
 - [ ] `RendererBackend` 接口存在，`NullBackend` 与 `VulkanBackend` 都实现它，可在启动参数切换。
 - [ ] 最小 Vulkan bootstrap（窗口 + 清屏 + 硬编码三角形）与 `RenderSnapshot` 接入**分两步**完成（新 M6 / 新 M7）。
 - [ ] `apps/render_demo` 中，修改 Runtime 里的游戏状态（移动一个 Node）→ 画面同步变化，Vulkan validation layer 零 error。
-- [ ] M9.5：ToyCar（或等价 glTF）在基础 PBR 材质、平行光/点光、单张阴影下正确显示；validation 0；不含 IBL/skybox/GUI。
+- [ ] M9.5：ToyCar（仓库内）与 Sponza（外部路径，压力测试）在基础 PBR 材质、平行光/点光、单张阴影下正确显示；validation 0；不含 IBL/skybox/GUI。
 - [ ] Runtime 侧代码 **零** `#include <vulkan/...>`（CI grep 检查）——这是"解耦"的硬指标。
 
 ### 4.4 工具链

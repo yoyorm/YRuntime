@@ -511,6 +511,12 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 
 **目标**：资源有身份（UID）、有注册表、有引用计数、能异步加载不卡帧、能自动卸载；并用**正式 `AssetUID`/`AssetDatabase` 替换 M5 的临时内建 triangle/default material 注册表**，正式完成 `AssetHandle → GPU` 资源桥接。
 
+> **M9 顺序（D26）**：M9.0 walking skeleton（真实资产 + 同步加载 + 一个 PBR 物体上屏）→ M9.1 AssetDatabase/GC → M9.2 协作式异步 + streaming → M9.5 完整 PBR。最终场景：ToyCar（仓库内）+ Sponza（外部路径，压力测试，不进仓库）。每个子系统必须有 demo 消费者，否则删除。
+
+- [ ] M9-0 RefCounted + Ref<T>（手写锚点）
+- [ ] M9.0 walking skeleton：AssetUID/Resource + Mesh/Material/Texture + 同步加载 + 一个带贴图的 PBR 物体上屏
+- [ ] M9.1 AssetDatabase：缓存 / refcount / evict / GC
+- [ ] M9.2 协作式异步：每帧预算分块读 + ThrottledFileAccess + streaming demo
 - [ ] `yr/asset/asset_uid.h`：`AssetUID`（内容哈希或稳定 ID）+ `path ↔ uid` 映射表（对照 Godot `resource_uid.h`）
 - [ ] `yr/asset/resource.h`：`Resource : RefCounted`（source_path / uid / 加载状态 / 元数据）
 - [ ] `yr/asset/file_access.h`：`IFileAccess` 抽象 + `DiskFileAccess` + **`MemoryFileAccess`（测试用，见原则 P5）**
@@ -550,7 +556,7 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 - 节点：`MeshInstanceNode` / `LightNode` / `CameraNode`（`yr_scene`）；只存 `AssetUID`/POD，`RenderExtractSystem`（`yr_engine`）解析成快照，`yr_scene` 不依赖 `yr_render_iface`。
 - 快照：增加 `LightPod`、`CameraPod.eye`；`DrawItem.mesh/material` 变成真实 handle；字段只在有真实消费者时加入。
 - 后端：set 0（camera/lights/shadow）+ set 1（材质四贴图 + params）；PBR opaque/mask pipeline、shadow pass；GLSL + `glslc`。
-- 资产：默认 ToyCar（约 12M）；Sponza 等大场景外部可选，不进仓库。
+- 资产：ToyCar（约 12M）进仓库；Sponza 作为外部路径的压力场景，不进仓库。
 
 **验收标准**
 - ToyCar 在 PBR 材质 + 平行光/点光 + 单张阴影下正确显示；validation 0。

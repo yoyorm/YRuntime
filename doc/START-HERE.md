@@ -18,24 +18,38 @@
 | **M6 最小 Vulkan Bootstrap** | ✅ 已完成 / 收口（2026-10-23）—— M6-1 外壳 + M6-2 Surface / Device / 队列 + M6-3 Swapchain / 清屏上屏 + M6-4 N 帧在飞 + 硬编码三角形 + M6-5 健壮性（resize / 最小化手测、soak） |
 | **M7 Snapshot 驱动画面** | ✅ 已完成 / 收口（2026-10-24）—— 7a/7b/7c/7d/7e：MainLoop 接线、DrawItem/Camera、WASD、dump/replay、帧统计、600s soak、resize、GIF/PNG；双/三缓冲按 D22 推迟 |
 | **M8 序列化** | ✅ 已完成 / 收口（2026-10-31）—— M8a 文本；M8b 引用/连接；M8c headless `--scene` 加载与 1000 节点 benchmark；364 tests |
-| M9 ~ M11 | ⬜ 未开始（M9 后插入 M9.5 基础 PBR，D21） |
+| **M9 资源系统** | 🔨 进行中（M9-0 `RefCounted` / `Ref<T>` 脚手架已生成，核心语义待用户手写） |
+| M9.5 ~ M11 | ⬜ 未开始（M9.5 基础 PBR，D21） |
 
-**远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend ✅ → M6 最小 Vulkan bootstrap ✅ → M7 Snapshot 驱动画面（首个主要作品节点）✅ → M8 序列化 ✅ → M9 资源系统 → M9.5 基础 PBR 内容（D21）→ M10 任务系统 → M11 工具链打磨。**当前唯一任务：M9。**
+**远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend ✅ → M6 最小 Vulkan bootstrap ✅ → M7 Snapshot 驱动画面（首个主要作品节点）✅ → M8 序列化 ✅ → M9 资源系统 → M9.5 基础 PBR 内容（D21）→ M10 任务系统 → M11 工具链打磨。**当前唯一任务：M9-0（手写 RefCounted / Ref<T>）。**
 
 进度**只在两处维护**：根 `README.md` 的里程碑表（对外）+ `02-roadmap.md` 的 checkbox（对内）。
 别的地方不要重复记录，否则一定会漂移。
 
 ---
 
-## 2. 下一步：M9 资源系统（M8 已收口）
+## 2. 下一步：M9-0 手写 RefCounted / Ref<T>
 
 M8 已收口（2026-10-31）：M8a `.scn` 文本 + Node/position/父子路径；M8b 引用/连接；M8c `yr_runtime_headless --scene` 加载（样例 2 节点 / 140 B / 71 µs；1000 节点 / 73,886 B / ~15.9 ms）；364/364 tests。文本格式不做版本号与迁移（D24）；二进制/JSON 不做（D25）。
 
-下一步 **M9 资源系统**：
+**最终切片（D26）**：ToyCar（仓库内，视觉/PBR）+ Sponza（外部路径，资源/并行压力测试，大资产不进仓库）。M9 顺序：M9.0 walking skeleton → M9.1 AssetDatabase/GC → M9.2 协作式异步 + streaming → M9.5 完整 PBR。每个子系统必须出现在视觉/流式/并行 demo 中，否则删除。测试由 coder 编写并单独提交；你只写核心实现。
 
-1. 先做 `RefCounted` / `Ref` 的最小实现；
-2. 再由用户手写核心（Resource / AssetDatabase / 异步加载边界）；
-3. 详细清单与验收见 `02-roadmap.md` M9。
+M9-0 脚手架已生成：`RefCounted` / `Ref<T>` 接口、隐藏测试骨架、机械接线。当前方法体是 TODO，默认 ctest 仍全绿；隐藏测试会失败，这是留给你的 TDD 目标。
+
+手写清单：
+
+1. `RefCounted::ref/unref/refcount`：atomic 计数、memory_order、归零返回值。
+2. `Ref<T>`：拷贝 ref、移动偷指针、赋值/析构/reset 在 `unref()` 返回 true 时 delete；自赋值安全。
+3. `make_ref` 保持 `make_unique(...).release()` 交接。
+
+验收：
+
+```bash
+./build/debug-vk/bin/YrTests_object "[todo]"   # 全绿
+ctest --test-dir build/debug-vk                # 默认仍全绿
+```
+
+循环引用不解决（按设计，WeakRef 以后再说）。详细清单见 `02-roadmap.md` M9-0 与 `doc/layers/object.md`。
 
 ### M7 复盘题（已收口，供面试自测）
 

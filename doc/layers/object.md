@@ -21,6 +21,24 @@
 - **Godot 对照**：`core/object/object.h`。
 - **遗留 / 已知缺口**：反射相关的 `get/set`、`notification`、`klass()` 与 `YR_CLASS` / `YR_PROPERTY` 宏未实现（注册宏见 `class_macros.h`，目前只有 `STR` / `CONCAT` 两个词法辅助宏）。
 
+## RefCounted / Ref（`obj::RefCounted` / `obj::Ref<T>`，M9-0 脚手架）
+
+- **职责**：引用计数基类 + 强引用智能指针；M9 资源系统的所有权基础。
+- **当前状态**：接口、TODO 空实现、隐藏测试骨架已就位；默认 ctest 全绿，`YrTests_object "[todo]"` 会在用户实现前失败。
+- **公开 API**：
+  - `RefCounted`：`ref() const` / `bool unref() const` / `uint32_t refcount() const`；`mutable atomic<uint32_t> refcount_{0}`。
+  - `Ref<T>`：默认 / 接管 / 拷贝 / 移动 / 派生到基类转换构造；拷贝赋值 / 移动赋值 / `reset()`；`get()` / `operator->` / `operator*` / `operator bool` / `valid()`。
+  - `make_ref<T>(Args&&...)`。
+- **契约**：
+  - 构造时计数为 0；`Ref` 持有时计数必须 >= 1。
+  - `ref()` 递增；`unref()` 递减，**返回 true 表示刚归零，调用方负责 `delete`**。
+  - `Ref` 拷贝 `ref()`；移动偷指针不改变计数；`reset()` / 析构 / 赋值替换旧值时，只有 `unref()` 返回 true 才 `delete`。
+  - 自赋值必须安全；`make_ref` 用 `make_unique<T>(...).release()` 交给 `Ref<T>` 接管。
+  - **不解决循环引用**；`WeakRef` 以后再说。
+  - 内存序 TODO：单线程可用 relaxed；跨线程释放/获取需要 acquire/release 或更强。当前实现不假设线程安全。
+- **隐藏测试**：`./build/debug-vk/bin/YrTests_object "[todo]"`。
+- **Godot 对照**：`core/object/ref_counted.h/.cpp`。
+
 ## ObjectDB（`obj::ObjectDB`）
 
 - **职责**：全局、**非拥有**的 `ObjectID → Object*` 索引。

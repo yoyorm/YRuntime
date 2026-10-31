@@ -77,7 +77,7 @@
 | **M7** | **Runtime 驱动的 Vulkan 画面 + WASD + dump/replay + 帧统计** ← 首个主要视觉作品节点 | **GIF + PNG + Mermaid 架构图** | `doc/media/m7-render-demo.gif` / `m7-snapshot.png` |
 | M8 | 手写 `.scn` + save→load→save round-trip + 引用/连接 + headless 加载（M8 完成） | 截图 + 格式规范（写进 `engine/scene/include/yr/scene/scene_format.h` 头注释） | `doc/media/` |
 | M9 | 慢 IO 下异步加载不卡帧（E10）+ AssetHandle→GPU 桥接 | 帧时间曲线图（Python 画） | `benchmarks/README.md` |
-| M9.5 | 基础 PBR 内容（ToyCar + 平行光/点光 + 单张阴影，D21） | 截图 / GIF | `doc/media/` |
+| M9.5 | 基础 PBR 内容（ToyCar 仓库内 + Sponza 外部压力场景 + 平行光/点光 + 单张阴影，D21/D26） | 截图 / GIF + 资源/并行数据 | `doc/media/` |
 | M10 | 并行加速比曲线 + false sharing 实测（E11/E12） | 数据表 + 图 | `benchmarks/README.md` |
 | M11 | `.yrpak` 打包 + 完整文档（覆盖率徽章可选） | README + CI | 根目录 |
 
