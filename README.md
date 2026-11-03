@@ -44,7 +44,8 @@ Runtime，再以 renderer-neutral 的渲染契约把游戏状态接到渲染后�
 | M6 最小 Vulkan Bootstrap | 完成 | 窗口 + 清屏 + 硬编码三角形；N 帧在飞 |
 | M7 Snapshot 驱动画面 | 完成 | MainLoop 接线 + DrawItem/Camera + WASD + dump/replay + 帧统计；双/三缓冲按 D22 推迟 |
 | M8 序列化 | 完成 | M8a `.scn` 文本；M8b 引用/连接；M8c headless `--scene` 加载 + 1000 节点 benchmark |
-| M9+ 资源 / 基础 PBR / 任务 / 工具链 | 未开始 | 见路线图 |
+| M9 资源系统 | 进行中 | RefCounted/Ref + AssetUID/Resource 类型；下一步 ToyCar glTF |
+| M9.5+ 基础 PBR / 任务 / 工具链 | 未开始 | 见路线图 |
 
 进度同时维护在根 README 与 [`doc/02-roadmap.md`](doc/02-roadmap.md)。
 

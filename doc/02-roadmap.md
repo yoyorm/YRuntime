@@ -514,7 +514,9 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 > **M9 顺序（D26）**：M9.0 walking skeleton（真实资产 + 同步加载 + 一个 PBR 物体上屏）→ M9.1 AssetDatabase/GC → M9.2 协作式异步 + streaming → M9.5 完整 PBR。最终场景：ToyCar（仓库内）+ Sponza（外部路径，压力测试，不进仓库）。每个子系统必须有 demo 消费者，否则删除。
 
 - [x] M9-0 RefCounted + Ref<T>（AI 实现，用户 review；8478fcc）
-- [ ] M9.0 walking skeleton：AssetUID/Resource + Mesh/Material/Texture + 同步加载 + 一个带贴图的 PBR 物体上屏
+- [x] M9.0a AssetUID + Resource + Mesh/Material/Texture 数据类型（8821ff0）
+- [ ] M9.0b 同步加载：复用 Yo_Renderer 的 GltfLoader + tinyGLTF，把 ToyCar 读成 `Ref<Mesh/Material/Texture>`
+- [ ] M9.0c 一个带贴图的 PBR 物体上屏：snapshot uploads/releases + Node 持 Ref
 - [ ] M9.1 AssetDatabase：缓存 / refcount / evict / GC
 - [ ] M9.2 协作式异步：每帧预算分块读 + ThrottledFileAccess + streaming demo
 - [ ] `yr/asset/asset_uid.h`：`AssetUID`（内容哈希或稳定 ID）+ `path ↔ uid` 映射表（对照 Godot `resource_uid.h`）

@@ -18,10 +18,10 @@
 | **M6 最小 Vulkan Bootstrap** | ✅ 已完成 / 收口（2026-10-23）—— M6-1 外壳 + M6-2 Surface / Device / 队列 + M6-3 Swapchain / 清屏上屏 + M6-4 N 帧在飞 + 硬编码三角形 + M6-5 健壮性（resize / 最小化手测、soak） |
 | **M7 Snapshot 驱动画面** | ✅ 已完成 / 收口（2026-10-24）—— 7a/7b/7c/7d/7e：MainLoop 接线、DrawItem/Camera、WASD、dump/replay、帧统计、600s soak、resize、GIF/PNG；双/三缓冲按 D22 推迟 |
 | **M8 序列化** | ✅ 已完成 / 收口（2026-10-31）—— M8a 文本；M8b 引用/连接；M8c headless `--scene` 加载与 1000 节点 benchmark；364 tests |
-| **M9 资源系统** | 🔨 进行中（M9-0 `RefCounted` / `Ref<T>` 脚手架已生成，核心语义待用户手写） |
+| **M9 资源系统** | 🔨 进行中（M9-0 `RefCounted`/`Ref`；M9.0a AssetUID/Resource/Mesh/Material/Texture；下一步 ToyCar glTF 同步加载） |
 | M9.5 ~ M11 | ⬜ 未开始（M9.5 基础 PBR，D21） |
 
-**远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend ✅ → M6 最小 Vulkan bootstrap ✅ → M7 Snapshot 驱动画面（首个主要作品节点）✅ → M8 序列化 ✅ → M9 资源系统 → M9.5 基础 PBR 内容（D21）→ M10 任务系统 → M11 工具链打磨。**当前唯一任务：M9-0（手写 RefCounted / Ref<T>）。**
+**远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend ✅ → M6 最小 Vulkan bootstrap ✅ → M7 Snapshot 驱动画面（首个主要作品节点）✅ → M8 序列化 ✅ → M9 资源系统 → M9.5 基础 PBR 内容（D21）→ M10 任务系统 → M11 工具链打磨。**当前唯一任务：M9.0b ToyCar glTF 同步加载。**
 
 进度**只在两处维护**：根 `README.md` 的里程碑表（对外）+ `02-roadmap.md` 的 checkbox（对内）。
 别的地方不要重复记录，否则一定会漂移。
@@ -38,12 +38,14 @@ M8 已收口（2026-10-31）：M8a `.scn` 文本 + Node/position/父子路径；
 
 M9-0 已完成（`8478fcc`）：`RefCounted` / `Ref<T>` 实现，隐藏测试 7/7、31 assertions；默认 364/364。循环引用不解决（WeakRef 以后再说）。
 
-下一步 **M9.0 walking skeleton**：
+M9.0a 已完成（`8821ff0`）：`AssetUID`（canonical path FNV-1a 64）、`Resource` 状态机、`Texture`/`Mesh`/`Material`；`YrTests_asset` 14 cases，全量 378/378。
 
-1. `AssetUID` + `Resource` + `Mesh` / `Material` / `Texture` 类型；
-2. 同步加载（最小 `.yrres` 或复用 Yo_Renderer 的 glTF loader）；
-3. 一个带贴图的 PBR 物体上屏；
-4. 目标是证明“资源 → AssetHandle → GPU”链路的真实消费者，不先做完整 AssetDatabase。
+下一步 **M9.0b ToyCar glTF 同步加载**：
+
+1. 复用 Yo_Renderer 的 `GltfLoader` + `third_party/tinyGLTF`；
+2. ToyCar 进仓库，Sponza 外部路径；
+3. 输出 `Ref<Mesh>` / `Ref<Material>` / `Ref<Texture>`，先不做 AssetDatabase；
+4. 测试用最小 glTF/ToyCar 的 mesh/material/texture 数据，不接渲染。
 
 coder 实现，用户 review 契约与关键 diff；测试由 coder 写。详细计划见 `02-roadmap.md` M9。
 
