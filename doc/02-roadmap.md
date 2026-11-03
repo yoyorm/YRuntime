@@ -513,7 +513,7 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 
 > **M9 顺序（D26）**：M9.0 walking skeleton（真实资产 + 同步加载 + 一个 PBR 物体上屏）→ M9.1 AssetDatabase/GC → M9.2 协作式异步 + streaming → M9.5 完整 PBR。最终场景：ToyCar（仓库内）+ Sponza（外部路径，压力测试，不进仓库）。每个子系统必须有 demo 消费者，否则删除。
 
-- [ ] M9-0 RefCounted + Ref<T>（手写锚点）
+- [ ] M9-0 RefCounted + Ref<T>（AI 实现，用户 review）
 - [ ] M9.0 walking skeleton：AssetUID/Resource + Mesh/Material/Texture + 同步加载 + 一个带贴图的 PBR 物体上屏
 - [ ] M9.1 AssetDatabase：缓存 / refcount / evict / GC
 - [ ] M9.2 协作式异步：每帧预算分块读 + ThrottledFileAccess + streaming demo

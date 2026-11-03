@@ -28,15 +28,15 @@
 
 ---
 
-## 2. 下一步：M9-0 手写 RefCounted / Ref<T>
+## 2. 下一步：M9-0 实现 RefCounted / Ref<T>
 
 M8 已收口（2026-10-31）：M8a `.scn` 文本 + Node/position/父子路径；M8b 引用/连接；M8c `yr_runtime_headless --scene` 加载（样例 2 节点 / 140 B / 71 µs；1000 节点 / 73,886 B / ~15.9 ms）；364/364 tests。文本格式不做版本号与迁移（D24）；二进制/JSON 不做（D25）。
 
-**最终切片（D26）**：ToyCar（仓库内，视觉/PBR）+ Sponza（外部路径，资源/并行压力测试，大资产不进仓库）。M9 顺序：M9.0 walking skeleton → M9.1 AssetDatabase/GC → M9.2 协作式异步 + streaming → M9.5 完整 PBR。每个子系统必须出现在视觉/流式/并行 demo 中，否则删除。测试由 coder 编写并单独提交；你只写核心实现。
+**最终切片（D26）**：ToyCar（仓库内，视觉/PBR）+ Sponza（外部路径，资源/并行压力测试，大资产不进仓库）。M9 顺序：M9.0 walking skeleton → M9.1 AssetDatabase/GC → M9.2 协作式异步 + streaming → M9.5 完整 PBR。每个子系统必须出现在视觉/流式/并行 demo 中，否则删除。
 
-M9-0 脚手架已生成：`RefCounted` / `Ref<T>` 接口、隐藏测试骨架、机械接线。当前方法体是 TODO，默认 ctest 仍全绿；隐藏测试会失败，这是留给你的 TDD 目标。
+**执行模式（D27）**：coder 负责实现、测试、CMake、文档机械同步；用户 review 契约与关键 diff，不再手写核心。
 
-手写清单：
+M9-0 状态：接口、隐藏测试和机械接线已提交；`ref_counted.cpp` / `ref.h` 仍是 TODO。下一步由 coder 补完：
 
 1. `RefCounted::ref/unref/refcount`：atomic 计数、memory_order、归零返回值。
 2. `Ref<T>`：拷贝 ref、移动偷指针、赋值/析构/reset 在 `unref()` 返回 true 时 delete；自赋值安全。
