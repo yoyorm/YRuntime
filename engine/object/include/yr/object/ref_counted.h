@@ -7,17 +7,20 @@
 
 namespace yr::obj {
 
-  // M9-0 脚手架：引用计数基类。计数语义由用户手写，当前实现是 TODO。
+  // M9-0：引用计数基类。
   //
   // - 构造时 refcount 为 0；Ref<T> 持有时计数必须 >= 1。
   // - unref() 递减；返回 true 表示计数刚归零，调用方负责 delete。
   // - ref()/unref()/refcount() 都是 const；refcount_ 为 mutable atomic。
-  // - 内存序待用户决定：单线程可 relaxed；跨线程释放/获取需要 acquire/release 或更强。
+  // - 内存序：add 用 relaxed（已持有引用者增加计数无需同步）；sub 用 acq_rel
+  //   （release 保证对象写入先于最终 delete 可见，acquire 保证最后一个释放者看到全部写入）；
+  //   load 用 relaxed（诊断用，不建立同步）。M9 单线程可用，M10 跨线程仍安全。
+  // - 析构断言 refcount()==0，捕获“还有引用却直接 delete”的所有权 bug。
   // - 不解决循环引用；WeakRef 推迟。
   class RefCounted : public Object {
   public:
     RefCounted() = default;
-    ~RefCounted() override = default;
+    ~RefCounted() override;
 
     // Object 已禁拷贝/移动；这里显式重申，避免派生类误以为可以值语义复制。
     RefCounted(const RefCounted&) = delete;
