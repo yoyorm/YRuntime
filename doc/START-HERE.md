@@ -28,7 +28,7 @@
 
 ---
 
-## 2. 下一步：M9-0 实现 RefCounted / Ref<T>
+## 2. 下一步：M9.0 walking skeleton
 
 M8 已收口（2026-10-31）：M8a `.scn` 文本 + Node/position/父子路径；M8b 引用/连接；M8c `yr_runtime_headless --scene` 加载（样例 2 节点 / 140 B / 71 µs；1000 节点 / 73,886 B / ~15.9 ms）；364/364 tests。文本格式不做版本号与迁移（D24）；二进制/JSON 不做（D25）。
 
@@ -36,20 +36,16 @@ M8 已收口（2026-10-31）：M8a `.scn` 文本 + Node/position/父子路径；
 
 **执行模式（D27）**：coder 负责实现、测试、CMake、文档机械同步；用户 review 契约与关键 diff，不再手写核心。
 
-M9-0 状态：接口、隐藏测试和机械接线已提交；`ref_counted.cpp` / `ref.h` 仍是 TODO。下一步由 coder 补完：
+M9-0 已完成（`8478fcc`）：`RefCounted` / `Ref<T>` 实现，隐藏测试 7/7、31 assertions；默认 364/364。循环引用不解决（WeakRef 以后再说）。
 
-1. `RefCounted::ref/unref/refcount`：atomic 计数、memory_order、归零返回值。
-2. `Ref<T>`：拷贝 ref、移动偷指针、赋值/析构/reset 在 `unref()` 返回 true 时 delete；自赋值安全。
-3. `make_ref` 保持 `make_unique(...).release()` 交接。
+下一步 **M9.0 walking skeleton**：
 
-验收：
+1. `AssetUID` + `Resource` + `Mesh` / `Material` / `Texture` 类型；
+2. 同步加载（最小 `.yrres` 或复用 Yo_Renderer 的 glTF loader）；
+3. 一个带贴图的 PBR 物体上屏；
+4. 目标是证明“资源 → AssetHandle → GPU”链路的真实消费者，不先做完整 AssetDatabase。
 
-```bash
-./build/debug-vk/bin/YrTests_object "[todo]"   # 全绿
-ctest --test-dir build/debug-vk                # 默认仍全绿
-```
-
-循环引用不解决（按设计，WeakRef 以后再说）。详细清单见 `02-roadmap.md` M9-0 与 `doc/layers/object.md`。
+coder 实现，用户 review 契约与关键 diff；测试由 coder 写。详细计划见 `02-roadmap.md` M9。
 
 ### M7 复盘题（已收口，供面试自测）
 

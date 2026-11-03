@@ -24,7 +24,7 @@
 ## RefCounted / Ref（`obj::RefCounted` / `obj::Ref<T>`，M9-0 脚手架）
 
 - **职责**：引用计数基类 + 强引用智能指针；M9 资源系统的所有权基础。
-- **当前状态**：接口、隐藏测试和机械接线已提交；核心由 coder 补完，用户 review 契约与关键 diff（D27）。
+- **当前状态**：已实现（`8478fcc`）；隐藏测试 7/7、31 assertions；默认 ctest 保持全绿。
 - **公开 API**：
   - `RefCounted`：`ref() const` / `bool unref() const` / `uint32_t refcount() const`；`mutable atomic<uint32_t> refcount_{0}`。
   - `Ref<T>`：默认 / 接管 / 拷贝 / 移动 / 派生到基类转换构造；拷贝赋值 / 移动赋值 / `reset()`；`get()` / `operator->` / `operator*` / `operator bool` / `valid()`。
