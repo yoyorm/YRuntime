@@ -19,7 +19,8 @@ namespace yr::obj {
     const std::uint32_t previous = refcount_.fetch_sub(1, std::memory_order_acq_rel);
     YR_ASSERT_MSG(previous > 0, "RefCounted::unref called with refcount 0");
     if (previous == 0) {
-      // 误用：debug 下断言已终止；release 下安全返回 false，不在这里再次递减或 delete。
+      // 误用：debug 下断言已终止；release 下把计数恢复为 0，避免 uint32 回绕污染后续计数。
+      refcount_.store(0, std::memory_order_relaxed);
       return false;
     }
     return previous == 1;
