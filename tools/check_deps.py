@@ -38,7 +38,7 @@ ALLOWED_DEPS: dict[str, set[str]] = {
     "render_iface":  {"core"},
     "event":         {"object", "core", "math"},
     "serialize":     {"object", "core"},
-    "asset":         {"object", "job", "core"},
+    "asset":         {"object", "job", "math", "core"},
     "scene":         {"object", "event", "serialize", "asset", "core", "math"},
     "engine":        {"scene", "asset", "event", "serialize", "object", "job",
                       "render_iface", "core"},

@@ -29,6 +29,7 @@ target_compile_options(yr_build_flags INTERFACE
 add_subdirectory(engine/core)
 add_subdirectory(engine/math)
 add_subdirectory(engine/object)
+add_subdirectory(engine/asset)
 add_subdirectory(engine/event)
 add_subdirectory(engine/serialize)
 add_subdirectory(engine/scene)
