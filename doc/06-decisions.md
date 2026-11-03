@@ -37,6 +37,7 @@
 | D25 | 场景源格式只做文本 `.scn`，二进制/JSON 不进当前计划 | **已确认** | M8 收口 |
 | D26 | 垂直切片优先：每个 Runtime 子系统必须有 demo 消费者 | **已确认** | M9 起 |
 | D27 | 默认执行模式：AI 实现，用户 review 契约与关键 diff | **已确认** | M9 起 |
+| D28 | 资源生命周期：Node 持 Ref；上传/卸载走 snapshot；单快照不做 generation | **已确认** | M9.0 |
 
 ---
 
@@ -470,6 +471,8 @@ CI 首次运行时 `apt-get install libcatch2-dev` 退出码 100，job 失败。
 
 **背景**：M6/M7 只证明渲染链路与快照解耦，画面仍是内建图元，不足以作为引擎岗作品的视觉证据。Yo_Renderer 已有一版可运行的 PBR 内容（Cook-Torrance + 材质贴图 + 光源 + 阴影），重新研究图形特性没有收益；需要的是把它接入 YRuntime 的 `SceneTree → RenderSnapshot → AssetDatabase → GPU` 链路。
 
+> 2026-11-03 更新：第 3 条“节点只存 AssetUID”被 D28 修正——序列化仍写 AssetUID，运行时节点持 `Ref` 作为 liveness。
+
 **决策**：
 1. **保留**：Cook-Torrance（D/G/F）、metallic-roughness、BaseColor/Normal/MetallicRoughness/Emissive、Directional/Point（≤8）、单张平行光阴影（PCF）、alpha mask、glTF 场景。
 2. **不做**：IBL/irradiance cubemap、skybox、spot light、alpha blend、ImGui/编辑器、sun orbit、shadow debug。
@@ -592,6 +595,31 @@ CI 首次运行时 `apt-get install libcatch2-dev` 退出码 100，job 失败。
 **后果**：+ 进度更快，用户聚焦判断结构是否合理；+ 测试与实现同源，少一层交接；− 用户对实现细节的“手感”会下降，需要靠 review 和复盘补。
 
 **什么情况下改回来**：用户希望重新练习某个模块（例如 JobSystem/线程池）时，可单独开 `learn/` worktree 手写，不影响主分支节奏。
+
+---
+
+## D28 · 资源生命周期：Node 持 Ref；上传/卸载走 snapshot；单快照不做 generation
+**状态**：已确认 · **里程碑**：M9.0
+
+**背景**：如果场景节点只存 `AssetUID`，它不参与引用计数，`AssetDatabase` 的 `refcount()==1` GC 会在节点仍在使用时卸载资源。另一方面，单快照 + 同步 present 下，CPU 侧 release 一定早于 GPU 完成；只要延迟销毁队列保存具体 GPU 对象，就不需要为 UID 加 generation。
+
+**决策**：
+1. 序列化仍写 `AssetUID`；运行时 `MeshInstanceNode` / `Material` 持 `Ref<Mesh>` / `Ref<Material>`，作为 liveness 的唯一来源。
+2. `AssetDatabase` 持强 `Ref<Resource>` 缓存；GC 用 `refcount()==1` 判断“只剩 DB”。
+3. 上传/卸载走 `RenderSnapshot`：`uploads` / `releases`；`present` **先处理 releases，再处理 uploads**。
+4. 延迟销毁队列保存**具体旧 GPU 资源**（VkImage/VkBuffer/descriptor），不是 UID/slot；CPU 侧 map entry 可立即复用，GPU 内存等 fence 后复用。
+5. 当前单快照同步 present 不引入 `GpuHandle{slot, generation}` / `AssetHandle{uid,generation}`；等 D22 的 snapshot ring、独立渲染线程或热重载出现再加。
+6. `collect_garbage()` 做 fixpoint，保证 `Material → Texture` 这类 DAG 能在一帧内收干净；不做环收集器。
+7. M9 顺序：M9.0a AssetUID/Resource 类型 → M9.0b 同步加载 + glTF → M9.0c snapshot uploads/releases + 一个 PBR 物体上屏。
+
+**备选与否决理由**：
+- *给 AssetUID 加 generation*：单快照下没有 stale handle，属于未来 D22 的复杂度；否决。
+- *backend 自己按 UID 上传*：`render_vulkan` 不能 include `yr/asset`，拿不到 CPU 数据；否决。
+- *GC 单遍扫描*：`Material→Texture` 会留下残留；否决。
+
+**后果**：+ 资源生命周期与快照契约一致，可 replay/NullBackend 验证；+ 单快照实现简单；− 未来加 ring/异步渲染线程时需要补 generation/epoch。
+
+**什么情况下改回来**：出现 snapshot ring、独立渲染线程、跨帧快照存活或热重载；或 release 与 upload 不再由同一 present 顺序处理。
 
 ---
 
