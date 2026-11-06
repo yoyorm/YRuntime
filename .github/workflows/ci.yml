@@ -77,10 +77,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang-format-18
 
-      # -z/-0 配对处理含空格的文件名；-r 保证匹配为空时不执行
-      # （否则 clang-format 会去读 stdin 然后永远卡住）。
+      # 统一走 tools/check_format.sh：排除 vendored third_party/，
+      # 并让本地自检与 CI 使用同一条命令（本地还会检查未跟踪文件）。
       - name: 格式检查
-        run: git ls-files -z '*.h' '*.cpp' | xargs -0 -r clang-format-18 --dry-run -Werror
+        run: ./tools/check_format.sh
 
       - name: 架构门禁（依赖方向 / 裸 new-delete / 图形 API 泄漏）
         run: python3 tools/check_deps.py --verbose

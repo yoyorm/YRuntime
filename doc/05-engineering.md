@@ -335,10 +335,10 @@ handler 目前非线程安全，约定在启动线程前设置（M10 修）。
 | tag | 每个里程碑收口打 `v0.M4` 之类 |
 | `.gitignore` | `build*/`、`out/`、`.cache/`、`*.yrpak`、`compile_commands.json`（或反过来提交它，二选一并坚持）、`.vscode/` 部分 |
 | 大文件 | 资源（贴图/模型）用 Git LFS 或**只放小体积示例资源**；`.yrpak` 与录屏不进 git（放 release 附件或 `doc/media/` 下的小 GIF） |
-| 提交前自检 | ① `cmake --build --preset debug` ② `ctest --preset debug` ③ `ctest --preset asan` ④ `git ls-files -z -co --exclude-standard -- '*.h' '*.cpp' \| xargs -0 -r clang-format-18 --dry-run -Werror`（**含未跟踪文件**，与 CI 一致）⑤ `python3 tools/check_deps.py -v` |
+| 提交前自检 | ① `cmake --build --preset debug` ② `ctest --preset debug` ③ `ctest --preset asan` ④ `./tools/check_format.sh`（**含未跟踪文件、排除 `third_party/`**，与 CI 一致）⑤ `python3 tools/check_deps.py -v` |
 
-> **为什么自检要带 `-co`**：CI 的 `git ls-files` 只列**已跟踪**文件，本地用同一条命令会漏掉还没 `git add` 的新文件——它们要到提交后才第一次被检查，容易出现"本地绿、CI 红"。
-> `-c -o --exclude-standard` 把已跟踪和未跟踪文件一起列出来。`clang-format-18` 是本机 `clang-format` 的同版本别名。
+> **为什么自检脚本带 `-co`**：CI 的 `git ls-files` 只列**已跟踪**文件；本地脚本用 `-c -o --exclude-standard` 把未跟踪的新文件也一起列出来，避免"本地绿、CI 红"。
+> `third_party/` 是 vendored 上游代码，必须保持字节不变（D29），因此脚本统一排除；`clang-format-18` 是本机 `clang-format` 的同版本别名。
 
 **commit 历史本身就是作品的一部分**：一个能看出"设计→实现→重构→测试"节奏的历史，
 比一个只有 20 个大 commit 的历史有说服力得多（`07-portfolio.md` §2）。
@@ -352,7 +352,7 @@ handler 目前非线程安全，约定在启动线程前设置（M10 修）。
 |---|---|---|
 | `build-test` | matrix: {gcc-13, clang-18} × {debug, release, asan} → configure/build/ctest | push + PR |
 | `tsan` | 单独 job（M10 起启用） | push + PR |
-| `format` | `clang-format-18 --dry-run -Werror` 全仓库 | push + PR |
+| `format` | `./tools/check_format.sh`（自有代码，排除 `third_party/`） | push + PR |
 | `lint` | `tools/check_deps.py`（反向依赖 + 禁用符号）；clang-tidy 可选 | push + PR |
 | `coverage` | gcovr → 上传 + 徽章（M11，**可选**：只统计、不做门禁） | push to master |
 | `sandbox` | 构建 `apps/runtime_headless` + 跑 headless 10000 帧 simulation + `NullBackend` 快照 dump/replay（M5 起；Vulkan 路径不在无 GPU runner 跑） | push + PR |
@@ -373,7 +373,7 @@ Vulkan 后端 target 用 CMake option `YR_BUILD_VULKAN_BACKEND=OFF` 默认关闭
 - **clang-format 只管 C/C++**。`CMakeLists.txt`、`.json`、`.yml`、`.md` 都是格式化盲区（M0 就踩过：`target_link_libraries` 的缩进丢了没人管）。
   CMake 文件量大了以后再考虑 `cmake-format`（决策协议 R3：不痛就不做）。
 
-CI 门禁用 `clang-format-18 --dry-run -Werror $(git ls-files '*.h' '*.cpp')`（Day 5 的 `format` job）。
+CI 门禁用 `./tools/check_format.sh`（Day 5 的 `format` job）：只检查自有 `.h` / `.cpp`，`third_party/` 保持上游字节不变。
 
 补充约定（clang-format 管不到的）：
 | 项 | 约定 |
