@@ -110,7 +110,7 @@ TEST_CASE("resource: resource kinds and data defaults", "[asset][resource]") {
 
   CHECK(mesh.vertices.empty());
   CHECK(mesh.indices.empty());
-  CHECK_FALSE(material.baseColor.valid());
+  CHECK_FALSE(material.baseColorTexture.valid());
   CHECK(material.baseColorFactor == (yr::math::Vec3{1.0F, 1.0F, 1.0F}));
   CHECK(material.metallic == 0.0F);
   CHECK(material.roughness == 1.0F);
@@ -130,10 +130,10 @@ TEST_CASE("resource: Material holds Ref<Texture> for liveness", "[asset][resourc
     REQUIRE(material->refcount() == 1);
     CHECK(material->kind() == ResourceKind::kMaterial);
 
-    material->baseColor = texture;
+    material->baseColorTexture = texture;
     CHECK(texture->refcount() == 2);
-    CHECK(material->baseColor.get() == texture.get());
-    CHECK(material->baseColor->refcount() == 2);
+    CHECK(material->baseColorTexture.get() == texture.get());
+    CHECK(material->baseColorTexture->refcount() == 2);
   }
 
   CHECK(texture->refcount() == 1);

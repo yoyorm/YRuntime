@@ -9,7 +9,8 @@ target_include_directories(yr_asset_thirdparty SYSTEM PRIVATE
 
 add_library(yr_asset
     src/asset_uid.cpp
-    src/resource.cpp)
+    src/resource.cpp
+    src/gltf_loader.cpp)
 add_library(yr::asset ALIAS yr_asset)
 
 target_include_directories(yr_asset PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

@@ -9,6 +9,8 @@
 
 namespace yr::asset {
 
+  enum class AlphaMode : std::uint8_t { kOpaque, kMask, kBlend };
+
   class Texture final : public Resource {
   public:
     Texture() noexcept : Resource(ResourceKind::kTexture) {}
@@ -37,11 +39,19 @@ namespace yr::asset {
   public:
     Material() noexcept : Resource(ResourceKind::kMaterial) {}
 
-    obj::Ref<Texture> baseColor;
+    obj::Ref<Texture> baseColorTexture;
+    obj::Ref<Texture> normalTexture;
+    obj::Ref<Texture> metallicRoughnessTexture;
+    obj::Ref<Texture> emissiveTexture;
+
     math::Vec3 baseColorFactor{1.0F, 1.0F, 1.0F};
-    float metallic = 0.0F;
+    float baseColorAlpha = 1.0F;
+    float metallic = 0.0F; // 类默认保持 M9.0a 的非金属默认
     float roughness = 1.0F;
     math::Vec3 emissive{0.0F, 0.0F, 0.0F};
+    bool doubleSided = false;
+    AlphaMode alphaMode = AlphaMode::kOpaque;
+    float alphaCutoff = 0.5F;
   };
 
 } // namespace yr::asset
