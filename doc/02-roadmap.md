@@ -515,7 +515,7 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 
 - [x] M9-0 RefCounted + Ref<T>（AI 实现，用户 review；8478fcc）
 - [x] M9.0a AssetUID + Resource + Mesh/Material/Texture 数据类型（8821ff0）
-- [ ] M9.0b 同步加载：复用 Yo_Renderer 的 GltfLoader + tinyGLTF，把 ToyCar 读成 `Ref<Mesh/Material/Texture>`
+- [ ] M9.0b 同步加载：vendor tinyGLTF v3 + stb_image，ToyCar → `GltfScene`（`Ref<Mesh/Material/Texture>`，D29）
 - [ ] M9.0c 一个带贴图的 PBR 物体上屏：snapshot uploads/releases + Node 持 Ref
 - [ ] M9.1 AssetDatabase：缓存 / refcount / evict / GC
 - [ ] M9.2 协作式异步：每帧预算分块读 + ThrottledFileAccess + streaming demo

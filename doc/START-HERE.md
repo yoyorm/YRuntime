@@ -40,12 +40,12 @@ M9-0 已完成（`8478fcc`）：`RefCounted` / `Ref<T>` 实现，隐藏测试 7/
 
 M9.0a 已完成（`8821ff0`）：`AssetUID`（canonical path FNV-1a 64）、`Resource` 状态机、`Texture`/`Mesh`/`Material`；`YrTests_asset` 14 cases，全量 378/378。
 
-下一步 **M9.0b ToyCar glTF 同步加载**：
+下一步 **M9.0b ToyCar glTF 同步加载**（契约见 D29）：
 
-1. 复用 Yo_Renderer 的 `GltfLoader` + `third_party/tinyGLTF`；
-2. ToyCar 进仓库，Sponza 外部路径；
-3. 输出 `Ref<Mesh>` / `Ref<Material>` / `Ref<Texture>`，先不做 AssetDatabase；
-4. 测试用最小 glTF/ToyCar 的 mesh/material/texture 数据，不接渲染。
+1. 从 Yo_Renderer 复制 `tiny_gltf_v3` + `tinygltf_json_c` + `stb_image` 到 `third_party/`，作为 `yr_asset` 的私有依赖；
+2. ToyCar（CC0）进仓库 `assets/models/ToyCar/`，Sponza 外部路径；
+3. 新增 `loadGltfScene(resPath, assetRoot) -> GltfLoadResult`，输出 `GltfScene`（`Ref<Mesh>` / `Ref<Material>` / `Ref<Texture>` + 节点 local `Mat4`），不接 AssetDatabase/渲染；
+4. 测试用 data-URI 最小 triangle + ToyCar 集成数据，不碰 GPU。
 
 coder 实现，用户 review 契约与关键 diff；测试由 coder 写。详细计划见 `02-roadmap.md` M9。
 

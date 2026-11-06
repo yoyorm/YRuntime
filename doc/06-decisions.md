@@ -38,6 +38,7 @@
 | D26 | 垂直切片优先：每个 Runtime 子系统必须有 demo 消费者 | **已确认** | M9 起 |
 | D27 | 默认执行模式：AI 实现，用户 review 契约与关键 diff | **已确认** | M9 起 |
 | D28 | 资源生命周期：Node 持 Ref；上传/卸载走 snapshot；单快照不做 generation | **已确认** | M9.0 |
+| D29 | glTF 同步加载：vendor tinyGLTF v3，loader 只产 CPU 资源 | **已确认** | M9.0b |
 
 ---
 
@@ -620,6 +621,32 @@ CI 首次运行时 `apt-get install libcatch2-dev` 退出码 100，job 失败。
 **后果**：+ 资源生命周期与快照契约一致，可 replay/NullBackend 验证；+ 单快照实现简单；− 未来加 ring/异步渲染线程时需要补 generation/epoch。
 
 **什么情况下改回来**：出现 snapshot ring、独立渲染线程、跨帧快照存活或热重载；或 release 与 upload 不再由同一 present 顺序处理。
+
+---
+
+## D29 · glTF 同步加载：vendor tinyGLTF v3，loader 只产 CPU 资源
+**状态**：已确认 · **里程碑**：M9.0b
+
+**背景**：M9.0b 需要把 ToyCar 读成 `Ref<Mesh>` / `Ref<Material>` / `Ref<Texture>`。Yo_Renderer 的 `GltfLoader` 同时依赖 Vulkan、GLM、`framework::Level/Entity` 和 GPU 上传，无法直接搬进 `yr_asset`；但它的 `third_party/tinyGLTF`（tiny_gltf_v3 + tinygltf_json_c）和 `stb_image` 是纯 C/C++，可以复用。
+
+**决策**：
+1. 从 Yo_Renderer 复制 `tiny_gltf_v3.h/.c`、`tinygltf_json_c.h`、`stb_image.h` 到 `third_party/`，保持上游文件不变；作为 `yr_asset` 的 PRIVATE 实现依赖，不进入公共头，不新增 `yr::asset` 的公共依赖。
+2. ToyCar（CC0）复制到 `assets/models/ToyCar/`，使用文本 `.gltf` + `.bin` + 外部 PNG；Sponza 仍只走外部路径，不进仓库。
+3. 公共 API 固定为同步 `loadGltfScene(resPath, assetRoot) -> GltfLoadResult`；不接 `AssetDatabase`、不接渲染、不产生 snapshot、不依赖 Vulkan/GLM。第三方库的 include 只出现在 `.cpp` 和私有实现文件。
+4. 资源身份：mesh 用 `resPath#mesh/<mesh>/primitive/<prim>`，material 用 `resPath#material/<i>`，texture 用图片自己的 `res://` 路径；全部经 `AssetUID::fromPath`。`sourcePath` 存拥有它的 glTF 或图片路径。
+5. glTF primitive 扁平化：每个 primitive 生成一个 `Mesh`，`GltfPrimitive` 持有 `Ref<Mesh>` + `Ref<Material>`；`GltfNode` 保存 name、local `Mat4`、primitives、children，不预先乘父变换。
+6. 支持的子集：triangle（mode 4/缺省）、POSITION 必需、NORMAL/TEXCOORD_0 可选、索引 u8/u16/u32、无索引时生成顺序索引；材质支持 PBR factors、baseColor/normal/metallicRoughness/emissive 四张贴图、alphaMode/alphaCutoff/doubleSided。忽略 KHR_materials_clearcoat/transmission/sheen 与 KHR_texture_transform（记 warning）；`extensionsRequired` 里出现不支持的扩展则整体失败。
+7. 不做 tangent、morph target、skin、animation、camera、light、Draco/压缩网格；ToyCar 没有 TANGENT，M9.5 再决定“生成切线或 shader 导数”。
+8. 测试由 coder 写：一个 data-URI 最小 triangle fixture 覆盖无索引/无材质/默认值，一个 ToyCar 集成测试覆盖顶点/索引/贴图尺寸/UID 确定性；全部不碰 GPU。
+
+**备选与否决理由**：
+- *直接复用 Yo_Renderer `GltfLoader`*：把 Vulkan/GLM/Level 带入 `yr_asset`，违反分层与 D26 的最小消费者原则；否决。
+- *换回 tinygltf v2 / 自己写 JSON*：用户明确要求从 Yo_Renderer 复制；tiny_gltf_v3 已验证可在 C++20 下解析 ToyCar；否决。
+- *loader 直接上传 GPU*：`yr_asset` 不能依赖 Vulkan，上传必须走 M9.0c 的 snapshot；否决。
+
+**后果**：+ CPU-only、可单测、可直接作为 M9.0c 的数据源；+ 第三方依赖隔离，公共 API 干净；− 仓库增加约 5.6 MB ToyCar 资产；− 只支持 glTF 子集，扩展需要后续显式加；− tangent 推迟到 M9.5。
+
+**什么情况下改回来**：M9.5 法线贴图需要 tangent；Sponza 出现 Draco/压缩网格；或需要相机/灯光导入时，再扩 loader 或引入独立导入工具。
 
 ---
 
