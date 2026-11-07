@@ -122,6 +122,15 @@ TEST_CASE("gltf loader: ToyCar geometry, materials, textures and warnings", "[as
   REQUIRE(result.ok);
 
   REQUIRE(result.scene.roots.size() == 11);
+  const auto& bodyTransform = result.scene.roots[0].localTransform;
+  CHECK(bodyTransform.scale.x == Catch::Approx(0.0001F));
+  CHECK(bodyTransform.scale.y == Catch::Approx(0.0001F));
+  CHECK(bodyTransform.scale.z == Catch::Approx(0.0001F));
+  CHECK(bodyTransform.rotation != yr::math::Quat::identity());
+  const auto& cameraTransform = result.scene.roots[3].localTransform;
+  CHECK(cameraTransform.position.x == Catch::Approx(-0.0169006381F));
+  CHECK(cameraTransform.position.y == Catch::Approx(0.0253599286F));
+  CHECK(cameraTransform.position.z == Catch::Approx(0.0302319955F));
   std::size_t totalPrimitives = 0;
   for (const GltfNode& root : result.scene.roots) {
     totalPrimitives += countPrimitives(root);

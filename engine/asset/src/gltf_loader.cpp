@@ -1,6 +1,7 @@
 #include <yr/asset/gltf_loader.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
@@ -526,42 +527,73 @@ namespace yr::asset {
       return resource;
     }
 
-    [[nodiscard]] math::Mat4 localTransformOf(const tg3_node& node) {
-      math::Mat4 result;
-      if (node.has_matrix != 0) {
-        for (std::size_t index = 0; index < 16; ++index) {
-          result[index] = static_cast<float>(node.matrix[index]);
-        }
+    [[nodiscard]] math::Transform localTransformOf(LoadContext& context, const tg3_node& node) {
+      math::Transform result;
+      if (node.has_matrix == 0) {
+        result.position = math::Vec3{static_cast<float>(node.translation[0]), static_cast<float>(node.translation[1]),
+                                     static_cast<float>(node.translation[2])};
+        result.rotation = math::Quat{static_cast<float>(node.rotation[0]), static_cast<float>(node.rotation[1]),
+                                     static_cast<float>(node.rotation[2]), static_cast<float>(node.rotation[3])}
+                              .normalized();
+        result.scale = math::Vec3{static_cast<float>(node.scale[0]), static_cast<float>(node.scale[1]),
+                                  static_cast<float>(node.scale[2])};
         return result;
       }
 
-      const double x = node.rotation[0];
-      const double y = node.rotation[1];
-      const double z = node.rotation[2];
-      const double w = node.rotation[3];
-      const double sx = node.scale[0];
-      const double sy = node.scale[1];
-      const double sz = node.scale[2];
+      const auto warnMatrix = [&](std::string message) {
+        addWarning(context, "node '" + stringOf(node.name) + "': matrix " + std::move(message));
+      };
+      result.position = math::Vec3{static_cast<float>(node.matrix[12]), static_cast<float>(node.matrix[13]),
+                                   static_cast<float>(node.matrix[14])};
 
-      result[0] = static_cast<float>((1.0 - 2.0 * (y * y + z * z)) * sx);
-      result[1] = static_cast<float>((2.0 * (x * y + z * w)) * sx);
-      result[2] = static_cast<float>((2.0 * (x * z - y * w)) * sx);
-      result[3] = 0.0F;
+      math::Vec3 columns[3] = {
+          math::Vec3{static_cast<float>(node.matrix[0]), static_cast<float>(node.matrix[1]),
+                     static_cast<float>(node.matrix[2])},
+          math::Vec3{static_cast<float>(node.matrix[4]), static_cast<float>(node.matrix[5]),
+                     static_cast<float>(node.matrix[6])},
+          math::Vec3{static_cast<float>(node.matrix[8]), static_cast<float>(node.matrix[9]),
+                     static_cast<float>(node.matrix[10])},
+      };
+      result.scale = math::Vec3{columns[0].length(), columns[1].length(), columns[2].length()};
+      if (result.scale.x <= 1.0e-8F || result.scale.y <= 1.0e-8F || result.scale.z <= 1.0e-8F) {
+        warnMatrix("含近零缩放列；保留平移 / 缩放并使用 identity rotation");
+        return result;
+      }
 
-      result[4] = static_cast<float>((2.0 * (x * y - z * w)) * sy);
-      result[5] = static_cast<float>((1.0 - 2.0 * (x * x + z * z)) * sy);
-      result[6] = static_cast<float>((2.0 * (y * z + x * w)) * sy);
-      result[7] = 0.0F;
+      const math::Vec3 normalizedColumns[3] = {columns[0] / result.scale.x, columns[1] / result.scale.y,
+                                               columns[2] / result.scale.z};
+      const float determinant =
+          math::dot(normalizedColumns[0], math::cross(normalizedColumns[1], normalizedColumns[2]));
+      if (determinant < 0.0F) {
+        result.scale.x = -result.scale.x;
+      }
 
-      result[8] = static_cast<float>((2.0 * (x * z + y * w)) * sz);
-      result[9] = static_cast<float>((2.0 * (y * z - x * w)) * sz);
-      result[10] = static_cast<float>((1.0 - 2.0 * (x * x + y * y)) * sz);
-      result[11] = 0.0F;
+      const math::Vec3 rotationColumns[3] = {columns[0] / result.scale.x, columns[1] / result.scale.y,
+                                             columns[2] / result.scale.z};
+      constexpr float kDecompositionTolerance = 1.0e-4F;
+      const bool hasShear = std::abs(math::dot(rotationColumns[0], rotationColumns[1])) > kDecompositionTolerance ||
+                            std::abs(math::dot(rotationColumns[0], rotationColumns[2])) > kDecompositionTolerance ||
+                            std::abs(math::dot(rotationColumns[1], rotationColumns[2])) > kDecompositionTolerance;
+      const bool isAffine = std::abs(static_cast<float>(node.matrix[3])) <= kDecompositionTolerance &&
+                            std::abs(static_cast<float>(node.matrix[7])) <= kDecompositionTolerance &&
+                            std::abs(static_cast<float>(node.matrix[11])) <= kDecompositionTolerance &&
+                            std::abs(static_cast<float>(node.matrix[15]) - 1.0F) <= kDecompositionTolerance;
+      if (hasShear || !isAffine) {
+        warnMatrix("含 shear 或非仿射分量；保留平移 / 缩放并使用 identity rotation");
+        return result;
+      }
 
-      result[12] = static_cast<float>(node.translation[0]);
-      result[13] = static_cast<float>(node.translation[1]);
-      result[14] = static_cast<float>(node.translation[2]);
-      result[15] = 1.0F;
+      math::Mat4 rotationMatrix;
+      rotationMatrix[0] = rotationColumns[0].x;
+      rotationMatrix[1] = rotationColumns[0].y;
+      rotationMatrix[2] = rotationColumns[0].z;
+      rotationMatrix[4] = rotationColumns[1].x;
+      rotationMatrix[5] = rotationColumns[1].y;
+      rotationMatrix[6] = rotationColumns[1].z;
+      rotationMatrix[8] = rotationColumns[2].x;
+      rotationMatrix[9] = rotationColumns[2].y;
+      rotationMatrix[10] = rotationColumns[2].z;
+      result.rotation = math::Quat::fromRotationMatrix(rotationMatrix);
       return result;
     }
 
@@ -580,7 +612,7 @@ namespace yr::asset {
       const tg3_node& source = context.model.nodes[nodeIndex];
       GltfNode node;
       node.name = stringOf(source.name);
-      node.localTransform = localTransformOf(source);
+      node.localTransform = localTransformOf(context, source);
 
       if (source.mesh >= 0) {
         if (static_cast<std::uint32_t>(source.mesh) >= context.model.meshes_count) {

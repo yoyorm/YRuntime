@@ -5,7 +5,7 @@
 #include <vector>
 
 #include <yr/asset/resource_types.h>
-#include <yr/math/mat4.h>
+#include <yr/math/transform.h>
 #include <yr/object/ref.h>
 
 namespace yr::asset {
@@ -17,7 +17,7 @@ namespace yr::asset {
 
   struct GltfNode {
     std::string name;
-    math::Mat4 localTransform{}; // 只含本节点 T*R*S，不乘父变换
+    math::Transform localTransform{}; // 只含本节点 T*R*S，不乘父变换
     std::vector<GltfPrimitive> primitives;
     std::vector<GltfNode> children;
   };
