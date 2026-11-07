@@ -235,7 +235,10 @@ namespace yr::render {
       for (AssetHandle handle : snapshot.releases.meshes) {
         auto it = meshes.find(handle.value);
         if (it != meshes.end()) {
-          pendingMeshes[frameSlot_].push_back(std::move(it->second));
+          // frameSlot_ is the slot about to be used; the previous frame used the other slot.
+          // With two frames in flight, retain the mesh until that previous slot's fence is waited.
+          const std::uint32_t pendingSlot = (frameSlot_ + kFramesInFlight - 1) % kFramesInFlight;
+          pendingMeshes[pendingSlot].push_back(std::move(it->second));
           meshes.erase(it);
           ++stats.released_assets;
         }
@@ -297,13 +300,19 @@ namespace yr::render {
       try {
         device->raiiDevice().waitIdle();
         swapchain->recreate(*device, *surface, *window);
-        meshPipeline.reset();
-        frameSync.reset();
         depthBuffers.clear();
         createDepthBuffers();
-        meshPipeline.emplace(*device, swapchain->format(), kDepthFormat);
+        if (meshPipeline.has_value()) {
+          meshPipeline->recreate(swapchain->format(), kDepthFormat);
+        } else {
+          meshPipeline.emplace(*device, swapchain->format(), kDepthFormat);
+        }
+        frameSync.reset();
         frameSync.emplace(*device, kFramesInFlight, swapchain->imageCount());
         frameSlot_ = 0;
+        for (auto& pending : pendingMeshes) {
+          pending.clear();
+        }
         YR_LOG_INFO("render.vk.backend", "swapchain 已重建 " + std::to_string(swapchain->extent().width) + "x" +
                                              std::to_string(swapchain->extent().height) +
                                              " imageCount=" + std::to_string(swapchain->imageCount()));
@@ -328,6 +337,7 @@ namespace yr::render {
         YR_LOG_ERROR("render.vk.backend", "waitForFences 失败：" + ::vk::to_string(waitResult));
         return;
       }
+      // This slot's fence has completed, so resources deferred to it are no longer in use.
       pendingMeshes[slot].clear();
       updateFrameUniforms(slot, snapshot.camera);
 

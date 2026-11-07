@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 #include <yr/core/log.h>
@@ -42,7 +43,7 @@ namespace yr::render::vk {
   } // namespace
 
   MeshPipeline::MeshPipeline(const Device& device, ::vk::Format colorFormat, ::vk::Format depthFormat)
-      : colorFormat_(colorFormat), depthFormat_(depthFormat) {
+      : device_(device.raiiDevice()), colorFormat_(colorFormat), depthFormat_(depthFormat) {
     const std::filesystem::path shaderDir{YR_VULKAN_SHADER_DIR};
     const std::vector<std::uint32_t> vertexWords = readSpirv(shaderDir / "mesh.vert.spv");
     const std::vector<std::uint32_t> fragmentWords = readSpirv(shaderDir / "mesh.frag.spv");
@@ -65,6 +66,22 @@ namespace yr::render::vk {
     layoutInfo.setSetLayouts(*descriptorSetLayout_).setPushConstantRanges(pushConstantRange);
     layout_ = ::vk::raii::PipelineLayout(raiiDevice, layoutInfo);
 
+    pipeline_ = createGraphicsPipeline(colorFormat, depthFormat);
+
+    YR_LOG_INFO("render.vk.pipeline", "mesh pipeline 已创建 colorFormat=" + ::vk::to_string(colorFormat) +
+                                          " depthFormat=" + ::vk::to_string(depthFormat));
+  }
+
+  void MeshPipeline::recreate(::vk::Format colorFormat, ::vk::Format depthFormat) {
+    ::vk::raii::Pipeline replacement = createGraphicsPipeline(colorFormat, depthFormat);
+    pipeline_ = std::move(replacement);
+    colorFormat_ = colorFormat;
+    depthFormat_ = depthFormat;
+    YR_LOG_INFO("render.vk.pipeline", "mesh pipeline 已重建 colorFormat=" + ::vk::to_string(colorFormat) +
+                                          " depthFormat=" + ::vk::to_string(depthFormat));
+  }
+
+  ::vk::raii::Pipeline MeshPipeline::createGraphicsPipeline(::vk::Format colorFormat, ::vk::Format depthFormat) const {
     ::vk::PipelineShaderStageCreateInfo vertexStage{};
     vertexStage.setStage(::vk::ShaderStageFlagBits::eVertex).setModule(*vertexShader_).setPName("main");
     ::vk::PipelineShaderStageCreateInfo fragmentStage{};
@@ -112,8 +129,8 @@ namespace yr::render::vk {
 
     ::vk::PipelineRenderingCreateInfo renderingInfo{};
     renderingInfo.setColorAttachmentCount(1)
-        .setPColorAttachmentFormats(&colorFormat_)
-        .setDepthAttachmentFormat(depthFormat_);
+        .setPColorAttachmentFormats(&colorFormat)
+        .setDepthAttachmentFormat(depthFormat);
 
     ::vk::GraphicsPipelineCreateInfo createInfo{};
     createInfo.setStages(stages)
@@ -128,10 +145,7 @@ namespace yr::render::vk {
         .setLayout(*layout_)
         .setRenderPass(nullptr)
         .setPNext(&renderingInfo);
-    pipeline_ = raiiDevice.createGraphicsPipeline(nullptr, createInfo);
-
-    YR_LOG_INFO("render.vk.pipeline", "mesh pipeline 已创建 colorFormat=" + ::vk::to_string(colorFormat) +
-                                          " depthFormat=" + ::vk::to_string(depthFormat));
+    return device_.createGraphicsPipeline(nullptr, createInfo);
   }
 
 } // namespace yr::render::vk

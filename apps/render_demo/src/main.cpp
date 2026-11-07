@@ -132,6 +132,7 @@ namespace {
 
   struct Options {
     std::uint64_t frames = 0; // 0 = 直到窗口关闭
+    std::uint64_t dropAt = 0;
     std::string dumpSnapshot;
     std::string replaySnapshot;
     bool help = false;
@@ -147,8 +148,9 @@ namespace {
 
   void printUsage(std::FILE* stream, const char* program) {
     std::fprintf(stream,
-                 "usage: %s [--frames N] [--dump-snapshot PATH] [--replay-snapshot PATH]\n"
+                 "usage: %s [--frames N] [--drop-at N] [--dump-snapshot PATH] [--replay-snapshot PATH]\n"
                  "  --dump-snapshot PATH     dump the first presented RenderSnapshot\n"
+                 "  --drop-at N              queue the first MeshInstanceNode for deletion after tick N\n"
                  "  --replay-snapshot PATH   replay a dumped snapshot without a SceneTree\n",
                  program);
   }
@@ -169,6 +171,17 @@ namespace {
           return false;
         }
         options.frames = value;
+      } else if (arg == "--drop-at") {
+        if (i + 1 >= argc) {
+          return false;
+        }
+        std::uint64_t value = 0;
+        const std::string_view text = argv[++i];
+        const auto result = std::from_chars(text.data(), text.data() + text.size(), value);
+        if (result.ec != std::errc{} || result.ptr != text.data() + text.size()) {
+          return false;
+        }
+        options.dropAt = value;
       } else if (arg == "--dump-snapshot") {
         if (i + 1 >= argc) {
           return false;
@@ -285,6 +298,20 @@ namespace {
     }
   }
 
+  [[nodiscard]] yr::scene::MeshInstanceNode* findFirstMeshInstance(yr::scene::Node& node) {
+    if (auto* meshNode = dynamic_cast<yr::scene::MeshInstanceNode*>(&node); meshNode != nullptr) {
+      return meshNode;
+    }
+    for (std::size_t index = 0; index < node.childCount(); ++index) {
+      if (yr::scene::Node* child = node.childAt(index); child != nullptr) {
+        if (yr::scene::MeshInstanceNode* meshNode = findFirstMeshInstance(*child); meshNode != nullptr) {
+          return meshNode;
+        }
+      }
+    }
+    return nullptr;
+  }
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -372,16 +399,28 @@ int main(int argc, char** argv) {
   loop.stats().setReportInterval(0);
 
   std::uint64_t ticks = 0;
+  std::uint64_t releasedAssets = 0;
+  bool dropQueued = false;
   while (!loop.shouldQuit()) {
     loop.tick(clock.nextDelta());
+    releasedAssets += backend.last_frame_stats().released_assets;
     ++ticks;
+    if (!dropQueued && options.dropAt != 0 && ticks == options.dropAt) {
+      if (yr::scene::MeshInstanceNode* meshNode = findFirstMeshInstance(*tree.root()); meshNode != nullptr) {
+        meshNode->queueFree();
+        dropQueued = true;
+        YR_LOG_INFO("render_demo", "queue_free MeshInstanceNode after tick " + std::to_string(ticks));
+      }
+    }
     if (options.frames != 0 && ticks >= options.frames) {
       break;
     }
   }
 
   // last_frame_stats / validation 都必须在 shutdown 前/后按各自契约取：前者会被 shutdown 清零。
-  const yr::render::BackendStats backendStats = backend.last_frame_stats();
+  yr::render::BackendStats backendStats = backend.last_frame_stats();
+  // BackendStats is per-frame; retain release diagnostics across the run for the summary.
+  backendStats.released_assets = releasedAssets;
   const yr::engine::FrameStats& stats = loop.stats();
   backend.shutdown();
 

@@ -24,6 +24,8 @@ namespace yr::render::vk {
     MeshPipeline(MeshPipeline&&) = delete;
     MeshPipeline& operator=(MeshPipeline&&) = delete;
 
+    void recreate(::vk::Format colorFormat, ::vk::Format depthFormat);
+
     [[nodiscard]] ::vk::Pipeline handle() const noexcept { return *pipeline_; }
     [[nodiscard]] ::vk::PipelineLayout layout() const noexcept { return *layout_; }
     [[nodiscard]] ::vk::DescriptorSetLayout descriptorSetLayout() const noexcept { return *descriptorSetLayout_; }
@@ -31,6 +33,9 @@ namespace yr::render::vk {
     [[nodiscard]] ::vk::Format depthFormat() const noexcept { return depthFormat_; }
 
   private:
+    [[nodiscard]] ::vk::raii::Pipeline createGraphicsPipeline(::vk::Format colorFormat, ::vk::Format depthFormat) const;
+
+    const ::vk::raii::Device& device_;
     ::vk::raii::ShaderModule vertexShader_{nullptr};
     ::vk::raii::ShaderModule fragmentShader_{nullptr};
     ::vk::raii::DescriptorSetLayout descriptorSetLayout_{nullptr};
