@@ -11,6 +11,7 @@
 #include <yr/object/property_info.h>
 #include <yr/object/register_core_classes.h>
 #include <yr/object/variant.h>
+#include <yr/scene/mesh_instance_node.h>
 #include <yr/scene/node.h>
 
 namespace yr::scene {
@@ -57,6 +58,7 @@ namespace yr::scene {
     }
     obj::register_core_classes();
     obj::globalClassDB().registerClass(nodeClassInfo());
+    obj::globalClassDB().registerClass(meshInstanceNodeClassInfo());
     registered = true;
   }
 

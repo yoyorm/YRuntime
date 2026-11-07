@@ -7,19 +7,6 @@
 
 namespace yr::scene {
 
-  namespace {
-
-    // 纯平移矩阵：column-major 下平移量在索引 12/13/14。
-    [[nodiscard]] math::Mat4 makeTranslation(const math::Vec3& position) noexcept {
-      math::Mat4 result;
-      result[12] = position.x;
-      result[13] = position.y;
-      result[14] = position.z;
-      return result;
-    }
-
-  } // namespace
-
   bool SceneTree::setRoot(std::unique_ptr<Node>&& root) {
     if (root == nullptr) {
       YR_ASSERT_MSG(false, "SceneTree::setRoot: root is null");
@@ -199,16 +186,16 @@ namespace yr::scene {
   }
 
   void SceneTree::refreshHelper(Node* node, bool parentRecomputed, const math::Mat4& parentGlobal) {
-    TransformData* const data = transformData(node->transform_);
+    TransformData* const data = transformData(node->transformHandle_);
     YR_ASSERT_MSG(data != nullptr, "SceneTree::refreshHelper: node has no transform slot");
     if (data == nullptr) {
       return;
     }
 
-    // global = parentGlobal * T(position)，仅当本地变过或祖先被重算。
+    // global = parentGlobal * T*R*S，仅当本地变过或祖先被重算。
     const bool recompute = parentRecomputed || data->localDirty;
     if (recompute) {
-      data->global = parentGlobal * makeTranslation(node->position_);
+      data->global = parentGlobal * math::toMat4(node->transform_);
       data->localDirty = false;
     }
 

@@ -12,6 +12,7 @@
 #include <yr/object/class_info.h>
 #include <yr/object/property_info.h>
 #include <yr/object/variant.h>
+#include <yr/scene/mesh_instance_node.h>
 #include <yr/scene/node.h>
 #include <yr/scene/packed_scene.h>
 #include <yr/scene/scene_classes.h>
@@ -70,6 +71,17 @@ namespace yr::scene {
       }
       if (!isValidNodeName(node.name().view())) {
         error = label + ": name 非法（不能为空、不能是 '.' 或 '..'、不能含 '/'、'\"' 或换行）";
+        return false;
+      }
+
+      if (const auto* const meshNode = dynamic_cast<const MeshInstanceNode*>(&node);
+          meshNode != nullptr && (meshNode->mesh().valid() || meshNode->material().valid())) {
+        error = label + ": MeshInstanceNode 的 mesh/material 序列化留到 M9.5";
+        return false;
+      }
+      if (node.transform().rotation != math::Quat::identity() ||
+          node.transform().scale != math::Vec3{1.0F, 1.0F, 1.0F}) {
+        error = label + ": .scn 暂不支持 rotation/scale";
         return false;
       }
 

@@ -8,8 +8,7 @@
 
 namespace yr::scene {
 
-  // Transform 的最小状态（仅平移）：只保存派生缓存与脏标记。position 是唯一可写数据源
-  // （在 Node 中），不存 local 矩阵，refresh 时按需合成。
+  // Transform 的派生状态：只保存 global 缓存与脏标记。完整 TRS 保存在 Node 中，refresh 时按需合成。
   struct TransformData {
     math::Mat4 global;
     bool localDirty = true;

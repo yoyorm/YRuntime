@@ -8,8 +8,7 @@
 
 #include <yr/core/handle.h>
 #include <yr/core/string_id.h>
-#include <yr/math/mat4.h>
-#include <yr/math/vec3.h>
+#include <yr/math/transform.h>
 #include <yr/object/object.h>
 
 namespace yr::scene {
@@ -24,7 +23,7 @@ namespace yr::scene {
   // 生命周期：enter 前序，ready 后序且一生一次，exit 后序倒序。回调不得抛异常，不得修改正在
   // 传播的 parent；传播期间接收者的 children_ 冻结，增删子节点被拒（断言 + 失败）。
   //
-  // Transform 仅平移；读取与槽生命周期契约见 doc/layers/scene.md。
+  // Transform 是完整 TRS；.scn 仍只序列化 position。全局缓存契约见 doc/layers/scene.md。
   //
   // name 可写（setName 驻留到全局 StringInterner）；唯一性由 scene loader 校验，Node 不强制。
 
@@ -70,11 +69,17 @@ namespace yr::scene {
     // （所有权在外部），断言后安全返回；重复调用幂等。
     void queueFree();
 
-    // 本地 position（父坐标系下的平移）；默认 (0,0,0)。
-    [[nodiscard]] const math::Vec3& position() const noexcept { return position_; }
+    // 本地 TRS（父坐标系）；.scn 当前只保存 position。
+    [[nodiscard]] const math::Vec3& position() const noexcept { return transform_.position; }
+    [[nodiscard]] const math::Quat& rotation() const noexcept { return transform_.rotation; }
+    [[nodiscard]] const math::Vec3& scale() const noexcept { return transform_.scale; }
+    [[nodiscard]] const math::Transform& transform() const noexcept { return transform_; }
 
-    // O(1)：只改本地数据并置脏，不传播、不触发回调。离线同样可写，position_ 是唯一数据源。
+    // O(1)：只改本地数据并置脏，不传播、不触发回调。离线同样可写。
     void setPosition(const math::Vec3& position);
+    void setRotation(const math::Quat& rotation);
+    void setScale(const math::Vec3& scale);
+    void setTransform(const math::Transform& transform);
 
     // 上一次 refreshTransforms() 的缓存；从未入树返回 identity。
     [[nodiscard]] math::Mat4 globalTransform() const noexcept;
@@ -100,6 +105,7 @@ namespace yr::scene {
 
     // 入树时保证 transform 槽就绪并标脏（同树重新入树也要标脏，使新父链生效）。
     void acquireTransform(SceneTree* tree);
+    void markTransformDirty() noexcept;
 
     core::StringId name_;
     SceneTree* tree_ = nullptr;
@@ -116,10 +122,9 @@ namespace yr::scene {
     // transform 槽在所属 SceneTree 的 TransformStore 中，首次入树分配、detach 保留、
     // Node 析构释放。transformOwner_ 是分配该槽的 SceneTree（非拥有），detach 后仍用于
     // 查询旧 global 与释放。契约：SceneTree 必须比持有其 handle 的 Node 活得更久。
-    core::Handle<TransformData> transform_;
+    core::Handle<TransformData> transformHandle_;
     SceneTree* transformOwner_ = nullptr;
-    // position_ 是唯一可写数据源，离线也可写。
-    math::Vec3 position_{};
+    math::Transform transform_{};
   };
 
 } // namespace yr::scene

@@ -10,8 +10,8 @@ namespace yr::scene {
 
   // transform 槽由分配它的 SceneTree 释放；该树必须比本节点活得更久。
   Node::~Node() {
-    if (transform_.valid() && transformOwner_ != nullptr) {
-      transformOwner_->destroyTransform(transform_);
+    if (transformHandle_.valid() && transformOwner_ != nullptr) {
+      transformOwner_->destroyTransform(transformHandle_);
     }
   }
 
@@ -154,13 +154,13 @@ namespace yr::scene {
     YR_ASSERT_MSG(tree != nullptr, "Node::acquireTransform: tree is null");
     if (transformOwner_ != tree) {
       // 跨树重新挂入：先归还旧树的槽，再在新树分配。
-      if (transform_.valid() && transformOwner_ != nullptr) {
-        transformOwner_->destroyTransform(transform_);
+      if (transformHandle_.valid() && transformOwner_ != nullptr) {
+        transformOwner_->destroyTransform(transformHandle_);
       }
-      transform_ = tree->createTransform();
+      transformHandle_ = tree->createTransform();
       transformOwner_ = tree;
     }
-    TransformData* const data = tree->transformData(transform_);
+    TransformData* const data = tree->transformData(transformHandle_);
     YR_ASSERT_MSG(data != nullptr, "Node::acquireTransform: transform slot is not resolvable");
     if (data != nullptr) {
       data->localDirty = true;
@@ -168,10 +168,30 @@ namespace yr::scene {
   }
 
   void Node::setPosition(const math::Vec3& position) {
-    position_ = position;
-    // 未入树只改本地；有槽则标脏，交给下一次 refresh。
-    if (transform_.valid() && transformOwner_ != nullptr) {
-      TransformData* const data = transformOwner_->transformData(transform_);
+    transform_.position = position;
+    markTransformDirty();
+  }
+
+  void Node::setRotation(const math::Quat& rotation) {
+    transform_.rotation = rotation.normalized();
+    markTransformDirty();
+  }
+
+  void Node::setScale(const math::Vec3& scale) {
+    transform_.scale = scale;
+    markTransformDirty();
+  }
+
+  void Node::setTransform(const math::Transform& transform) {
+    transform_ = transform;
+    transform_.rotation = transform.rotation.normalized();
+    markTransformDirty();
+  }
+
+  void Node::markTransformDirty() noexcept {
+    // Offline writes update only local data; acquireTransform marks the slot on entry.
+    if (transformHandle_.valid() && transformOwner_ != nullptr) {
+      TransformData* const data = transformOwner_->transformData(transformHandle_);
       if (data != nullptr) {
         data->localDirty = true;
       }
@@ -179,8 +199,8 @@ namespace yr::scene {
   }
 
   math::Mat4 Node::globalTransform() const noexcept {
-    if (transform_.valid() && transformOwner_ != nullptr) {
-      const TransformData* const data = transformOwner_->transformData(transform_);
+    if (transformHandle_.valid() && transformOwner_ != nullptr) {
+      const TransformData* const data = transformOwner_->transformData(transformHandle_);
       if (data != nullptr) {
         return data->global;
       }

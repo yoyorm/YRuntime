@@ -8,6 +8,7 @@ add_executable(YrTests_scene
     test_process.cpp
     test_transform.cpp
     test_scene_format.cpp
+    test_mesh_instance_node.cpp
     test_scene_reference.cpp)
 
 target_link_libraries(YrTests_scene PRIVATE

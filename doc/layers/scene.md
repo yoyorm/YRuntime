@@ -29,7 +29,10 @@
   | `bool isQueuedForDeletion() const` | 是否已入删除队列 | — |
   | `void queueFree()` | 延迟删除：置 `queuedForDeletion_` 并把 `ObjectID` 交给 `SceneTree` | 不在树内 = Debug assert + 安全返回；重复调用幂等 |
   | `const math::Vec3& position() const` | 父坐标系下的本地平移 | — |
-  | `void setPosition(const math::Vec3&)` | O(1) 只改本地并置脏，不传播、不触发回调 | — |
+  | `const math::Quat& rotation() const` / `const math::Vec3& scale() const` | 本地旋转 / 缩放 | — |
+  | `const math::Transform& transform() const` | 本地完整 TRS | — |
+  | `void setPosition(const math::Vec3&)` / `setRotation(const math::Quat&)` / `setScale(const math::Vec3&)` | 只改对应本地字段并置脏；rotation 归一化 | — |
+  | `void setTransform(const math::Transform&)` | 替换完整 TRS 并归一化 rotation | — |
   | `math::Mat4 globalTransform() const` | **上次 `refreshTransforms()` 的缓存**（读取契约见下） | — |
 
 - **不变量 / 顺序**：
@@ -40,10 +43,11 @@
   - **`queueFree` 与 `queuedForDeletion_`**：只置标记并入队，**不改结构**。非树内节点属编程错误（所有权在外部），断言后安全返回、不置标记、不入队；重复调用幂等。`removeChild` / `detach` 后标志复位。
   - **`removeChild` 复位**：先派发 exit 再解除 `parent_`（让回调期间 `parent()` / `isInsideTree()` 仍反映旧位置）；先 `move` 出所有权再 `erase`，交还后清 `parent_` 并复位 `queuedForDeletion_`。
   - **Transform**：
-    - `position_` 是**唯一可写数据源**，离线同样可写；不存 local 矩阵（refresh 时按需合成），避免 position 与 local 双源。
+    - `transform_` 是完整 TRS 的唯一可写数据源，离线同样可写；不存 local 矩阵（refresh 时按需合成）。
     - **槽生命周期**：首次入树分配（`acquireTransform`）、`detach` 保留、`Node` 析构释放（经 `transformOwner_` 归还）。
     - **重入树标脏**：同树重新入树也要置脏（`acquireTransform` 无条件 `localDirty = true`），否则旧 global 不是新父链下的正确值；跨树挂入先归还旧树槽再在新树分配。
-    - **`globalTransform` 读取契约**：返回缓存值——树内节点为上次 refresh 的值；出树节点保留离开时的值；从未入树返回 identity。仅平移。
+    - **`globalTransform` 读取契约**：返回缓存值——树内节点为上次 refresh 的值；出树节点保留离开时的值；从未入树返回 identity。
+    - `.scn` 仍只序列化 `position`；writer 遇到非 identity rotation 或非单位 scale 时返回错误，不产出文本。
 - **设计原因**（迁移自注释）：
   - guard 只包住 `children_` 遍历：节点自身的 `onEnterTree` / `onReady` 仍可 `addChild` 到 `*this`，但 child 的回调不能修改正在被遍历的本节点的 children。
   - `exit` 传播的 guard **覆盖** `children_` 倒序遍历与自身 `onExitTree`：退出期间本节点结构冻结。
@@ -84,7 +88,7 @@
   | `flushDeletions` | 执行延迟删除 | 检查 `flushing_`、`processing_`、`refreshing_` |
 
   - **process 的 `ObjectID` 快照重解析**：快照在开始时确定，回调中新挂入的节点本帧不 process；派发时逐个经 `globalObjectDB().get(id)` 重解析，解析失败（父先删使子 ID 失效）或已离树则跳过。因此**回调中删除节点是安全的**。
-  - **refreshTransforms 前序 DFS + `parentRecomputed`**：`global = parentGlobal * T(position)`，仅当本地变过（`localDirty`）或**祖先本次被重算**时重算；`parentGlobal` 是父的缓存（root 用 identity）。子树被重算则整体重算，否则各自看 `localDirty`。
+  - **refreshTransforms 前序 DFS + `parentRecomputed`**：`global = parentGlobal * T*R*S`，仅当本地变过（`localDirty`）或**祖先本次被重算**时重算；`parentGlobal` 是父的缓存（root 用 identity）。子树被重算则整体重算，否则各自看 `localDirty`。
   - **flushDeletions 快照语义与三分支**：把 `pendingDeletions_` 换出到局部 batch，本批只处理它；flush 期间新 `queueFree` 写入已清空的队列，留给下一次 flush。每个 ID 经 `ObjectDB` 重解析后再分三支：
     1. 有父 → `detach()` 交出所有权，局部 `unique_ptr` 作用域结束即析构整棵子树；
     2. 是 `root_` → `clearRoot()` 先 exit 再交还所有权、析构；
@@ -99,13 +103,12 @@
 - **设计原因**：结构性修改收敛到安全点、用 `ObjectID` 快照 + 重解析代替"遍历中安全删除"，消灭迭代器失效类 bug（`01-architecture` §4.6）。
 - **Godot 对照**：`scene/main/scene_tree.h`（`SceneTreeTimer` 在约第 57 行）、`scene/main/node.cpp` 的 `queue_free`、`scene/main/scene_tree_fti.cpp`。
 - **遗留 / 已知缺口**：
-  - `refreshTransforms` **仅平移**：不支持旋转 / 缩放。
   - `NodePath` / `requestReady` 未实现（见 Node）。
   - 无 `physicsProcess` 相位、无 `SceneTreeTimer`。
 
 ## TransformData（`scene::TransformData`）
 
-- **职责**：Transform 的最小状态（仅平移）——派生缓存 + 脏标记。
+- **职责**：Transform 的派生 global 缓存 + 脏标记。
 - **所有权 / 生命周期**：由 `TransformStore` 的 `SlotMap` 拥有；`Node` 只持有 `Handle`。
 - **字段 / 公开 API**：
 
@@ -114,9 +117,9 @@
   | `math::Mat4 global` | 上次 refresh 得到的 global 缓存 |
   | `bool localDirty` | 本地是否变化、需要重算；默认 `true` |
 
-- **不变量 / 顺序**：不存 local 矩阵——`position` 是唯一可写数据源（在 `Node` 中），refresh 时按需合成 `parentGlobal * T(position)`，避免 position 与 local 双源。
+- **不变量 / 顺序**：不存 local 矩阵——完整 TRS 是唯一可写数据源（在 `Node` 中），refresh 时按需合成 `parentGlobal * T*R*S`，避免 TRS 与 local 双源。
 - **设计原因**：单一数据源 + 懒合成（见 Node Transform 不变量）。
-- **遗留 / 已知缺口**：仅平移。
+- **遗留 / 已知缺口**：无。
 
 ## TransformStore（`scene::TransformStore`）
 
@@ -143,10 +146,12 @@
   - `packed_scene.h`：`PackedScene` 纯数据 IR：`nodes`、`ext_resources`、`sub_resources`、`connections`；`instantiate(const ClassDB&)` 只看 nodes，第一遍创建、第二遍按 `parent_index` 挂接，失败返回 `nullptr` 且不留半成品。
   - `scene_reference.h`：`SceneReference` / `SceneValue` / `ResolveResult`；`resolveReferences(PackedScene&)` 建 ext/sub id 表 → 回填 `SceneReference.index` → DFS 三色检测 sub_resource 环（自引用也报）。
   - `scene_writer.h`：`SceneWriter::write(const Node&)`（内部构造 ext/sub/connection 为空的 IR）与 `SceneWriter::write(const PackedScene&)`；先校验 ext/sub id/type/path、引用 index/id、connection、node 树，失败返回 `ok=false` + 具体节点/问题，**不产出半份 text**；成功后输出 canonical 文本。
-  - `scene_classes.h`：`register_scene_classes()` 幂等注册 Node（含 `position` 属性）；必须在 `globalClassDB().freeze()` 前调用。
+  - `scene_classes.h`：`register_scene_classes()` 幂等注册 Node（含 `position` 属性）与 MeshInstanceNode；必须在 `globalClassDB().freeze()` 前调用。
 - **格式**：`[scene]` → `[ext_resource]*` → `[sub_resource]*` → `[node]*`（前序）→ `[connection]*`；section 间空行，文件末尾一个换行。不做版本号与迁移（D24）。
 - **引用**：sub_resource 属性可写 `ExtResource("id")` / `SubResource("id")`；node 属性不允许引用语法。未解析 id / 自引用 / sub 环 → error，行列来自引用处。
 - **connection**：`from` / `to` 是相对根的 node path（`.` = 根），解析成 node index；同 from/to/signal/method 重复 → error。
 - **canonical 顺序**：sub_resource 属性按属性名升序；node 属性在 Node 树版本按 ClassInfo 顺序（基类在前），IR 版本保持存储顺序。`save → load → save` 逐字节相同。
-- **依赖**：`scene → serialize`（`VariantCodec`）；`serialize → object`，不反向依赖 scene/render。
-- **范围**：M8a 支持 Node / position / 父子路径；M8b 支持 ext/sub 引用与 connection。场景源格式只做文本.
+- **依赖**：`scene → serialize`（`VariantCodec`）与 `asset`（MeshInstanceNode 资源 Ref）；`serialize → object`，不反向依赖 scene/render。
+- **Transform 限制**：运行时 Node 使用完整 TRS；`.scn` 仍只读写 `position`，writer 对非 translation-only Node 返回错误且不产出半份文本。
+- **MeshInstanceNode**：运行时持有 `Ref<Mesh>` / `Ref<Material>`；空节点可写 `.scn`，带任一资源引用时 writer 报错（资源引用序列化留到 M9.5）。
+- **范围**：M8a 支持 Node / position / 父子路径；M8b 支持 ext/sub 引用与 connection。场景源格式只做文本。

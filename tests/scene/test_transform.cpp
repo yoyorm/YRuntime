@@ -1,6 +1,10 @@
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <numbers>
+
 #include <yr/core/assert.h>
+#include <yr/math/quat.h>
 #include <yr/object/object_db.h>
 #include <yr/scene/node.h>
 #include <yr/scene/scene_tree.h>
@@ -95,6 +99,83 @@ TEST_CASE("transform: setPosition then refresh yields a pure translation", "[sce
   CHECK(rawRoot->globalTransform().transformPoint(Vec3(0.0F, 0.0F, 0.0F)) == Vec3(1.0F, 2.0F, 3.0F));
   // 方向向量不受平移影响。
   CHECK(rawRoot->globalTransform().transformVector(Vec3(1.0F, 0.0F, 0.0F)) == Vec3(1.0F, 0.0F, 0.0F));
+}
+
+TEST_CASE("transform: rotation and scale participate in the global matrix", "[scene][transform][trs]") {
+  auto root = std::make_unique<Node>();
+  Node* const rawRoot = root.get();
+
+  SceneTree tree;
+  REQUIRE(tree.setRoot(std::move(root)));
+  rawRoot->setPosition(Vec3{1.0F, 2.0F, 3.0F});
+  rawRoot->setRotation(yr::math::Quat::fromAxisAngle(Vec3{1.0F, 0.0F, 0.0F}, std::numbers::pi_v<float> * 0.5F));
+  rawRoot->setScale(Vec3{2.0F, 2.0F, 2.0F});
+  tree.refreshTransforms();
+
+  const Mat4 global = rawRoot->globalTransform();
+  const Vec3 origin = global.transformPoint(Vec3{});
+  const Vec3 xAxis = global.transformPoint(Vec3{1.0F, 0.0F, 0.0F});
+  CHECK(origin.x == Catch::Approx(1.0F));
+  CHECK(origin.y == Catch::Approx(2.0F));
+  CHECK(origin.z == Catch::Approx(3.0F));
+  CHECK(xAxis.x == Catch::Approx(3.0F));
+  CHECK(xAxis.y == Catch::Approx(2.0F));
+  CHECK(xAxis.z == Catch::Approx(3.0F));
+}
+
+TEST_CASE("transform: setPosition preserves rotation and scale", "[scene][transform][trs]") {
+  Node node;
+  const yr::math::Quat rotation = yr::math::Quat{0.0F, 2.0F, 0.0F, 2.0F}.normalized();
+  const Vec3 scale{2.0F, 3.0F, 4.0F};
+  yr::math::Transform transform;
+  transform.rotation = yr::math::Quat{0.0F, 2.0F, 0.0F, 2.0F};
+  transform.scale = scale;
+  node.setTransform(transform);
+  node.setPosition(Vec3{4.0F, 5.0F, 6.0F});
+
+  CHECK(node.position() == Vec3{4.0F, 5.0F, 6.0F});
+  CHECK(node.rotation().x == Catch::Approx(rotation.x));
+  CHECK(node.rotation().y == Catch::Approx(rotation.y));
+  CHECK(node.rotation().z == Catch::Approx(rotation.z));
+  CHECK(node.rotation().w == Catch::Approx(rotation.w));
+  CHECK(node.scale() == scale);
+  CHECK(node.transform().position == node.position());
+}
+
+TEST_CASE("transform: parent rotation and scale affect child position", "[scene][transform][hierarchy][trs]") {
+  auto root = std::make_unique<Node>();
+  auto child = std::make_unique<Node>();
+  Node* const rawRoot = root.get();
+  Node* const rawChild = child.get();
+  rawChild->setPosition(Vec3{1.0F, 0.0F, 0.0F});
+  REQUIRE(rawRoot->addChild(std::move(child)));
+
+  SceneTree tree;
+  REQUIRE(tree.setRoot(std::move(root)));
+  rawRoot->setRotation(yr::math::Quat::fromAxisAngle(Vec3{0.0F, 0.0F, 1.0F}, std::numbers::pi_v<float> * 0.5F));
+  rawRoot->setScale(Vec3{2.0F, 2.0F, 2.0F});
+  tree.refreshTransforms();
+
+  const Vec3 childOrigin = rawChild->globalTransform().transformPoint(Vec3{});
+  CHECK(childOrigin.x == Catch::Approx(0.0F).margin(1.0e-5F));
+  CHECK(childOrigin.y == Catch::Approx(2.0F));
+  CHECK(childOrigin.z == Catch::Approx(0.0F).margin(1.0e-5F));
+}
+
+TEST_CASE("transform: TRS setters preserve cached-global refresh semantics", "[scene][transform][dirty][trs]") {
+  auto root = std::make_unique<Node>();
+  Node* const rawRoot = root.get();
+
+  SceneTree tree;
+  REQUIRE(tree.setRoot(std::move(root)));
+  tree.refreshTransforms();
+  const Mat4 before = rawRoot->globalTransform();
+
+  rawRoot->setScale(Vec3{2.0F, 2.0F, 2.0F});
+  CHECK(rawRoot->globalTransform() == before);
+  tree.refreshTransforms();
+  CHECK(rawRoot->globalTransform() != before);
+  CHECK(rawRoot->globalTransform().transformVector(Vec3{1.0F, 0.0F, 0.0F}).x == Catch::Approx(2.0F));
 }
 
 TEST_CASE("transform: three-level hierarchy accumulates parent positions", "[scene][transform][hierarchy]") {

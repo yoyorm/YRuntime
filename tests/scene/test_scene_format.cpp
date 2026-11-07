@@ -8,6 +8,7 @@
 #include <string_view>
 
 #include <yr/core/string_interner.h>
+#include <yr/math/quat.h>
 #include <yr/math/vec3.h>
 #include <yr/object/class_db.h>
 #include <yr/object/class_info.h>
@@ -208,6 +209,35 @@ TEST_CASE("scene writer: duplicate sibling names are rejected", "[scene][scene_f
   CHECK_FALSE(result.ok);
   CHECK(result.text.empty());
   CHECK(result.error.find("重名") != std::string::npos);
+}
+
+TEST_CASE("scene writer: only translation is supported for Node transforms", "[scene][scene_format][writer]") {
+  SECTION("translation-only node succeeds") {
+    Node root;
+    root.setName("Root");
+    root.setPosition(Vec3{1.0F, 2.0F, 3.0F});
+    const SceneWriteResult result = SceneWriter::write(root);
+    REQUIRE(result.ok);
+    CHECK(result.text.find("position = Vector3(1, 2, 3)") != std::string::npos);
+  }
+  SECTION("rotation fails without text") {
+    Node root;
+    root.setName("Root");
+    root.setRotation(yr::math::Quat::fromAxisAngle(Vec3{0.0F, 1.0F, 0.0F}, 1.0F));
+    const SceneWriteResult result = SceneWriter::write(root);
+    CHECK_FALSE(result.ok);
+    CHECK(result.text.empty());
+    CHECK(result.error.find("rotation") != std::string::npos);
+  }
+  SECTION("non-unit scale fails without text") {
+    Node root;
+    root.setName("Root");
+    root.setScale(Vec3{2.0F, 1.0F, 1.0F});
+    const SceneWriteResult result = SceneWriter::write(root);
+    CHECK_FALSE(result.ok);
+    CHECK(result.text.empty());
+    CHECK(result.error.find("rotation/scale") != std::string::npos);
+  }
 }
 
 TEST_CASE("scene writer: writing a subtree as root is rejected", "[scene][scene_format][writer]") {
