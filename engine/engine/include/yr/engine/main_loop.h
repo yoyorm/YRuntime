@@ -69,7 +69,12 @@ namespace yr::engine {
     [[nodiscard]] evt::EventBus& events() noexcept { return eventBus_; }
 
     // 非拥有后端：装配者拥有并保证比 MainLoop 活得更久；nullptr 时阶段 11 为 no-op。
-    void setBackend(render::RendererBackend* backend) noexcept { backend_ = backend; }
+    void setBackend(render::RendererBackend* backend) noexcept {
+      if (backend_ != backend) {
+        renderExtract_.reset();
+        backend_ = backend;
+      }
+    }
 
     // 阶段 10 产出的当前帧快照，直到下一次 tick 才被覆写。
     [[nodiscard]] render::RenderSnapshot& snapshot() noexcept { return snapshot_; }

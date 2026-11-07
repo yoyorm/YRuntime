@@ -1,12 +1,15 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <yr/asset/resource_types.h>
 #include <yr/engine/clock.h>
 #include <yr/engine/main_loop.h>
 #include <yr/event/event_bus.h>
 #include <yr/object/object_db.h>
+#include <yr/object/ref.h>
 #include <yr/render/null_backend.h>
 #include <yr/render/snapshot.h>
+#include <yr/scene/mesh_instance_node.h>
 #include <yr/scene/node.h>
 #include <yr/scene/scene_tree.h>
 
@@ -62,6 +65,24 @@ namespace {
       }
     }
   };
+
+  yr::obj::Ref<yr::asset::Mesh> makeRenderMesh(std::uint64_t uid) {
+    auto mesh = yr::obj::make_ref<yr::asset::Mesh>();
+    mesh->setUid(yr::asset::AssetUID{uid});
+    (void)mesh->markLoading();
+    (void)mesh->markReady();
+    mesh->vertices.resize(3);
+    mesh->indices = {0, 1, 2};
+    return mesh;
+  }
+
+  yr::obj::Ref<yr::asset::Material> makeRenderMaterial(std::uint64_t uid) {
+    auto material = yr::obj::make_ref<yr::asset::Material>();
+    material->setUid(yr::asset::AssetUID{uid});
+    (void)material->markLoading();
+    (void)material->markReady();
+    return material;
+  }
 
   // 测试探针：派生并逐个记录阶段调用。阶段方法为 protected virtual，记录顺序不侵入生产代码。
   class RecordingMainLoop : public MainLoop {
@@ -689,21 +710,23 @@ TEST_CASE("main_loop: extract fills a frame-indexed snapshot even without a back
   yr::evt::EventBus bus;
   MainLoop loop(tree, bus);
 
-  auto root = std::make_unique<yr::scene::Node>();
-  auto child = std::make_unique<yr::scene::Node>();
-  REQUIRE(root->addChild(std::move(child)));
-  REQUIRE(tree.setRoot(std::move(root)));
+  auto instance = std::make_unique<yr::scene::MeshInstanceNode>();
+  instance->setMesh(makeRenderMesh(1001));
+  instance->setMaterial(makeRenderMaterial(2001));
+  REQUIRE(tree.setRoot(std::move(instance)));
 
   loop.tick(1.0 / 60.0);
   CHECK(loop.snapshot().frame_index == 0);
-  CHECK(loop.snapshot().items.size() == 2);
+  CHECK(loop.snapshot().items.size() == 1);
 
   loop.tick(1.0 / 60.0);
   CHECK(loop.snapshot().frame_index == 1);
-  CHECK(loop.snapshot().items.size() == 2);
+  CHECK(loop.snapshot().items.size() == 1);
+  CHECK(loop.snapshot().uploads.meshes.empty());
+  CHECK(loop.snapshot().uploads.materials.empty());
 
   const MainLoop& constLoop = loop; // const snapshot() 重载
-  CHECK(constLoop.snapshot().items.size() == 2);
+  CHECK(constLoop.snapshot().items.size() == 1);
 }
 
 TEST_CASE("main_loop: present forwards the snapshot to the injected backend deterministically",
@@ -713,10 +736,20 @@ TEST_CASE("main_loop: present forwards the snapshot to the injected backend dete
   MainLoop loop(tree, bus);
 
   auto root = std::make_unique<yr::scene::Node>();
-  auto childA = std::make_unique<yr::scene::Node>();
-  auto childB = std::make_unique<yr::scene::Node>();
+  auto childA = std::make_unique<yr::scene::MeshInstanceNode>();
+  auto childB = std::make_unique<yr::scene::MeshInstanceNode>();
+  auto childC = std::make_unique<yr::scene::MeshInstanceNode>();
+  auto mesh = makeRenderMesh(1101);
+  auto material = makeRenderMaterial(2101);
+  childA->setMesh(mesh);
+  childA->setMaterial(material);
+  childB->setMesh(mesh);
+  childB->setMaterial(material);
+  childC->setMesh(mesh);
+  childC->setMaterial(material);
   REQUIRE(root->addChild(std::move(childA)));
   REQUIRE(root->addChild(std::move(childB)));
+  REQUIRE(root->addChild(std::move(childC)));
   REQUIRE(tree.setRoot(std::move(root)));
 
   auto backend = yr::render::create_null_backend();
@@ -731,5 +764,35 @@ TEST_CASE("main_loop: present forwards the snapshot to the injected backend dete
     CHECK(stats.items == items);
     CHECK(stats.draw_calls == items);
     CHECK(stats.triangles == items);
+    if (frame == 0) {
+      CHECK(stats.uploaded_assets == 2);
+    } else {
+      CHECK(stats.uploaded_assets == 0);
+    }
   }
+}
+
+TEST_CASE("main_loop: changing backend resets extracted resource residency", "[engine][main_loop][render]") {
+  yr::scene::SceneTree tree;
+  yr::evt::EventBus bus;
+  MainLoop loop(tree, bus);
+
+  auto instance = std::make_unique<yr::scene::MeshInstanceNode>();
+  instance->setMesh(makeRenderMesh(3101));
+  instance->setMaterial(makeRenderMaterial(4101));
+  REQUIRE(tree.setRoot(std::move(instance)));
+
+  auto firstBackend = yr::render::create_null_backend();
+  auto secondBackend = yr::render::create_null_backend();
+  loop.setBackend(firstBackend.get());
+  loop.tick(1.0 / 60.0);
+  CHECK(firstBackend->last_frame_stats().uploaded_assets == 2);
+
+  loop.setBackend(firstBackend.get());
+  loop.tick(1.0 / 60.0);
+  CHECK(firstBackend->last_frame_stats().uploaded_assets == 0);
+
+  loop.setBackend(secondBackend.get());
+  loop.tick(1.0 / 60.0);
+  CHECK(secondBackend->last_frame_stats().uploaded_assets == 2);
 }

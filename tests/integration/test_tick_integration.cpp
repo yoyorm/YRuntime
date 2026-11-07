@@ -149,16 +149,16 @@ TEST_CASE("integration: deterministic headless tick is leak-free and stats-sane"
       bus.post(CounterEvent{frame}); // 本帧阶段 3 flush 派发
       loop.tick(kDelta);
       REQUIRE_FALSE(loop.shouldQuit());
-      // 阶段 10/11：每帧后端统计都等于本帧快照条目数（稳定、无漂移）。
+      // 普通 Node 不产生 DrawItem；阶段 11 的统计与空渲染列表一致。
       REQUIRE(backend->last_frame_stats().items == loop.snapshot().items.size());
     }
 
-    // --- RenderSnapshot → NullBackend：条目数等于最终树内节点数 ---
+    // --- 普通 Node 不产生 DrawItem，场景树节点计数仍独立验证 ---
     const std::size_t finalNodes = countNodes(*rawRoot);
     CHECK(finalNodes == static_cast<std::size_t>(kChildren) * (kGrandchildren + 1) + 1);
-    CHECK(loop.snapshot().items.size() == finalNodes);
-    CHECK(backend->last_frame_stats().items == finalNodes);
-    CHECK(backend->last_frame_stats().draw_calls == finalNodes);
+    CHECK(loop.snapshot().items.empty());
+    CHECK(backend->last_frame_stats().items == 0);
+    CHECK(backend->last_frame_stats().draw_calls == 0);
 
     // --- 帧数 / 物理步数 ---
     CHECK(loop.frameCount() == kFrames);
