@@ -1,4 +1,4 @@
-#include "vk_triangle_pipeline.h"
+#include "vk_mesh_pipeline.h"
 
 #include <array>
 #include <cstdint>
@@ -15,7 +15,6 @@ namespace yr::render::vk {
 
   namespace {
 
-    // SPIR-V 是 32 位字序列：vector<uint32_t> 保证 4 字节对齐，codeSize 必须是 4 的倍数。
     [[nodiscard]] std::vector<std::uint32_t> readSpirv(const std::filesystem::path& path) {
       std::ifstream file(path, std::ios::binary | std::ios::ate);
       if (!file) {
@@ -42,21 +41,28 @@ namespace yr::render::vk {
 
   } // namespace
 
-  TrianglePipeline::TrianglePipeline(const Device& device, ::vk::Format colorFormat) : colorFormat_(colorFormat) {
+  MeshPipeline::MeshPipeline(const Device& device, ::vk::Format colorFormat, ::vk::Format depthFormat)
+      : colorFormat_(colorFormat), depthFormat_(depthFormat) {
     const std::filesystem::path shaderDir{YR_VULKAN_SHADER_DIR};
-    const std::vector<std::uint32_t> vertexWords = readSpirv(shaderDir / "triangle.vert.spv");
-    const std::vector<std::uint32_t> fragmentWords = readSpirv(shaderDir / "triangle.frag.spv");
+    const std::vector<std::uint32_t> vertexWords = readSpirv(shaderDir / "mesh.vert.spv");
+    const std::vector<std::uint32_t> fragmentWords = readSpirv(shaderDir / "mesh.frag.spv");
 
     const ::vk::raii::Device& raiiDevice = device.raiiDevice();
     vertexShader_ = createShaderModule(raiiDevice, vertexWords);
     fragmentShader_ = createShaderModule(raiiDevice, fragmentWords);
 
-    // 空 descriptor layout + 80 字节 push constant：MVP 与颜色逐 draw 推送。
+    const ::vk::DescriptorSetLayoutBinding frameBinding{0, ::vk::DescriptorType::eUniformBuffer, 1,
+                                                        ::vk::ShaderStageFlagBits::eVertex |
+                                                            ::vk::ShaderStageFlagBits::eFragment};
+    ::vk::DescriptorSetLayoutCreateInfo descriptorLayoutInfo{};
+    descriptorLayoutInfo.setBindings(frameBinding);
+    descriptorSetLayout_ = ::vk::raii::DescriptorSetLayout(raiiDevice, descriptorLayoutInfo);
+
     const ::vk::PushConstantRange pushConstantRange{::vk::ShaderStageFlagBits::eVertex |
                                                         ::vk::ShaderStageFlagBits::eFragment,
-                                                    0, static_cast<std::uint32_t>(sizeof(PushConstants))};
+                                                    0, static_cast<std::uint32_t>(sizeof(MeshPushConstants))};
     ::vk::PipelineLayoutCreateInfo layoutInfo{};
-    layoutInfo.setPushConstantRanges(pushConstantRange);
+    layoutInfo.setSetLayouts(*descriptorSetLayout_).setPushConstantRanges(pushConstantRange);
     layout_ = ::vk::raii::PipelineLayout(raiiDevice, layoutInfo);
 
     ::vk::PipelineShaderStageCreateInfo vertexStage{};
@@ -65,13 +71,18 @@ namespace yr::render::vk {
     fragmentStage.setStage(::vk::ShaderStageFlagBits::eFragment).setModule(*fragmentShader_).setPName("main");
     const std::array<::vk::PipelineShaderStageCreateInfo, 2> stages{vertexStage, fragmentStage};
 
-    // 无 vertex buffer：顶点位置完全由 vertex shader 的 gl_VertexIndex 生成。
-    const ::vk::PipelineVertexInputStateCreateInfo vertexInput{};
+    const ::vk::VertexInputBindingDescription vertexBinding{0, 32, ::vk::VertexInputRate::eVertex};
+    const std::array<::vk::VertexInputAttributeDescription, 3> attributes{{
+        {0, 0, ::vk::Format::eR32G32B32Sfloat, 0},
+        {1, 0, ::vk::Format::eR32G32B32Sfloat, 12},
+        {2, 0, ::vk::Format::eR32G32Sfloat, 24},
+    }};
+    ::vk::PipelineVertexInputStateCreateInfo vertexInput{};
+    vertexInput.setVertexBindingDescriptions(vertexBinding).setVertexAttributeDescriptions(attributes);
 
     ::vk::PipelineInputAssemblyStateCreateInfo inputAssembly{};
     inputAssembly.setTopology(::vk::PrimitiveTopology::eTriangleList);
 
-    // viewport / scissor 走 dynamic state，数量仍须声明；具体值在录制命令时设置。
     ::vk::PipelineViewportStateCreateInfo viewportState{};
     viewportState.setViewportCount(1).setScissorCount(1);
 
@@ -79,7 +90,7 @@ namespace yr::render::vk {
     rasterization.setPolygonMode(::vk::PolygonMode::eFill)
         .setCullMode(::vk::CullModeFlagBits::eNone)
         .setFrontFace(::vk::FrontFace::eCounterClockwise)
-        .setLineWidth(1.0f);
+        .setLineWidth(1.0F);
 
     ::vk::PipelineMultisampleStateCreateInfo multisample{};
     multisample.setRasterizationSamples(::vk::SampleCountFlagBits::e1);
@@ -91,16 +102,18 @@ namespace yr::render::vk {
     ::vk::PipelineColorBlendStateCreateInfo colorBlend{};
     colorBlend.setAttachmentCount(1).setAttachments(blendAttachment);
 
-    const ::vk::PipelineDepthStencilStateCreateInfo depthStencil{};
+    ::vk::PipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.setDepthTestEnable(true).setDepthWriteEnable(true).setDepthCompareOp(::vk::CompareOp::eLess);
 
-    constexpr std::array<::vk::DynamicState, 2> kDynamicStates{::vk::DynamicState::eViewport,
-                                                               ::vk::DynamicState::eScissor};
+    constexpr std::array<::vk::DynamicState, 2> dynamicStates{::vk::DynamicState::eViewport,
+                                                              ::vk::DynamicState::eScissor};
     ::vk::PipelineDynamicStateCreateInfo dynamicState{};
-    dynamicState.setDynamicStates(kDynamicStates);
+    dynamicState.setDynamicStates(dynamicStates);
 
-    // dynamic rendering：没有 render pass，color format 必须在这里显式给出。
     ::vk::PipelineRenderingCreateInfo renderingInfo{};
-    renderingInfo.setColorAttachmentCount(1).setPColorAttachmentFormats(&colorFormat_);
+    renderingInfo.setColorAttachmentCount(1)
+        .setPColorAttachmentFormats(&colorFormat_)
+        .setDepthAttachmentFormat(depthFormat_);
 
     ::vk::GraphicsPipelineCreateInfo createInfo{};
     createInfo.setStages(stages)
@@ -117,8 +130,8 @@ namespace yr::render::vk {
         .setPNext(&renderingInfo);
     pipeline_ = raiiDevice.createGraphicsPipeline(nullptr, createInfo);
 
-    YR_LOG_INFO("render.vk.pipeline",
-                "pipeline 已创建 colorFormat=" + ::vk::to_string(colorFormat) + " dynamic viewport/scissor");
+    YR_LOG_INFO("render.vk.pipeline", "mesh pipeline 已创建 colorFormat=" + ::vk::to_string(colorFormat) +
+                                          " depthFormat=" + ::vk::to_string(depthFormat));
   }
 
 } // namespace yr::render::vk

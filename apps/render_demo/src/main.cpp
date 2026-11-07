@@ -16,16 +16,19 @@
 #include <utility>
 #include <vector>
 
+#include <yr/asset/gltf_loader.h>
 #include <yr/core/log.h>
 #include <yr/core/timer.h>
 #include <yr/engine/clock.h>
 #include <yr/engine/main_loop.h>
 #include <yr/event/event_bus.h>
 #include <yr/math/mat4.h>
+#include <yr/math/transform.h>
 #include <yr/math/vec3.h>
 #include <yr/render/snapshot.h>
 #include <yr/render/snapshot_io.h>
 #include <yr/render/vk/vulkan_backend.h>
+#include <yr/scene/mesh_instance_node.h>
 #include <yr/scene/node.h>
 #include <yr/scene/scene_tree.h>
 
@@ -66,7 +69,7 @@ namespace {
     return std::string(buffer);
   }
 
-  // host 驱动 MainLoop：阶段 1 泵窗口事件，WASD 平移中间节点；窗口关闭转成 requestQuit。
+  // host 驱动 MainLoop：阶段 1 泵窗口事件，WASD 小幅平移场景根；关闭窗口转成 requestQuit。
   class DemoLoop final : public yr::engine::MainLoop {
   public:
     DemoLoop(yr::scene::SceneTree& tree, yr::evt::EventBus& events, yr::render::VulkanBackend& backend,
@@ -93,11 +96,11 @@ namespace {
 
       // 长帧（拖窗口 / 断点）会把位移放大成瞬移，clamp dt 到 100ms。
       const float dt = std::clamp(static_cast<float>(delta()), 0.0F, 0.1F);
-      constexpr float kSpeed = 2.0F; // units/s
+      constexpr float kSpeed = 0.02F; // units/s
       const yr::math::Vec3& current = movable_.position();
       yr::math::Vec3 next = current + yr::math::Vec3{dx, dy, 0.0F} * (kSpeed * dt);
-      next.x = std::clamp(next.x, -2.0F, 2.0F);
-      next.y = std::clamp(next.y, -1.5F, 2.0F);
+      next.x = std::clamp(next.x, -0.05F, 0.05F);
+      next.y = std::clamp(next.y, -0.05F, 0.05F);
       movable_.setPosition(next);
     }
 
@@ -212,6 +215,8 @@ namespace {
         break;
       }
       backend.present(snapshot);
+      snapshot.uploads = {};
+      snapshot.releases = {};
       ++frames;
       if (options.frames != 0 && frames >= options.frames) {
         break;
@@ -221,11 +226,63 @@ namespace {
     const yr::render::BackendStats backendStats = backend.last_frame_stats();
     backend.shutdown();
     const std::uint32_t errors = backend.validationErrorCount();
-    YR_LOG_INFO("render_demo", "replay frames=" + std::to_string(frames) +
-                                   " items=" + std::to_string(backendStats.items) +
-                                   " draw_calls=" + std::to_string(backendStats.draw_calls) +
-                                   " validation_errors=" + std::to_string(errors));
+    YR_LOG_INFO("render_demo",
+                "replay frames=" + std::to_string(frames) + " items=" + std::to_string(backendStats.items) +
+                    " draw_calls=" + std::to_string(backendStats.draw_calls) +
+                    " triangles=" + std::to_string(backendStats.triangles) +
+                    " uploads=" + std::to_string(backendStats.uploaded_assets) +
+                    " releases=" + std::to_string(backendStats.released_assets) +
+                    " missing=" + std::to_string(backendStats.missing_assets) + " upload_bytes=" +
+                    std::to_string(backendStats.upload_bytes) + " validation_errors=" + std::to_string(errors));
     return errors == 0 ? 0 : 1;
+  }
+
+  [[nodiscard]] std::unique_ptr<yr::scene::Node> buildGltfNode(const yr::asset::GltfNode& source) {
+    auto node = std::make_unique<yr::scene::Node>();
+    node->setName(source.name);
+    node->setTransform(source.localTransform);
+    for (std::size_t index = 0; index < source.primitives.size(); ++index) {
+      const yr::asset::GltfPrimitive& primitive = source.primitives[index];
+      auto meshNode = std::make_unique<yr::scene::MeshInstanceNode>();
+      meshNode->setName(source.name + ".primitive." + std::to_string(index));
+      meshNode->setMesh(primitive.mesh);
+      meshNode->setMaterial(primitive.material);
+      if (!node->addChild(std::move(meshNode))) {
+        return nullptr;
+      }
+    }
+    for (const yr::asset::GltfNode& child : source.children) {
+      auto childNode = buildGltfNode(child);
+      if (!childNode || !node->addChild(std::move(childNode))) {
+        return nullptr;
+      }
+    }
+    return node;
+  }
+
+  void calculateBounds(yr::scene::Node& node, yr::math::Vec3& minimum, yr::math::Vec3& maximum, bool& hasVertex) {
+    if (auto* meshNode = dynamic_cast<yr::scene::MeshInstanceNode*>(&node); meshNode != nullptr && meshNode->mesh()) {
+      for (const yr::asset::MeshVertex& vertex : meshNode->mesh()->vertices) {
+        const yr::math::Vec3 point = meshNode->globalTransform().transformPoint(vertex.position);
+        if (!hasVertex) {
+          minimum = point;
+          maximum = point;
+          hasVertex = true;
+        } else {
+          minimum.x = std::min(minimum.x, point.x);
+          minimum.y = std::min(minimum.y, point.y);
+          minimum.z = std::min(minimum.z, point.z);
+          maximum.x = std::max(maximum.x, point.x);
+          maximum.y = std::max(maximum.y, point.y);
+          maximum.z = std::max(maximum.z, point.z);
+        }
+      }
+    }
+    for (std::size_t index = 0; index < node.childCount(); ++index) {
+      if (yr::scene::Node* child = node.childAt(index); child != nullptr) {
+        calculateBounds(*child, minimum, maximum, hasVertex);
+      }
+    }
   }
 
 } // namespace
@@ -252,30 +309,58 @@ int main(int argc, char** argv) {
     return runReplay(backend, options);
   }
 
-  // 场景：root 下 3 个子节点沿 X 轴排开，便于验证逐 item 的 world 变换。
+  std::unique_ptr<yr::scene::Node> root;
+  {
+    // GltfScene 仅用于构建节点树；之后资源 liveness 由 MeshInstanceNode 的 Ref 维持。
+    yr::asset::GltfLoadResult loaded = yr::asset::loadGltfScene("res://models/ToyCar/ToyCar.gltf", YR_ASSET_ROOT);
+    if (!loaded) {
+      YR_LOG_ERROR("render_demo", "ToyCar 加载失败：" + loaded.error);
+      backend.shutdown();
+      return 1;
+    }
+    root = std::make_unique<yr::scene::Node>();
+    root->setName("ToyCarScene");
+    for (const yr::asset::GltfNode& gltfRoot : loaded.scene.roots) {
+      auto child = buildGltfNode(gltfRoot);
+      if (!child || !root->addChild(std::move(child))) {
+        YR_LOG_ERROR("render_demo", "ToyCar 节点构建失败");
+        backend.shutdown();
+        return 1;
+      }
+    }
+  }
+
   yr::scene::SceneTree tree;
-  auto root = std::make_unique<yr::scene::Node>();
-  auto left = std::make_unique<yr::scene::Node>();
-  auto middle = std::make_unique<yr::scene::Node>();
-  auto right = std::make_unique<yr::scene::Node>();
-  left->setPosition(yr::math::Vec3{-1.2F, 0.0F, 0.0F});
-  middle->setPosition(yr::math::Vec3{0.0F, 1.2F, 0.0F});
-  right->setPosition(yr::math::Vec3{1.2F, 0.0F, 0.0F});
-  // 树接管所有权后，movable 仍指向同一对象；loop 不拥有它。
-  yr::scene::Node* const movable = middle.get();
-  if (!(root->addChild(std::move(left)) && root->addChild(std::move(middle)) && root->addChild(std::move(right))) ||
-      !tree.setRoot(std::move(root))) {
+  yr::scene::Node* const movable = root.get();
+  if (!tree.setRoot(std::move(root))) {
     YR_LOG_ERROR("render_demo", "场景构建失败");
     backend.shutdown();
     return 1;
   }
+  tree.refreshTransforms();
 
-  // 相机由 host 计算，MainLoop 只转交；1280x720 与默认窗口一致。
+  yr::math::Vec3 minimum{};
+  yr::math::Vec3 maximum{};
+  bool hasVertex = false;
+  calculateBounds(*tree.root(), minimum, maximum, hasVertex);
+  if (!hasVertex) {
+    YR_LOG_ERROR("render_demo", "ToyCar 没有可用顶点");
+    backend.shutdown();
+    return 1;
+  }
+  const yr::math::Vec3 center = (minimum + maximum) * 0.5F;
+  const float radius = std::max((maximum - minimum).length() * 0.5F, 0.001F);
+  const yr::math::Vec3 eye = center + yr::math::Vec3{1.2F * radius, 0.8F * radius, 1.8F * radius};
+
+  // 相机由 ToyCar 的世界空间 AABB 定位，MainLoop 只转交。
   constexpr float kFovYRadians = 60.0F * std::numbers::pi_v<float> / 180.0F;
   yr::render::CameraPod camera;
-  camera.proj = toTransform(yr::math::Mat4::perspective(kFovYRadians, 1280.0F / 720.0F, 0.1F, 100.0F));
-  camera.view = toTransform(yr::math::Mat4::lookAt(yr::math::Vec3{0.0F, 0.0F, 4.0F}, yr::math::Vec3{0.0F, 0.0F, 0.0F},
-                                                   yr::math::Vec3{0.0F, 1.0F, 0.0F}));
+  camera.eye[0] = eye.x;
+  camera.eye[1] = eye.y;
+  camera.eye[2] = eye.z;
+  camera.proj = toTransform(
+      yr::math::Mat4::perspective(kFovYRadians, 1280.0F / 720.0F, std::max(0.001F, radius * 0.01F), radius * 100.0F));
+  camera.view = toTransform(yr::math::Mat4::lookAt(eye, center, yr::math::Vec3{0.0F, 1.0F, 0.0F}));
 
   yr::evt::EventBus events;
   DemoLoop loop(tree, events, backend, *movable, options.dumpSnapshot);
@@ -311,7 +396,11 @@ int main(int argc, char** argv) {
              " p95=" + formatDuration(stats.phaseP95(yr::engine::Phase::kPresent));
   summary += " | items=" + std::to_string(backendStats.items) +
              " draw_calls=" + std::to_string(backendStats.draw_calls) +
-             " triangles=" + std::to_string(backendStats.triangles);
+             " triangles=" + std::to_string(backendStats.triangles) +
+             " uploads=" + std::to_string(backendStats.uploaded_assets) +
+             " releases=" + std::to_string(backendStats.released_assets) +
+             " missing=" + std::to_string(backendStats.missing_assets) +
+             " upload_bytes=" + std::to_string(backendStats.upload_bytes);
   summary += " validation_errors=" + std::to_string(errors);
   YR_LOG_INFO("render_demo", summary);
   return errors == 0 && !loop.dumpFailed() ? 0 : 1;

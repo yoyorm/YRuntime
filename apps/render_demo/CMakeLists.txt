@@ -5,5 +5,8 @@ add_executable(yr_render_demo
 target_link_libraries(yr_render_demo PRIVATE
     yr::render_vulkan
     yr::engine
+    yr::asset
     yr::math
     yr::core)
+
+target_compile_definitions(yr_render_demo PRIVATE "YR_ASSET_ROOT=\"${PROJECT_SOURCE_DIR}/assets\"")
