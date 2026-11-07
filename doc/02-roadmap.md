@@ -384,7 +384,7 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 
 | 内容 | 推迟到 | 理由 |
 |---|---|---|
-| `uploads` / `releases` | M9 | 资源系统出现才有上传/释放请求 |
+| `uploads` / `releases` | M9.0c 已接入 | 首帧全量上传，后续按驻留状态生成增量 |
 | `LightPod` | M9.5 | 无光照消费者，字段现在定是猜（D21） |
 | 相机 fov/near/far、多相机 | M9.5 / stretch | 单相机固定默认够 M5；Camera Node 归 M9.5，多相机留 stretch |
 | `sort_key` 位段 | stretch | M9.5 只做 opaque/mask，暂无透明排序消费者 |
@@ -395,12 +395,12 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 - headless + `NullBackend` 跑 headless scene simulation 1000 帧，快照统计正常，CI 全绿。
 - 快照 dump/replay round-trip 一致，**且统计确定**（同输入两次逐字节相同）。
 - `yr_render_iface` 的头文件**只 include `yr/core/*` 与 std**（CI 检查 include 列表）。
-- `DrawItem` 中**禁止**出现 `Object*` / `Mesh*` / `Ref<Mesh>` / `Vk*`；`AssetHandle` 是强类型。（"未就绪资源本帧跳过"是**上传时序**契约，随 `uploads`/`releases` **推迟到 M9**——M5 的 `AssetHandle` 仅作不透明 key，不承诺未就绪语义。）
+- `DrawItem` 中**禁止**出现 `Object*` / `Mesh*` / `Ref<Mesh>` / `Vk*`；`AssetHandle` 是强类型。M9.0c 已实现未就绪或缺失 mesh/material 跳过并统计，缺失纹理使用默认白纹理。
 - 能回答："如果换一个 OpenGL 后端，需要改 Runtime 的哪一行代码？"（答案必须是 0 行）
 
 **产出物**：快照重放 demo。**这个主题面试高频，值得写成博客**（见 `07-portfolio.md` §4）。
 **学习点**：数据契约设计、POD 与 ABI、Server 模式、可重放性作为设计验证手段。
-**常见坑**：① 快照里偷偷放了 `Object*`（"就这一次"）→ 解耦崩塌，CI 必须挡住；② 矩阵行列主序/坐标系（Y-up vs Z-up）没写清 → 后面画面全错且极难查，**现在就把注释写死**；③ 资源上传请求的时序（Backend 还没加载完 mesh，DrawItem 已经引用它）→ 该"未就绪本帧跳过"契约随 `uploads`/`releases` **推迟到 M9**，M5 只把 `AssetHandle` 定为不透明 key；④ 把临时 triangle / default material ID 当成正式资源系统 → 正式 `AssetUID` / `AssetDatabase` 必须等 M9。
+**常见坑**：① 快照里偷偷放了 `Object*`（"就这一次"）→ 解耦崩塌，CI 必须挡住；② 矩阵行列主序/坐标系（Y-up vs Z-up）没写清 → 后面画面全错且极难查，**现在就把注释写死**；③ 资源上传请求的时序（Backend 还没加载完 mesh，DrawItem 已经引用它）→ M9.0c 通过首帧上传增量及缺失资源跳过处理；④ 把临时 triangle / default material ID 当成正式资源系统 → 正式 `AssetUID` 已接入，AssetDatabase 仍在 M9.1。
 **Godot 对照**：`servers/rendering/rendering_server.h`（Server 命令接口）、`servers/server_wrap_mt_common.h`（选读：Server 如何包装）、`core/templates/command_queue_mt.h`。
 **降级方案**：不做快照重放（只做 dump 用于人工检查）。**但"Runtime 侧零 vulkan include"与"AssetHandle 强类型"不能降级。**
 
@@ -511,15 +511,17 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 
 **目标**：资源有身份（UID）、有注册表、有引用计数、能异步加载不卡帧、能自动卸载；并用**正式 `AssetUID`/`AssetDatabase` 替换 M5 的临时内建 triangle/default material 注册表**，正式完成 `AssetHandle → GPU` 资源桥接。
 
-> **M9 顺序（D26）**：M9.0 walking skeleton（真实资产 + 同步加载 + 一个 PBR 物体上屏）→ M9.1 AssetDatabase/GC → M9.2 协作式异步 + streaming → M9.5 完整 PBR。最终场景：ToyCar（仓库内）+ Sponza（外部路径，压力测试，不进仓库）。每个子系统必须有 demo 消费者，否则删除。
+> **M9 顺序（D26）**：M9.0 walking skeleton（真实资产 + 同步加载 + 一个带 baseColor 材质的物体上屏）→ M9.1 AssetDatabase/GC → M9.2 协作式异步 + streaming → M9.5 完整 PBR。最终场景：ToyCar（仓库内）+ Sponza（外部路径，压力测试，不进仓库）。每个子系统必须有 demo 消费者，否则删除。
+
+> **M9.0c 完成（2026-11-07）**：3 primitives / 108936 triangles / 首帧 uploads=8 / 9,027,840 B / drop-at releases=3 / resize 2 次重建 / validation 0 / dump 8.7MB replay 一致。
 
 > **M9.0b 完成（2026-11-06）**：vendor tinyGLTF v3 + stb_image；`loadGltfScene` 同步加载 ToyCar：11 roots / 3 primitives / 3 materials，66951+8959+1519 vertices；`YrTests_asset` 18 cases / 260 assertions，全量 382/382。
 
 - [x] M9-0 RefCounted + Ref<T>（AI 实现，用户 review；8478fcc）
 - [x] M9.0a AssetUID + Resource + Mesh/Material/Texture 数据类型（8821ff0）
 - [x] M9.0b 同步加载：vendor tinyGLTF v3 + stb_image，ToyCar → `GltfScene`（`Ref<Mesh/Material/Texture>`，D29）
-- [ ] M9.0c 一个带贴图的 PBR 物体上屏：snapshot uploads/releases + Node 持 Ref
-- [ ] M9.1 AssetDatabase：缓存 / refcount / evict / GC
+- [x] M9.0c：完整 TRS + MeshInstanceNode；snapshot v2 uploads/releases（首帧增量）；MeshPipeline / D32 depth / Frame UBO / texture descriptor；ToyCar 3 primitive + baseColor + Blinn-Phong；debug-vk 与 ASan 398/398、Vulkan validation 0 ✅ 2026-11-07
+- [ ] **下一步 M9.1** AssetDatabase：缓存 / refcount / evict / GC
 - [ ] M9.2 协作式异步：每帧预算分块读 + ThrottledFileAccess + streaming demo
 - [ ] `yr/asset/asset_uid.h`：`AssetUID`（内容哈希或稳定 ID）+ `path ↔ uid` 映射表（对照 Godot `resource_uid.h`）
 - [ ] `yr/asset/resource.h`：`Resource : RefCounted`（source_path / uid / 加载状态 / 元数据）

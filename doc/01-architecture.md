@@ -606,13 +606,15 @@ struct TransformPod {         // 同 yr::math::Mat4：column-major、v' = M * v�
 };
 struct DrawItem {
   RenderObjectId object; TransformPod world;
-  AssetHandle mesh, material;                       // M5：内建/无效，未就绪语义推到 M9
+  AssetHandle mesh, material;                       // 真实 AssetUID.value，不透明 key
 };
-struct CameraPod { TransformPod view, proj; };      // M5 单相机、固定默认值
+struct CameraPod { TransformPod view, proj; float eye[3]; }; // 单相机 + 世界空间 eye
 struct RenderSnapshot {
   uint64_t frame_index;
   CameraPod camera;
   std::vector<DrawItem> items;
+  RenderUploads uploads;                            // 相对前帧 resident 的增量
+  RenderReleases releases;
 };
 
 struct BackendConfig {};                            // M5 headless：无窗口/设备参数
@@ -635,7 +637,7 @@ std::unique_ptr<RendererBackend> create_null_backend();  // 工厂在各自 targ
 }
 ```
 
-**规划与兑现**：上面的结构是 M5 冻结的最小版（与 `engine/render/iface` 一致）。`uploads` / `releases` / `LightPod` / `sort_key` / 多相机 / 双三缓冲均为**规划**，分别在 M7 / M9 引入（见 `02-roadmap.md` M5 的"明确不做"表）；其中双/三缓冲 M7 未做，按 D22 推迟到出现真实异步消费者。§7 的解耦方案保持不变。
+**规划与兑现**：M9.0c 已实现 `uploads` / `releases`，按前帧驻留状态提供资源增量（首帧全量）；`LightPod` / `sort_key` / 多相机仍未实现。双/三缓冲按 D22 推迟到出现真实异步消费者。§7 的解耦方案保持不变。
 
 **四条硬性规则**（写进 CI 检查）：
 1. `RenderSnapshot` 里**不允许**出现 `yr::scene::*` / `yr::obj::Object*` 类型 → 只能传 ID 和值。
@@ -690,7 +692,7 @@ Asset/Job/Renderer 装配与显式 `initialize`/`shutdown` 顺序推迟到确有
 | 7 | `process` | 派发 `onUpdate`（`SceneTree::process`，前序 ObjectID 快照） | 主 | 否（改结构用 `queueFree` 延迟） |
 | 8 | `post_process` | `SceneTree::refreshTransforms()`：单线程顺序刷新 Transform 缓存；并行 job / 动画采样 / AI **规划中** | 主（并行规划中） | 否 |
 | 9 | `apply_structure` | 执行 `flushDeletions()`（**唯一已实现的结构性修改点**）；`add_child` 待处理队列 **规划中** | 主 | **是** |
-| 10 | `extract_render` | `RenderExtractSystem`：SceneTree → `RenderSnapshot`（**已接线**；M5 全量前序抽取、不做剔除） | 主（可并行剔除） | 否 |
+| 10 | `extract_render` | `RenderExtractSystem`：ready 的 MeshInstanceNode → items + uploads/releases（已接线；不做剔除） | 主（可并行剔除） | 否 |
 | 11 | `present` | `RendererBackend::present(snapshot)`（**已接线**；装配者注入非拥有后端，未装配则 no-op） | 主（或渲染线程） | 否 |
 | 12 | `collect_garbage` | 资源 GC、延迟销毁 GPU 资源、`Ref` 归零对象回收（**未实现，空钩子**） | 主 | 否 |
 | 13 | `end_frame` | `FrameStats` 汇总（整帧 / 各阶段 / 物理步数入环）；日志 flush 规划中，quit 决策在 `MainLoop` 外层 | 主 | 否 |
@@ -734,7 +736,7 @@ sequenceDiagram
     G->>T: 修改 Transform / 可见性
     Note over T: 阶段 8：并行刷新 Transform SoA
     T->>X: 阶段 10：前序遍历全树
-    X->>S: 填充 DrawItem / Camera / Light / uploads
+    X->>S: 填充 DrawItem / Camera / uploads / releases
     Note over X,S: 唯一耦合点，单向，无回调
     S->>B: present(snapshot)
     B->>GPU: 录制 / 提交 / present

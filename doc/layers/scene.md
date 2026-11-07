@@ -121,6 +121,13 @@
 - **设计原因**：单一数据源 + 懒合成（见 Node Transform 不变量）。
 - **遗留 / 已知缺口**：无。
 
+## MeshInstanceNode（`scene::MeshInstanceNode`）
+
+- **职责**：将一个 mesh 与 material 作为可绘制场景节点交给 `RenderExtractSystem`；节点不依赖渲染接口。
+- **所有权 / 生命周期**：以 `obj::Ref<asset::Mesh>` 与 `obj::Ref<asset::Material>` 强持有资源，确保树中节点引用期间资源保持存活；由 `setMesh` / `setMaterial` 替换引用。
+- **反射**：`classInfo()` 返回 `MeshInstanceNode` 的 `ClassInfo`，继承 `Node`；`register_scene_classes()` 注册该类。
+- **序列化限制**：`.scn` 当前不保存 mesh/material 引用；空资源节点可写，任一资源引用有效时 writer 返回错误。此限制不影响运行时 `RenderSnapshot` 抽取。
+
 ## TransformStore（`scene::TransformStore`）
 
 - **职责**：`TransformData` 的 `SlotMap` 容器；槽分配 / 释放由 `Node` 驱动。

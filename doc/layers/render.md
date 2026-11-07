@@ -31,8 +31,8 @@
   | `TransformPod::m[16]` | 布局同 `yr::math::Mat4`：**column-major（index = col*4 + row）、列向量 v' = M · v、右手 Y-up、深度范围 [0,1]**（Vulkan NDC）。默认构造为 **identity**（与 `Mat4` 一致），不留全零退化矩阵 |
   | `DrawItem::object` | 该 item 对应的对象身份 |
   | `DrawItem::world` | 该对象的世界矩阵（列主序，同 TransformPod 约定） |
-  | `DrawItem::mesh` | 网格引用；M5 为内建 / 无效 |
-  | `DrawItem::material` | 材质引用；M5 为内建 / 无效 |
+  | `DrawItem::mesh` | 网格引用；真实 `AssetUID.value`，后端仅以不透明 key 查 GPU 驻留资源 |
+  | `DrawItem::material` | 材质引用；真实 `AssetUID.value`，后端仅以不透明 key 查 GPU 驻留资源 |
 | `CameraPod::view` / `proj` | 视图 / 投影矩阵，各为一个 `TransformPod`（同一矩阵约定） |
 | `CameraPod::eye` | 世界空间相机位置，3 个 `f32`；由 host 原样提供 |
 | `RenderSnapshot::frame_index` | 递增帧序号（M5/M7 单缓冲；snapshot ring 按 D22 推迟） |
@@ -41,6 +41,7 @@
 | `RenderSnapshot::uploads` / `releases` | 相对前帧后端驻留状态的资源增量，不是完整资源表；只包含 mesh、material、baseColor texture |
 
 - **不变量 / 顺序**：元素类型 `AssetHandle` / `RenderObjectId` / `TransformPod` / `DrawItem` / `CameraPod` 均 `std::is_trivially_copyable_v`（编译期断言在头文件内）；`sizeof(TransformPod) == 64`。`RenderSnapshot` 含 `std::vector`，**刻意不做 POD 断言**。
+- **增量语义**：抽取器首帧 uploads 包含当前全部资源；后续 uploads 只含新进入当前集合的资源，releases 是上帧 resident 中本帧不再引用的资源。present 顺序固定为 releases → uploads → draw。
 - **设计原因**：数据式契约把逻辑世界与图形 API 解耦——后端不得回调 Runtime、不得持有场景指针（D7）；换后端不需改 Runtime。
 - **遗留 / 已知缺口**：M9.0c 只包含 baseColor 纹理与因子、metallic/roughness；normal/MR/emissive 贴图、完整 PBR、光源与异步上传仍后续实现。相机 `fov`/`near`/`far` 与多相机、`sort_key` 位段、双 / 三缓冲交换协议仍推迟。
 
@@ -132,7 +133,7 @@
 - **统计口径**（`present` 时计算）：
   - `items = snapshot.items.size()`
   - `draw_calls = snapshot.items.size()`
-  - `triangles = snapshot.items.size()`（M5 约定每个 item 一个内建三角形）
+  - `triangles = snapshot.items.size()`（NullBackend 不解析 mesh，按每个 item 记一个占位三角形）
   - `snapshot_bytes = snapshotByteSize(snapshot)`
   - `uploaded_assets = uploads.meshes + uploads.textures + uploads.materials`
   - `released_assets = releases.meshes + releases.materials + releases.textures`
@@ -141,15 +142,15 @@
 - **不变量 / 顺序**：同输入 `present` 两次统计完全相同（依赖 `encodeSnapshot` 的确定性）。`name()` 不依赖初始化状态。
 - **设计原因**：NullBackend 是"契约消费者"的最小实现——它跑得通，说明快照自洽且可被独立后端消费，而无需任何图形 API。
 - **Godot 对照**：`servers/display/display_server.h` 的 headless 形态（对照阅读）。
-- **遗留 / 已知缺口**：`initialized_` 目前只作状态标记，`present` 不校验它；无依赖 `initialized_` 的行为。真实后端（`yr_render_vulkan`）在 M6/M7。
+- **遗留 / 已知缺口**：`initialized_` 目前只作状态标记，`present` 不校验它；无依赖 `initialized_` 的行为。真实后端（`yr_render_vulkan`）当前已接入 MeshPipeline。
 
-## Vulkan 后端（`yr_render_vulkan`，M6-1 外壳 + M6-2 Surface / Device + M6-3 Swapchain / 清屏 + M6-4a N 帧在飞 + M6-4b 三角形 + M7b 快照驱动）
+## Vulkan 后端（`yr_render_vulkan`，M9.0c mesh/pipeline）
 
-> 代码位置：公开头 `engine/render/vulkan/include/yr/render/vk/vulkan_backend.h` + 私有实现 `src/{vulkan_backend,platform_window,vk_instance,vk_surface,vk_device,vk_device_selection,vk_swapchain,vk_command_pool,vk_frame_sync,vk_triangle_pipeline,vk_debug}.{h,cpp}` + shader `shaders/{triangle.vert,triangle.frag}` + 编译期配置唯一入口 `src/vk_hpp.h`。
+> 代码位置：公开头 `engine/render/vulkan/include/yr/render/vk/vulkan_backend.h` + 私有实现 `src/{vulkan_backend,platform_window,vk_instance,vk_surface,vk_device,vk_device_selection,vk_swapchain,vk_command_pool,vk_frame_sync,vk_depth_buffer,vk_mesh_pipeline,vk_debug}.{h,cpp}` + shader `shaders/{mesh.vert,mesh.frag}` + 编译期配置唯一入口 `src/vk_hpp.h`。
 > 构建开关 `YR_BUILD_VULKAN_BACKEND`（默认 **OFF**）：关掉时本 target 与 `apps/render_demo` 都不存在，默认构建不需要 Vulkan SDK / GLFW。**开这个开关用 `cmake --preset debug-vk`（或 `release-vk`）构建/开发**；clangd 需把根 `compile_commands.json` 指向该 preset 的 DB（`tools/link_compile_commands.sh debug-vk`），否则拿不到 vulkan TU 的编译命令、找不到 `<vulkan/...>`。环境细节见 `../05-engineering.md` §1 的 Vulkan SDK 行。
 
 - **公开头必须 vulkan-free / GLFW-free**：`vulkan_backend.h` 只 include `<memory>` 与 `<yr/render/backend.h>`，用 PIMPL（`struct Impl` + `std::unique_ptr<Impl>`）把 `VkInstance` / `GLFWwindow` 关在 `.cpp` 与 `src/` 私有头里。这是"图形 API 不越过本层"的可编译证据。
-- **图形 API 隔离是机械门禁**：`engine/render/vulkan/` 是**唯一**允许 `#include <vulkan/...>` / `<GLFW/...>` 的目录（`tools/check_deps.py` 的 `GRAPHIC_ALLOWED_DIRS`）；`apps/render_demo` 只 include `<yr/render/...>`。本层允许的依赖为 `render_iface` + `core` + `math`（M7b 起在 CPU 侧算 MVP）。
+- **图形 API 隔离是机械门禁**：`engine/render/vulkan/` 是**唯一**允许 `#include <vulkan/...>` / `<GLFW/...>` 的目录（`tools/check_deps.py` 的 `GRAPHIC_ALLOWED_DIRS`）；`apps/render_demo` 只 include `<yr/render/...>`。本层依赖 `render_iface` + `core` + `math`。
 - **validation 层只在 Debug**：CMake 用 `$<$<CONFIG:Debug>:YR_ENABLE_VULKAN_VALIDATION=1>` 注入宏；`vk_instance.cpp` 在宏打开时先用 `vk::enumerateInstanceLayerProperties()` 探测 `VK_LAYER_KHRONOS_validation`，可见才启用并额外加 `VK_EXT_debug_utils`，不可见则**初始化硬失败**（抛异常，提示先 `sudo apt install vulkan-validationlayers`，或 `source ~/SDK/.../setup-env.sh` 提供 `VK_ADD_LAYER_PATH`），避免跑到没有 validation 的假绿。
 - **`DebugStats` 的存亡契约**：它是 `Instance` 的成员并声明在 messenger 成员**之前**，`pUserData` 指向它；error 计数并立即打印，warning 只计数。计数只能在 `Instance` 析构前取走，`VulkanBackend::Impl::shutdown()` 先取副本再 `reset()`，因此该统计**不含** instance 自身析构期产生的消息（messenger 必须先于 instance 销毁，属固有限制）。
 - **`Surface`（M6-2）由 `glfwCreateWindowSurface` 创建并包进 `raii::SurfaceKHR`**：依赖 instance + window，必须先于二者销毁。`shutdown()` 先 `surface.reset()` 再取 `DebugStats` 副本，使 surface 析构期产生的 validation 消息也被计入。
@@ -159,23 +160,26 @@
 - **`vk_hpp.h` 是编译期配置的唯一入口**：所有 TU 只通过它包含 `<vulkan/vulkan_raii.hpp>`，并在包含前定义 `VULKAN_HPP_HANDLE_ERROR_OUT_OF_DATE_AS_SUCCESS`。宏生效后 acquire 返回 `ResultValue<uint32_t>`、present 返回 `vk::Result`，`eErrorOutOfDateKHR` **不抛异常**，而是作为正常返回值处理（D14：resize / 最小化是分支，不是异常控制流）。
 - **`CommandPool`（M6-3b / M6-4a）持有 `framesInFlight` 条 primary command buffer**：`CommandPoolCreateInfo{eResetCommandBuffer, graphics family}`，用 `device.raiiDevice().allocateCommandBuffers()` 分配（`raii::CommandPool` 自身没有该成员）；按 frame slot 取，每帧 `reset()` 后重录。不可拷贝 / 移动。swapchain 重建不重建它：buffer 数只依赖 `framesInFlight`。
 - **`FrameSync`（M6-4a）按两种粒度分配同步对象**：`imageAvailable` / `inFlight` 按 frame slot 分配（`framesInFlight = 2`，fence 全部**创建为 signaled**，否则第一轮 `waitForFences` 永久阻塞）；`renderFinished` 按 swapchain image 索引分配（`imageCount` 个）。前者靠 CPU 侧顺序成立：同一 slot 的下一次使用必然发生在它的 fence 已被 wait 过之后；后者靠 present 的因果成立：同一 image 的 present 完成才会让该 image 被再次 acquire，所以该 semaphore 的下一次 signal 必然发生在旧的 wait 被消费之后。把 `renderFinished` 按 slot 复用只是"实践上成立"的假设，规范不保证。swapchain 重建可能改变 `imageCount`，因此 `FrameSync` 与 swapchain 一起重建。
-- **`TrianglePipeline`（M6-4b / M7b）只依赖 device + color format**：顶点由 vertex shader 的 `gl_VertexIndex` 生成，**无 vertex buffer / descriptor**；`PipelineLayout` 声明一个 80 字节 push constant（`{ mat4 mvp; vec4 color; }`，vertex + fragment 两阶段），逐 draw 推送；`PipelineRenderingCreateInfo` 的 format **来自当前 swapchain**（`swapchain->format()`），挂在 `GraphicsPipelineCreateInfo::pNext`；viewport / scissor 是 **dynamic state**，录制命令时按当前 extent 设置，因此 resize 本身不必重建 pipeline，但 swapchain 重建时**无条件重建 pipeline**（format 可能变化，代价小、逻辑简单）。shader 由构建期 `glslc` 编译，运行时从 `YR_VULKAN_SHADER_DIR` 加载 `triangle.{vert,frag}.spv`（M7/M9 换资源系统）。
-- **Y-up 约定与负高度 viewport（M7b）**：`TransformPod` 约定世界 +Y 向上，而 Vulkan NDC 的 +Y 向下。渲染时用**负高度 viewport**（`height = -extent.height`）把 NDC 翻回 Y-up，三角形顶点也按 Y-up 定义。负高度会使绕序反转，因此 culling 保持 `eCullNone`；将来开启 culling 时需要相应调整 `frontFace`。
-- **一帧算法（`Impl::renderFrame`，N 帧在飞）**：取 `slot = frameSlot_` → `waitForFences(inFlight(slot))` → `acquireNextImage(imageAvailable(slot))`（保留 `ResultValue`）→ 成功后 `resetFences(inFlight(slot))` → 对 `commandPool.commandBuffer(slot)` 做 `cmd.reset()` / `begin` → barrier2 `UNDEFINED → eColorAttachmentOptimal`（src/dst stage 均 `eColorAttachmentOutput`，src access `eNone`，dst access `eColorAttachmentWrite`）→ dynamic rendering `beginRendering` / `endRendering`（`layerCount = 1`，clearColor `{0.10, 0.18, 0.30, 1.0}`）→ 在 rendering 内 `bindPipeline` + `setViewport` / `setScissor`（按当前 extent）→ **每个 `DrawItem` 一次 `pushConstants` + `draw(3, 1, 0, 0)`**；`items` 为空时只清屏、不 draw → barrier2 `eColorAttachmentOptimal → ePresentSrcKHR`（dst stage / access 均 `eNone`）→ `cmd.end()` → `submit2`（graphics queue wait `imageAvailable(slot)` @ `eColorAttachmentOutput`，signal `renderFinished(imageIndex)`，fence `inFlight(slot)`）→ `presentKHR`（present queue wait `renderFinished(imageIndex)`）→ **提交之后**才推进 `frameSlot_ = (frameSlot_ + 1) % framesInFlight`。acquire 的 image index 与 frame slot 是两套索引。不建 render pass / framebuffer。
+- **`MeshPipeline`**：mesh 顶点为 32B（position/normal/UV），使用 index buffer；pipeline 使用 D32 depth test/write。set 0 为 176B Frame UBO（view/proj/eye/lightDir/lightColor），set 1 为 baseColor sampler；push constants 为 96B（model/baseColorFactor/material 参数）。fragment shader 采样 baseColor 并计算 Blinn-Phong。Pipeline layout 持有两个 descriptor set layout，`recreate()` 只重建 graphics pipeline，保留 descriptor set layout 与 pipeline layout。
+- **mesh buffer**：vertex 与 index 数据写入同一个 host-visible/coherent buffer；index 区从 `vertexBytes` 偏移开始。当前这是 M9.0c 的简化路径，不使用 device-local staging buffer。
+- **纹理上传**：专用 upload command pool 录制上传，布局转换 `Undefined → TransferDst → ShaderReadOnly`；图像格式 `R8G8B8A8Srgb`。sampler 使用 linear filter / repeat，单 mip level。默认 1×1 RGBA 白色纹理供没有有效 baseColor texture 的材质采样。
+- **`present` 资源顺序**：先按 snapshot releases 处理释放，再处理 uploads，最后绘制 items。缺失 mesh/material 的 DrawItem 跳过并增加 `missing_assets`；GPU material 所引用的缺失纹理使用默认白纹理。
+- **延迟释放**：mesh 与 texture 放入上一帧 slot 的 pending 列表，在该 slot fence 完成后销毁；material 没有依赖 GPU 命令的独立对象，release 时立即 erase。
+- **Y-up 约定与负高度 viewport**：`TransformPod` 约定世界 +Y 向上，而 Vulkan NDC 的 +Y 向下。渲染使用负高度 viewport 翻回 Y-up；因此当前保持 `eCullNone`。
+- **一帧算法（`Impl::renderFrame`）**：等待当前 slot fence → 清理该 slot 的 pending mesh/texture → 更新 Frame UBO → acquire image → record dynamic rendering（color + slot depth）→ 对每个有效 DrawItem 绑定 mesh / material texture descriptor，推送 96B constants 并 `drawIndexed` → submit2 → present。acquire 的 image index 与 frame slot 是两套索引；不建 render pass / framebuffer。
 - **相机由 host 提供**：host 计算 `CameraPod`（`Mat4::perspective` + `Mat4::lookAt`）后调 `MainLoop::setCamera`；阶段 10 的 `RenderExtractSystem::extract` 把它原样写入快照，默认 identity。后端只消费快照，不计算相机。
-- **每个 item 的 push constant 内容**：`mvp = proj * view * world`（CPU 计算，column-major 直接上传）；`color` 按 `item.object.value % 4` 从固定 4 色调色板选，仅用于区分对象。`TransformPod` 与 `Mat4` 同布局，转换用 `std::bit_cast` 并有 `static_assert(sizeof(TransformPod) == sizeof(Mat4))`。
-- **`BackendStats` 填法（Vulkan）**：`items = snapshot.items.size()`、`draw_calls` 与 `triangles` 同值（每 item 一个三角形）、`snapshot_bytes = sizeof(RenderSnapshot) + items * sizeof(DrawItem)`。
+- **`BackendStats`（Vulkan）**：每帧报告 `items`、实际有效 draw 的 `draw_calls` / `triangles`、`snapshot_bytes`、`uploaded_assets`、`released_assets`、`missing_assets`、`upload_bytes`；三角形数按 mesh index count / 3 统计。
 - **`render_vulkan` 依赖 `math`**：CMake `PRIVATE yr::math`，`tools/check_deps.py` 的 `render_vulkan` 允许依赖相应加入 `math`（矩阵运算在 CPU 侧，不泄漏到契约层）。
 - **0×0 跳过**：host 在阶段 1 调 `pollEvents()`；`present()` 在 framebuffer 为 0×0（最小化）时直接返回，不 acquire、不重建。
-- **OOD / Suboptimal → 重建**：`needsRecreate()` 用 surface 能力 + 与 `create` 共用的 `computeExtent()` 现算期望 extent，与 `extent_` 比较（不拿窗口像素尺寸直接比）。acquire 的 OOD 路径**不 reset fence、不推进 slot**，`waitForFences` 失败或 acquire 其它失败同样不推进。present 的 OOD / Suboptimal（含 acquire 的 Suboptimal）在推进 slot 后重建。重建先 `waitIdle`（旧 `FrameSync` 的同步对象可能仍被 pending 提交引用），再 `swapchain->recreate(...)`，然后按新 `format` 无条件重建 `TrianglePipeline`，用新的 `imageCount` 重建 `FrameSync` 并复位 `frameSlot_ = 0`。swapchain 重建抛异常时旧链保持完整；若 swapchain 已换新而 `TrianglePipeline` / `FrameSync` 构造失败，对应 `optional` 为空，`present()` 下一帧发现缺失会再走一次重建恢复。重建异常只记日志，下一帧继续尝试。
+- **OOD / Suboptimal → 重建**：`needsRecreate()` 用 surface 能力 + `computeExtent()` 计算期望 extent。重建先 `waitIdle`，重建 swapchain 与 depth/frameSync，depth 初始化标记清空；MeshPipeline 仅重新创建 graphics pipeline，descriptor set layout 和 pipeline layout 保留；pending mesh/texture 队列清空。acquire OOD 不推进 slot；异常只记日志，下一帧重试。
 - **`shutdown()` 先 `waitIdle` 再销毁同步对象**：fence / semaphore / command buffer 不能在提交仍 pending 时释放。
-- **M7b 的 `present` 消费快照**：draw 次数与每个 item 的 MVP / 颜色都来自 `RenderSnapshot`；`last_frame_stats()` 每帧按快照更新（见上）。
+- **snapshot v2 dump/replay**：格式包含 camera eye、uploads、releases；上传数据随快照编码，因此可独立 replay，不依赖 runtime 资源对象。
 - **单快照 vs frame-in-flight（M7/D22）**：`kFramesInFlight = 2` 缓冲的是 command buffer / fence / semaphore，不是 `RenderSnapshot`；`present()` 同步到 submit，GPU 执行异步。backend 在 record 阶段把 camera/world 复制进 command buffer/push constant，不保留快照指针，因此 M7 单快照安全；snapshot ring 按 D22 推迟到出现真实异步消费者。
 - **`shouldClose()` 是 host 级平台查询**：不属于 `RendererBackend` 契约；M7a 起由 `DemoLoop::pollInput` 在阶段 1 泵事件后消费并调 `requestQuit()`。`pollEvents()` 同样只由 host 在阶段 1 调用，`present()` 不再泵事件。
 - **`Key` / `isKeyDown()` 是 host 级输入查询（M7c）**：`Key` 只覆盖 W/A/S/D，`isKeyDown()` 在 `pollEvents()` 之后读取当前按键状态；二者不属于 `RendererBackend` 契约，公开头仍保持 GLFW-free。
 - `create_vulkan_backend()` 与 `create_null_backend()` 同形（返回 `std::unique_ptr<RendererBackend>`）；`initialize` 把 Vulkan-Hpp 抛出的异常翻译成"日志 + `false`"，构造窗口/instance 失败不会泄漏半成品。
 
-### M6 结构约束（跨 M6-1~M6-5）
+### Vulkan 资源与生命周期（M9.0c）
 
 **所有者与析构顺序**（`Impl` 成员声明顺序 = 依赖顺序；析构逆序）：
 
@@ -186,17 +190,25 @@
 | `Surface`（M6-2） | `raii::SurfaceKHR` | Instance、Window | Instance |
 | `Device`（M6-2） | `raii::Device`、物理设备句柄、graphics / present 队列 | Instance、Surface | Surface |
 | `Swapchain`（M6-3） | `raii::SwapchainKHR`、缓存的 images（非拥有）、image views | Device | Device |
-| `TrianglePipeline`（M6-4b） | 2 个 ShaderModule、PipelineLayout、Pipeline | Device（format 来自 Swapchain） | Device |
-| `TrianglePipeline`（M6-4b） | `raii::ShaderModule` ×2、pipeline layout、pipeline | Device、Swapchain format | Swapchain |
+| `MeshPipeline` | 2 个 ShaderModule、descriptor set layouts、PipelineLayout、Pipeline | Device（format 来自 Swapchain） | Device |
 | `CommandPool`（M6-3b） | `raii::CommandPool`、command buffers | Device | Device |
+| upload command pool | 1 条 upload command buffer | Device | Device |
 | `FrameSync`（M6-4a） | 信号量、fence | Device | Device |
+| Frame UBOs | 2 host-visible buffer + mapped memory | Device | Device |
+| descriptor pool / sets | UBO + texture descriptor sets | Device; sets reference pool/layout | Device |
+| sampler | linear/repeat sampler | Device | Device |
+| depth buffers | per-frame D32 image/view/memory | Device | Device |
+| texture / mesh maps | GPU image/view/memory/descriptor、vertex/index buffer/memory | Device、descriptor pool | Device |
 
 - **顺序由依赖图决定**："能不能呈现"必须拿 surface 去问设备，所以 surface 先于 device；surface 由 instance 创建，所以 surface 先于 instance 销毁。
 - **构造即有效**：组件不允许"构造了但没 init"；失败抛异常，只在 `VulkanBackend::initialize` 一个边界翻译成 `false`。`Impl` 用 `std::optional` 表达"存在 / 不存在"，不是两段式初始化。
 - **`vk::Queue` 不是 RAII 对象**：由 device 拥有，只能存裸句柄。
-- **只启用已验证且马上要用的扩展 / feature**：M6-2 只启用 `VK_KHR_swapchain`；M6-3b 通过 `PhysicalDeviceVulkan13Features` 同时查询并启用 `dynamicRendering` + `synchronization2`（两者都是 1.3 core feature，**不是**扩展字符串），M6-4b 只加三角形。
+- **只启用已验证且马上要用的扩展 / feature**：启用 `VK_KHR_swapchain`；查询并启用 `dynamicRendering` + `synchronization2`（Vulkan 1.3 core feature）。
 - **设备选择是纯策略**：显式拒绝 `DEVICE_TYPE_CPU`，要求 `VK_KHR_swapchain` + graphics 族（`queueCount > 0`）+ present 族；同族优先；逐设备记录拒绝原因。
-- **公开头保持 vulkan-free / GLFW-free**：M6 期间不新增渲染契约方法；M7a 新增的 `pollEvents()` / `shouldClose()` 是 host 级平台接口，不是 `RendererBackend` 契约。
+- **公开头保持 vulkan-free / GLFW-free**：`pollEvents()` / `shouldClose()` 是 host 级平台接口，不是 `RendererBackend` 契约。
+
+- **析构顺序**：等待 device idle 后，mesh/material/texture/pending/default texture 清理；descriptor sets → descriptor pool → sampler / upload command pool → unmap frame UBO → frame sync / command pool → MeshPipeline / depth / swapchain；最后释放 frame UBO buffer/memory，再销毁 device。所有 Vulkan 子资源均在 device 存活时销毁。
+- **已知缺口**：完整 PBR / 光源 / 阴影留 M9.5；异步加载与上传预算留 M9.2；无 mipmap；device loss 后不重传资源；host-visible mesh buffer 是 M9.0c 简化实现。
 
 **Yo_Renderer 借鉴处置**（M6 期间的正式结论）：
 
@@ -206,7 +218,7 @@
 | `platform/Swapchain` | 借鉴参数选择策略，重写 | `vk_swapchain`（M6-3）；depth 不进 |
 | `platform/SyncObjects` / `rhi/sync/FrameSync` | 借鉴 per-slot 结构，重写 | `vk_frame_sync`（M6-4a） |
 | `rhi/command/CommandRecorder` | 暂不做 | M6-4 直接用裸 begin / end / draw |
-| `render/VulkanResourceTable` | 暂不做（M9） | — |
+| `render/VulkanResourceTable` | 选择性重写资源驻留与延迟释放 | `VulkanBackend::Impl` 的 mesh/material/texture maps |
 | `render/RenderServer` | 不搬 | M7 的 `RenderExtractSystem` 取代 |
 | `app/Application` | 不搬 | M7 的 `MainLoop` 取代 |
 
@@ -215,4 +227,4 @@
 ## 本层遗留 / 接线现状
 
 - **快照的产出在 engine 层**：`yr_engine` 的 `RenderExtractSystem`（`engine/engine/include/yr/engine/render_extract.h`）是 `SceneTree → RenderSnapshot` 的唯一单向转换点（D7 规则②）；帧阶段 10 `extract_render` 调用它，阶段 11 `present` 把快照交给装配者注入的非拥有 `RendererBackend*`。本层（`yr_render_iface` / `yr_render_null`）只提供契约与 Null 后端，不含抽取逻辑；层契约细节见 `engine.md` 的 `RenderExtractSystem` 小节。
-- M9.0c 的增量只包含 baseColor；PBR、光源、异步上传、normal/MR/emissive 纹理与缺失纹理默认白纹理仍留后续阶段。其余推迟项（sort_key / 多相机 / 双三缓冲 / 独立渲染线程）见 `../02-roadmap.md` M5 的"明确不做"表。
+- M9.0c 仅上传 baseColor texture；完整 PBR / 光源 / 阴影留 M9.5，异步加载与上传预算留 M9.2。normal/MR/emissive 纹理、mipmap、device-loss 重传尚未实现；无有效纹理时使用默认白纹理。其余推迟项见 `../02-roadmap.md`。

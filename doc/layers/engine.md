@@ -82,7 +82,7 @@
 | 7 | process | `processPhase` | ✅ | `SceneTree::process`（安全点） | 前序派发 `onUpdate` |
 | 8 | post_process | `postProcess` | ✅ | `SceneTree::refreshTransforms`（安全点） | 刷新 Transform 缓存 |
 | 9 | apply_structure | `applyStructure` | ✅ | `SceneTree::flushDeletions`（安全点） | 执行本帧延迟删除 |
-| 10 | extract_render | `extractRender` | ✅ | `RenderExtractSystem::extract` | 写 `snapshot_`（`frame_index` 取 `frameIndex()`，全量前序抽取 `items`） |
+| 10 | extract_render | `extractRender` | ✅ | `RenderExtractSystem::extract` | 只抽取可绘制 `MeshInstanceNode`，填 `items` + `uploads/releases`；`frame_index` 由 `MainLoop` 写 |
 | 11 | present | `present` | ✅ | `RendererBackend::present(snapshot_)`（非拥有后端） | 后端只读快照；未装配后端时 no-op |
 | 12 | collect_garbage | `collectGarbage` | ⬜ 空钩子 | 无 | — |
 | 13 | end_frame | `endFrame` | ✅ | `FrameStats::recordFrame` | 量本阶段耗时，汇总整帧 / 各阶段 / 物理步数入环 |
@@ -94,20 +94,23 @@
 
 ## RenderExtractSystem（`engine::RenderExtractSystem`）
 
-- **职责**：`SceneTree → RenderSnapshot` 的**唯一单向转换点**（`../01-architecture.md` §4.11 规则② / D7）。M5 **全量抽取、不做剔除**。
-- **所有权 / 生命周期**：无状态、无所有权；`extract` 只读 `SceneTree`、只写调用方传入的 `RenderSnapshot`。
+- **职责**：`SceneTree → RenderSnapshot` 的**唯一单向转换点**（`../01-architecture.md` §4.11 规则② / D7）。只抽取资源 ready 的可绘制 `MeshInstanceNode`。
+- **所有权 / 生命周期**：只维护 mesh/material/texture 的 resident UID 集合，不持有 `Ref`，不延长资源生命周期。`extract` 修改内部集合，写调用方传入的 `RenderSnapshot`。
 - **公开 API**：
 
   | 签名 | 语义 / 契约 | 失败模式 |
   |---|---|---|
-  | `void extract(const scene::SceneTree&, render::RenderSnapshot& out) const` | 重置 `out.camera` 为固定默认（identity），按**前序**清空并填充 `out.items`；**不修改** `out.frame_index` | 空树安全（`items` 空，`camera` 仍填默认） |
+  | `void extract(const scene::SceneTree&, const render::CameraPod&, render::RenderSnapshot& out)` | 按**前序**清空并填充 items 与资源增量；原样写入 camera；**不修改** `out.frame_index` | 空树安全 |
+  | `void reset() noexcept` | 清除抽取器维护的 resident UID 集合；backend 指针变化时由 `MainLoop::setBackend` 调用 | — |
 
 - **抽取规则**：
-  - 前序遍历整棵树（含 `root`），每个树内节点产出一个 `DrawItem`；顺序即前序，无排序键。
-  - `DrawItem::object.value = node.id().raw()`；`DrawItem::world = node.globalTransform()`（均为 column-major，逐元素拷贝，不 memcpy 结构体）。
-  - `DrawItem::mesh` / `material` 保持无效（`AssetHandle{}`）；M5 无资源系统，未就绪语义推迟到 M9。
-  - `CameraPod` 的 `view` / `proj` 均 identity（`TransformPod` 默认即 identity）；真实投影留到 M7。
-- **不变量 / 顺序**：每次 `extract` 先 `clear` 再填充，不累加；`items.size()` == 树内节点数（含 `root`）。`frame_index` 由调用方（`MainLoop::extractRender`）在本阶段写入。
+- 前序遍历整棵树（含 `root`），只对 mesh/material 均 ready 且 UID 有效的 `MeshInstanceNode` 产出 `DrawItem`；顺序即前序，无排序键。
+- `DrawItem::object.value = node.id().raw()`；`DrawItem::world = node.globalTransform()`（均为 column-major，逐元素拷贝，不 memcpy 结构体）。
+- `DrawItem::mesh` / `material` 取真实 `AssetUID.value`。mesh/material 不 ready、无效或缺失时跳过该节点；Vulkan backend 对缺失 GPU mesh/material 计入 `missing_assets`。
+- `uploads = current - resident`，首帧因此上传当前全部 mesh/material/baseColor texture；后续只上传新进入当前集合的资源。当前仅上传 baseColor texture。
+- `releases = resident - current`，mesh/material/texture 各自按 UID 升序输出；之后更新 resident 集合。空树安全，空树时释放所有 resident 资源。
+- `CameraPod` 由调用方提供并原样拷贝到快照。
+- **不变量 / 顺序**：每次 `extract` 清空并重建 items/uploads/releases，不累加；`frame_index` 由 `MainLoop::extractRender` 在本阶段写入。Backend 处理顺序为 releases → uploads → draw。
 - **设计原因**：把 Runtime↔Renderer 的耦合收敛到**一处、单向**，后端拿到的全是值。
 - **Godot 对照**：无直接对应（Godot 走命令式 Server，见 §4.11）。
 

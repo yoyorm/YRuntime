@@ -18,21 +18,21 @@
 | **M6 最小 Vulkan Bootstrap** | ✅ 已完成 / 收口（2026-10-23）—— M6-1 外壳 + M6-2 Surface / Device / 队列 + M6-3 Swapchain / 清屏上屏 + M6-4 N 帧在飞 + 硬编码三角形 + M6-5 健壮性（resize / 最小化手测、soak） |
 | **M7 Snapshot 驱动画面** | ✅ 已完成 / 收口（2026-10-24）—— 7a/7b/7c/7d/7e：MainLoop 接线、DrawItem/Camera、WASD、dump/replay、帧统计、600s soak、resize、GIF/PNG；双/三缓冲按 D22 推迟 |
 | **M8 序列化** | ✅ 已完成 / 收口（2026-10-31）—— M8a 文本；M8b 引用/连接；M8c headless `--scene` 加载与 1000 节点 benchmark；364 tests |
-| **M9 资源系统** | 🔨 进行中（M9-0 RefCounted/Ref；M9.0a AssetUID/Resource；M9.0b ToyCar glTF 同步加载；下一步 M9.0c 上屏） |
+| **M9 资源系统** | 🔨 进行中（M9.0c 完成：TRS/MeshInstanceNode/snapshot v2/MeshPipeline/baseColor Blinn-Phong；下一步 M9.1） |
 | M9.5 ~ M11 | ⬜ 未开始（M9.5 基础 PBR，D21） |
 
-**远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend ✅ → M6 最小 Vulkan bootstrap ✅ → M7 Snapshot 驱动画面（首个主要作品节点）✅ → M8 序列化 ✅ → M9 资源系统 → M9.5 基础 PBR 内容（D21）→ M10 任务系统 → M11 工具链打磨。**当前唯一任务：M9.0c（Node 持 Ref + snapshot uploads/releases + 一个 PBR 物体上屏）。**
+**远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend ✅ → M6 最小 Vulkan bootstrap ✅ → M7 Snapshot 驱动画面（首个主要作品节点）✅ → M8 序列化 ✅ → M9 资源系统 → M9.5 基础 PBR 内容（D21）→ M10 任务系统 → M11 工具链打磨。**当前唯一任务：M9.1 AssetDatabase/GC。**
 
 进度**只在两处维护**：根 `README.md` 的里程碑表（对外）+ `02-roadmap.md` 的 checkbox（对内）。
 别的地方不要重复记录，否则一定会漂移。
 
 ---
 
-## 2. 下一步：M9.0c 一个带贴图的 PBR 物体上屏
+## 2. 下一步：M9.1 AssetDatabase / GC
 
 M8 已收口（2026-10-31）：M8a `.scn` 文本 + Node/position/父子路径；M8b 引用/连接；M8c `yr_runtime_headless --scene` 加载（样例 2 节点 / 140 B / 71 µs；1000 节点 / 73,886 B / ~15.9 ms）；364/364 tests。文本格式不做版本号与迁移（D24）；二进制/JSON 不做（D25）。
 
-**最终切片（D26）**：ToyCar（仓库内，视觉/PBR）+ Sponza（外部路径，资源/并行压力测试，大资产不进仓库）。M9 顺序：M9.0 walking skeleton → M9.1 AssetDatabase/GC → M9.2 协作式异步 + streaming → M9.5 完整 PBR。每个子系统必须出现在视觉/流式/并行 demo 中，否则删除。
+**最终切片（D26）**：ToyCar（仓库内，视觉/PBR）+ Sponza（外部路径，资源/并行压力测试，大资产不进仓库）。M9 顺序：M9.0 walking skeleton（baseColor + Blinn-Phong）→ M9.1 AssetDatabase/GC → M9.2 协作式异步 + streaming → M9.5 完整 PBR。每个子系统必须出现在视觉/流式/并行 demo 中，否则删除。
 
 **执行模式（D27）**：coder 负责实现、测试、CMake、文档机械同步；用户 review 契约与关键 diff，不再手写核心。
 
@@ -42,11 +42,15 @@ M9.0a 已完成（`8821ff0`）：`AssetUID`（canonical path FNV-1a 64）、`Res
 
 M9.0b 已完成（2026-11-06）：vendor tinyGLTF v3 + stb_image；`loadGltfScene` 同步加载 ToyCar（11 roots / 3 primitives / 3 materials；66951+8959+1519 vertices）；`YrTests_asset` 18 cases / 260 assertions，全量 382/382。
 
-下一步 **M9.0c 一个带贴图的 PBR 物体上屏**：
+**M9.0c 已完成**：完整 TRS 与 `MeshInstanceNode`；snapshot v2 uploads/releases；ToyCar 3 primitives / 108936 triangles；首帧 uploads=8、drop-at releases=3；debug-vk/ASan 各 398/398、validation 0；resize 重建 2 次；8.7MB dump/replay 像素一致。
 
-1. `MeshInstanceNode` / `Material` 持 `Ref<Mesh>` / `Ref<Material>` 作为 liveness（D28）；
-2. `RenderSnapshot` 增加 `uploads` / `releases`，`present` 先处理 releases 再处理 uploads；
-3. 一个 PBR 物体上屏（ToyCar 数据）；不接 AssetDatabase/异步。
+下一步 **M9.1 AssetDatabase / GC**：
+
+1. `AssetDatabase` 强 Ref 缓存；
+2. `refcount()==1` GC fixpoint（Material→Texture 两层）；
+3. `evict` + `AssetStats`；
+4. 用 DB 替换 `render_demo` 直接 `loadGltfScene` 的局部 `GltfScene`；
+5. 不接异步（留给 M9.2）。
 
 详细计划见 `02-roadmap.md` M9。
 
