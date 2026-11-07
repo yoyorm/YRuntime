@@ -39,6 +39,7 @@
 | D27 | 默认执行模式：AI 实现，用户 review 契约与关键 diff | **已确认** | M9 起 |
 | D28 | 资源生命周期：Node 持 Ref；上传/卸载走 snapshot；单快照不做 generation | **已确认** | M9.0 |
 | D29 | glTF 同步加载：vendor tinyGLTF v3，loader 只产 CPU 资源 | **已确认** | M9.0b |
+| D30 | M9.0c：运行时 TRS + MeshInstanceNode + snapshot 增量上传 + Blinn-Phong | **已确认** | M9.0c |
 
 ---
 
@@ -647,6 +648,36 @@ CI 首次运行时 `apt-get install libcatch2-dev` 退出码 100，job 失败。
 **后果**：+ CPU-only、可单测、可直接作为 M9.0c 的数据源；+ 第三方依赖隔离，公共 API 干净；− 仓库增加约 5.6 MB ToyCar 资产；− 只支持 glTF 子集，扩展需要后续显式加；− tangent 推迟到 M9.5。
 
 **什么情况下改回来**：M9.5 法线贴图需要 tangent；Sponza 出现 Draco/压缩网格；或需要相机/灯光导入时，再扩 loader 或引入独立导入工具。
+
+---
+
+## D30 · M9.0c：运行时 TRS + MeshInstanceNode + snapshot 增量上传 + Blinn-Phong
+**状态**：已确认 · **里程碑**：M9.0c
+
+**背景**：M9.0b 已能把 ToyCar 读成 `Ref<Mesh/Material/Texture>`，但运行时还没有可绘制节点，`Node` 只支持平移，`RenderSnapshot` 没有资源上传通道，Vulkan 后端仍画硬编码三角形。ToyCar 的节点变换是 `T * R * S`（含 0.0001 缩放），当前 `Node` 无法表达。
+
+**决策**：
+1. `Node` 运行时使用完整 TRS：`math::Transform{position, math::Quat rotation, scale}`；`refreshTransforms` 用 `parentGlobal * T*R*S`。`position()` 仍是便利接口，不改变现有调用方语义。
+2. `.scn` 仍只序列化 `position`；`.scn` writer 对非单位 rotation/scale 返回错误，避免静默丢失。完整 TRS 的文本格式等真正需要保存 ToyCar 场景时再做。
+3. 新增 `MeshInstanceNode : Node`，持 `Ref<Mesh>` / `Ref<Material>`，作为运行时 liveness 的唯一来源；普通 `Node` 不参与绘制。一个 glTF primitive 对应一个 `MeshInstanceNode`。
+4. `RenderExtractSystem` 只抽取 `MeshInstanceNode`；`DrawItem.mesh/material` 填 `AssetUID.value`。它维护已上传资源的 `AssetUID` 集合，每帧生成增量 `uploads` / `releases`，但**只存 UID，不存 `Ref`**，避免阻止后续 AssetDatabase 的 GC。
+5. `RenderSnapshot` 增加 `uploads` / `releases`；首帧包含 mesh 顶点/索引、baseColor 纹理字节、material 参数，后续帧只含 `DrawItem`。`present` 顺序固定为 releases → uploads → draw。单快照同步 present 仍不做 generation（D28）。
+6. `CameraPod` 增加 `eye`，供 Blinn-Phong 计算视线；M9.0c 使用 backend 固定的单方向光，不引入 `LightNode/LightPod`。完整光源、阴影与 Cook-Torrance 留给 M9.5。
+7. M9.0c 的材质只上传 baseColor texture/factor 与 metallic/roughness；Blinn-Phong 用 roughness 映射 shininess、metallic 插值 specular。normal/MR/emissive 贴图、alpha mask、阴影不做。
+8. snapshot dump/replay 升到 version 2，编码 `CameraPod.eye`、`uploads`、`releases`；首帧 dump 自包含，后续帧是增量，不承诺单独 replay。
+9. ToyCar 的 3 个 primitive 全部渲染；Sponza 仍留 M9.5 外部压力场景。
+
+**备选与否决理由**：
+- *Node 只存局部 Mat4*：能直接接 glTF，但失去 position/rotation/scale 的语义，后续编辑器/序列化不自然；否决。
+- *相机逆变换 hack*：只能处理单个 ToyCar，M9.5 必删；否决。
+- *现在扩展 `.scn` 的 rotation/scale*：需要给 `Variant` 加 Quat、改 codec 与 canonical 属性顺序，M9.0c 没有消费者；否决。
+- *每帧全量上传资源*：ToyCar 首帧约 9 MB，每帧复制不可接受；否决。
+- *M9.0c 直接上完整 PBR/光源*：与 D21 的 M9.5 重叠，会把 set 0/set 1 和阴影设计提前；否决。
+- *extract 持 `Ref` 防悬垂*：会阻止 `refcount()==1` 的 GC；否决。
+
+**后果**：+ ToyCar 真实资产与 Blinn-Phong 上屏；+ 资源上传/释放链路有真实消费者；+ M9.5 的 PBR/光源有直接落点；− snapshot v2 与旧 dump 不兼容；− `.scn` 暂不能保存 rotation/scale；− 固定光源与无阴影只是 M9.0c 的过渡。
+
+**什么情况下改回来**：需要 `.scn` 保存 ToyCar 场景时补完整 TRS 序列化；M9.5 接 LightPod/阴影时替换固定光；backend 重建/device loss 时补资源重传 epoch。
 
 ---
 
