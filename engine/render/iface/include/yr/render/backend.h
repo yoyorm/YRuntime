@@ -14,6 +14,10 @@ namespace yr::render {
     std::uint64_t draw_calls = 0;
     std::uint64_t triangles = 0;
     std::uint64_t snapshot_bytes = 0;
+    std::uint64_t uploaded_assets = 0;
+    std::uint64_t released_assets = 0;
+    std::uint64_t missing_assets = 0;
+    std::uint64_t upload_bytes = 0;
   };
 
   // 消费快照的后端接口

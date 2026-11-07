@@ -6,8 +6,7 @@
 
 namespace yr::render {
 
-  // 只统计不画。draw_calls = items 数；triangles = items 数（每 item 一个内建三角形）；
-  // snapshot_bytes = encodeSnapshot 的字节数。
+  // 只统计不画。draw_calls = items 数；triangles = items 数（每 item 一个内建三角形）。
   class NullBackend final : public RendererBackend {
   public:
     bool initialize(const BackendConfig& config) override;

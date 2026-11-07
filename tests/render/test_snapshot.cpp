@@ -39,6 +39,9 @@ TEST_CASE("snapshot: default snapshot is empty and identity camera", "[render][s
   CHECK(snapshot.items.empty());
   CHECK(transformIsIdentity(snapshot.camera.view));
   CHECK(transformIsIdentity(snapshot.camera.proj));
+  CHECK(snapshot.camera.eye[0] == 0.0F);
+  CHECK(snapshot.camera.eye[1] == 0.0F);
+  CHECK(snapshot.camera.eye[2] == 0.0F);
 }
 
 TEST_CASE("snapshot: default draw item is identity with invalid handles", "[render][snapshot]") {

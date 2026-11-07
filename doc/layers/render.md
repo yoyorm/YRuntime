@@ -7,18 +7,18 @@
 
 ### AssetHandle（`yr::render::AssetHandle`）
 
-- **职责**：资源句柄的**强类型**包装。跨 Runtime→Renderer 边界只作不透明 key。
+- **职责**：资源句柄的**强类型**包装。跨 Runtime→Renderer 边界只作不透明 key；当前值承载 `AssetUID.value`。
 - **字段 / 公开 API**：
 
   | 字段 / 签名 | 语义 / 契约 | 失败模式 |
   |---|---|---|
-  | `std::uint64_t value = 0` | 原始值；`0` = 无效 | — |
+| `std::uint64_t value = 0` | `AssetUID.value`；`0` = 无效 | — |
   | `bool isValid() const noexcept` | `value != 0` | — |
   | `operator==`（default） | 按 `value` 比较 | — |
 
 - **不变量 / 顺序**：默认构造即**无效**；不得从裸整数**隐式**转换（`std::is_convertible_v<uint64_t, AssetHandle>` 为 `false`）。注意：C++20 允许聚合的带括号逐字段初始化，`is_constructible` 仍为 `true`，类型安全靠"无隐式转换 + 具名字段"。
-- **设计原因**：M5 无正式资源系统，用临时内建 triangle / default material ID 撑起契约；后端只当 key，不得索引运行时容器。
-- **遗留 / 已知缺口**：正式 `AssetUID` 在 M9 替换本类型。
+- **设计原因**：句柄只承载跨 Runtime→Renderer 的不透明资源 key；后端不得索引运行时容器。
+- **遗留 / 已知缺口**：单快照同步 present 不使用 generation（D28）。
 
 ### RenderObjectId / TransformPod / DrawItem / CameraPod / RenderSnapshot
 
@@ -33,14 +33,16 @@
   | `DrawItem::world` | 该对象的世界矩阵（列主序，同 TransformPod 约定） |
   | `DrawItem::mesh` | 网格引用；M5 为内建 / 无效 |
   | `DrawItem::material` | 材质引用；M5 为内建 / 无效 |
-  | `CameraPod::view` / `proj` | 视图 / 投影矩阵，各为一个 `TransformPod`（同一矩阵约定） |
-  | `RenderSnapshot::frame_index` | 递增帧序号（M5/M7 单缓冲；snapshot ring 按 D22 推迟） |
-  | `RenderSnapshot::camera` | M5 **单相机**，固定默认值 |
-  | `RenderSnapshot::items` | 本帧待绘条目；M5 按前序遍历顺序即确定，无排序键 |
+| `CameraPod::view` / `proj` | 视图 / 投影矩阵，各为一个 `TransformPod`（同一矩阵约定） |
+| `CameraPod::eye` | 世界空间相机位置，3 个 `f32`；由 host 原样提供 |
+| `RenderSnapshot::frame_index` | 递增帧序号（M5/M7 单缓冲；snapshot ring 按 D22 推迟） |
+| `RenderSnapshot::camera` | 单相机；view/proj 默认 identity，eye 默认零向量 |
+| `RenderSnapshot::items` | 本帧待绘条目；仅 MeshInstanceNode 产生，按前序遍历顺序确定 |
+| `RenderSnapshot::uploads` / `releases` | 相对前帧后端驻留状态的资源增量，不是完整资源表；只包含 mesh、material、baseColor texture |
 
 - **不变量 / 顺序**：元素类型 `AssetHandle` / `RenderObjectId` / `TransformPod` / `DrawItem` / `CameraPod` 均 `std::is_trivially_copyable_v`（编译期断言在头文件内）；`sizeof(TransformPod) == 64`。`RenderSnapshot` 含 `std::vector`，**刻意不做 POD 断言**。
 - **设计原因**：数据式契约把逻辑世界与图形 API 解耦——后端不得回调 Runtime、不得持有场景指针（D7）；换后端不需改 Runtime。
-- **遗留 / 已知缺口**：`uploads` / `releases`（M9）、`LightPod`（M7）、相机 `fov`/`near`/`far` 与多相机（M7）、`sort_key` 位段（M7）、双 / 三缓冲交换协议（M7）均为**规划**，见 `../02-roadmap.md` M5 的"明确不做"表。
+- **遗留 / 已知缺口**：M9.0c 只包含 baseColor 纹理与因子、metallic/roughness；normal/MR/emissive 贴图、完整 PBR、光源与异步上传仍后续实现。相机 `fov`/`near`/`far` 与多相机、`sort_key` 位段、双 / 三缓冲交换协议仍推迟。
 
 ### BackendConfig / BackendStats / RendererBackend
 
@@ -54,6 +56,10 @@
   | `BackendStats::draw_calls` | 本帧 draw call 数 | — |
   | `BackendStats::triangles` | 本帧三角形数 | — |
   | `BackendStats::snapshot_bytes` | 快照编码字节数 | — |
+  | `BackendStats::uploaded_assets` | 本帧上传资源条目数 | — |
+  | `BackendStats::released_assets` | 本帧释放资源条目数 | — |
+  | `BackendStats::missing_assets` | 后端需要但未驻留的资源数；NullBackend 恒为 0 | — |
+  | `BackendStats::upload_bytes` | 本帧 mesh 顶点/索引与纹理字节数 | — |
   | `bool initialize(const BackendConfig&)` | 初始化设备 / 资源；成功返回 `true` | 失败返回 `false` |
   | `void shutdown()` | 释放资源；幂等 | — |
   | `void present(const RenderSnapshot&)` | 消费快照；**不得回调 Runtime** | — |
@@ -73,28 +79,39 @@
   |---|---|---|
   | `std::vector<uint8_t> encodeSnapshot(const RenderSnapshot&)` | 按固定字段序写**小端**字节 | — |
   | `bool decodeSnapshot(const uint8_t* data, size_t size, RenderSnapshot& out)` | 校验 magic / version / 长度后解码 | 非法返回 `false` 且**不修改 `out`** |
+  | `uint64_t snapshotByteSize(const RenderSnapshot&) noexcept` | 返回与编码结果完全一致的字节数，无需实际编码 | — |
 
 - **字节格式**（全部小端；float 经 `std::bit_cast` 到 `uint32_t` 写入，不依赖宿主端序）：
 
   ```text
   magic        6 字节 "YRSNAP"
-  version      u32 = 1
+  version      u32 = 2
   frame_index  u64
   camera.view  16 × f32
   camera.proj  16 × f32
+  camera.eye   3 × f32
   item_count   u64
   重复 item_count 次：
     object     u64
     world      16 × f32
     mesh       u64
     material   u64
+  upload.meshes_count u64
+  重复 mesh_count 次：handle u64, vertex_count u64, vertex (8 × f32), index_count u64, index (u32)
+  upload.textures_count u64
+  重复 texture_count 次：handle u64, width u32, height u32, byte_count u64, RGBA8 字节
+  upload.materials_count u64
+  重复 material_count 次：handle u64, baseColorTexture u64, factor (4 × f32), metallic f32, roughness f32
+  releases.meshes_count u64 + handle u64 列表
+  releases.materials_count u64 + handle u64 列表
+  releases.textures_count u64 + handle u64 列表
   ```
 
 - **不变量 / 顺序**：
   - **确定性判据**：固定字段序 + **不复用结构体内存布局**（逐字段写，天然绕开 padding / 对齐），因此同一输入两次编码**逐字节相同**。
-  - **解码严格性**：magic 必须匹配、`version == 1`、长度必须**恰好**匹配（多一个字节也算非法）；任一不满足返回 `false` 且 `out` 保持不变（内部先解码到局部变量，全部通过才 `out = std::move(...)`）。
+  - **解码严格性**：magic 必须匹配、`version == 2`，所有计数先与剩余字节校验，纹理字节数必须与尺寸一致，长度必须**恰好**匹配；任一不满足返回 `false` 且 `out` 保持不变（内部先解码到局部变量，全部通过才 `out = std::move(...)`）。旧 version 1 dump 直接拒绝。
 - **设计原因**：dump / replay 是"契约真的完备"的可执行证据；不 memcpy 结构体使格式与 ABI / 编译器布局无关。
-- **CLI 接入（M7d）**：`render_demo --dump-snapshot PATH` 在阶段 11 把**首个进入 present 阶段的快照**（正常路径下就是实际送显的那一帧）编码后写入文件（只写一次；写入失败置 `dumpFailed_`、请求退出并以 1 退出）；`--replay-snapshot PATH` 在 Vulkan 初始化后、创建 `SceneTree` 之前分流，只读文件 + `decodeSnapshot` + `VulkanBackend::present`，**不创建** `SceneTree` / `EventBus` / `MainLoop` / `ObjectDB`。两个 flag 互斥（同时出现按用法错误以 2 退出）；文件格式仍是 version 1。
+- **CLI 接入（M7d）**：`render_demo --dump-snapshot PATH` 在阶段 11 把**首个进入 present 阶段的快照**（正常路径下就是实际送显的那一帧）编码后写入文件（只写一次；写入失败置 `dumpFailed_`、请求退出并以 1 退出）；`--replay-snapshot PATH` 在 Vulkan 初始化后、创建 `SceneTree` 之前分流，只读文件 + `decodeSnapshot` + `VulkanBackend::present`，**不创建** `SceneTree` / `EventBus` / `MainLoop` / `ObjectDB`。两个 flag 互斥（同时出现按用法错误以 2 退出）；快照格式为 version 2。
 - **遗留 / 已知缺口**：无版本迁移逻辑。
 
 ## NullBackend（`yr::render::NullBackend`）
@@ -116,7 +133,11 @@
   - `items = snapshot.items.size()`
   - `draw_calls = snapshot.items.size()`
   - `triangles = snapshot.items.size()`（M5 约定每个 item 一个内建三角形）
-  - `snapshot_bytes = encodeSnapshot(snapshot).size()`
+  - `snapshot_bytes = snapshotByteSize(snapshot)`
+  - `uploaded_assets = uploads.meshes + uploads.textures + uploads.materials`
+  - `released_assets = releases.meshes + releases.materials + releases.textures`
+  - `missing_assets = 0`（NullBackend 不知道 GPU 驻留状态）
+  - `upload_bytes = mesh.vertices * 32 + mesh.indices * 4 + texture.rgba8.size()`
 - **不变量 / 顺序**：同输入 `present` 两次统计完全相同（依赖 `encodeSnapshot` 的确定性）。`name()` 不依赖初始化状态。
 - **设计原因**：NullBackend 是"契约消费者"的最小实现——它跑得通，说明快照自洽且可被独立后端消费，而无需任何图形 API。
 - **Godot 对照**：`servers/display/display_server.h` 的 headless 形态（对照阅读）。
@@ -194,4 +215,4 @@
 ## 本层遗留 / 接线现状
 
 - **快照的产出在 engine 层**：`yr_engine` 的 `RenderExtractSystem`（`engine/engine/include/yr/engine/render_extract.h`）是 `SceneTree → RenderSnapshot` 的唯一单向转换点（D7 规则②）；帧阶段 10 `extract_render` 调用它，阶段 11 `present` 把快照交给装配者注入的非拥有 `RendererBackend*`。本层（`yr_render_iface` / `yr_render_null`）只提供契约与 Null 后端，不含抽取逻辑；层契约细节见 `engine.md` 的 `RenderExtractSystem` 小节。
-- 其余推迟项（uploads / releases / lights / sort_key / 多相机 / 双三缓冲 / 独立渲染线程）见 `../02-roadmap.md` M5 的"明确不做"表。
+- M9.0c 的增量只包含 baseColor；PBR、光源、异步上传、normal/MR/emissive 纹理与缺失纹理默认白纹理仍留后续阶段。其余推迟项（sort_key / 多相机 / 双三缓冲 / 独立渲染线程）见 `../02-roadmap.md` M5 的"明确不做"表。

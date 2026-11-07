@@ -7,8 +7,13 @@
 #include <cstdint>
 #include <vector>
 
+using yr::render::AssetHandle;
 using yr::render::DrawItem;
+using yr::render::MaterialUpload;
+using yr::render::MeshUpload;
+using yr::render::MeshVertexPod;
 using yr::render::RenderSnapshot;
+using yr::render::TextureUpload;
 using yr::render::TransformPod;
 
 namespace {
@@ -22,19 +27,72 @@ namespace {
     return true;
   }
 
-  bool sameItem(const DrawItem& lhs, const DrawItem& rhs) {
-    return lhs.object == rhs.object && sameTransform(lhs.world, rhs.world) && lhs.mesh == rhs.mesh &&
-           lhs.material == rhs.material;
+  bool sameVertex(const MeshVertexPod& lhs, const MeshVertexPod& rhs) {
+    for (std::size_t index = 0; index < 3; ++index) {
+      if (lhs.position[index] != rhs.position[index] || lhs.normal[index] != rhs.normal[index]) {
+        return false;
+      }
+    }
+    return lhs.uv[0] == rhs.uv[0] && lhs.uv[1] == rhs.uv[1];
+  }
+
+  bool sameHandles(const std::vector<AssetHandle>& lhs, const std::vector<AssetHandle>& rhs) {
+    return lhs == rhs;
   }
 
   bool sameSnapshot(const RenderSnapshot& lhs, const RenderSnapshot& rhs) {
     if (lhs.frame_index != rhs.frame_index || !sameTransform(lhs.camera.view, rhs.camera.view) ||
-        !sameTransform(lhs.camera.proj, rhs.camera.proj) || lhs.items.size() != rhs.items.size()) {
+        !sameTransform(lhs.camera.proj, rhs.camera.proj) || lhs.items.size() != rhs.items.size() ||
+        lhs.uploads.meshes.size() != rhs.uploads.meshes.size() ||
+        lhs.uploads.textures.size() != rhs.uploads.textures.size() ||
+        lhs.uploads.materials.size() != rhs.uploads.materials.size() ||
+        !sameHandles(lhs.releases.meshes, rhs.releases.meshes) ||
+        !sameHandles(lhs.releases.materials, rhs.releases.materials) ||
+        !sameHandles(lhs.releases.textures, rhs.releases.textures)) {
       return false;
     }
-    for (std::size_t index = 0; index < lhs.items.size(); ++index) {
-      if (!sameItem(lhs.items[index], rhs.items[index])) {
+    for (std::size_t index = 0; index < 3; ++index) {
+      if (lhs.camera.eye[index] != rhs.camera.eye[index]) {
         return false;
+      }
+    }
+    for (std::size_t index = 0; index < lhs.items.size(); ++index) {
+      const DrawItem& a = lhs.items[index];
+      const DrawItem& b = rhs.items[index];
+      if (a.object != b.object || !sameTransform(a.world, b.world) || a.mesh != b.mesh || a.material != b.material) {
+        return false;
+      }
+    }
+    for (std::size_t index = 0; index < lhs.uploads.meshes.size(); ++index) {
+      const MeshUpload& a = lhs.uploads.meshes[index];
+      const MeshUpload& b = rhs.uploads.meshes[index];
+      if (a.mesh != b.mesh || a.indices != b.indices || a.vertices.size() != b.vertices.size()) {
+        return false;
+      }
+      for (std::size_t vertex = 0; vertex < a.vertices.size(); ++vertex) {
+        if (!sameVertex(a.vertices[vertex], b.vertices[vertex])) {
+          return false;
+        }
+      }
+    }
+    for (std::size_t index = 0; index < lhs.uploads.textures.size(); ++index) {
+      const TextureUpload& a = lhs.uploads.textures[index];
+      const TextureUpload& b = rhs.uploads.textures[index];
+      if (a.texture != b.texture || a.width != b.width || a.height != b.height || a.rgba8 != b.rgba8) {
+        return false;
+      }
+    }
+    for (std::size_t index = 0; index < lhs.uploads.materials.size(); ++index) {
+      const MaterialUpload& a = lhs.uploads.materials[index];
+      const MaterialUpload& b = rhs.uploads.materials[index];
+      if (a.material != b.material || a.baseColorTexture != b.baseColorTexture || a.metallic != b.metallic ||
+          a.roughness != b.roughness) {
+        return false;
+      }
+      for (std::size_t factor = 0; factor < 4; ++factor) {
+        if (a.baseColorFactor[factor] != b.baseColorFactor[factor]) {
+          return false;
+        }
       }
     }
     return true;
@@ -47,6 +105,9 @@ namespace {
       snapshot.camera.view.m[index] = static_cast<float>(index);
       snapshot.camera.proj.m[index] = static_cast<float>(index) * 0.5F;
     }
+    snapshot.camera.eye[0] = 2.0F;
+    snapshot.camera.eye[1] = -3.0F;
+    snapshot.camera.eye[2] = 4.0F;
     for (std::uint64_t index = 0; index < 3; ++index) {
       DrawItem item;
       item.object.value = 100 + index;
@@ -57,6 +118,43 @@ namespace {
       }
       snapshot.items.push_back(item);
     }
+
+    MeshUpload mesh;
+    mesh.mesh.value = 41;
+    MeshVertexPod vertex;
+    vertex.position[0] = 1.0F;
+    vertex.position[1] = 2.0F;
+    vertex.position[2] = 3.0F;
+    vertex.normal[0] = 0.0F;
+    vertex.normal[1] = 1.0F;
+    vertex.normal[2] = 0.0F;
+    vertex.uv[0] = 0.25F;
+    vertex.uv[1] = 0.75F;
+    mesh.vertices.push_back(vertex);
+    mesh.indices = {0, 0, 0};
+    snapshot.uploads.meshes.push_back(mesh);
+
+    TextureUpload texture;
+    texture.texture.value = 42;
+    texture.width = 1;
+    texture.height = 1;
+    texture.rgba8 = {1, 2, 3, 4};
+    snapshot.uploads.textures.push_back(texture);
+
+    MaterialUpload material;
+    material.material.value = 43;
+    material.baseColorTexture.value = 42;
+    material.baseColorFactor[0] = 0.1F;
+    material.baseColorFactor[1] = 0.2F;
+    material.baseColorFactor[2] = 0.3F;
+    material.baseColorFactor[3] = 0.4F;
+    material.metallic = 0.5F;
+    material.roughness = 0.6F;
+    snapshot.uploads.materials.push_back(material);
+
+    snapshot.releases.meshes = {{51}, {52}};
+    snapshot.releases.materials = {{53}};
+    snapshot.releases.textures = {{54}, {55}};
     return snapshot;
   }
 
@@ -66,6 +164,7 @@ TEST_CASE("snapshot io: round-trip preserves every field", "[render][snapshot_io
   const RenderSnapshot original = makeSnapshot();
 
   const std::vector<std::uint8_t> encoded = yr::render::encodeSnapshot(original);
+  CHECK(yr::render::snapshotByteSize(original) == encoded.size());
   RenderSnapshot decoded;
   REQUIRE(yr::render::decodeSnapshot(encoded.data(), encoded.size(), decoded));
 
@@ -125,6 +224,16 @@ TEST_CASE("snapshot io: trailing byte is rejected and out untouched", "[render][
   CHECK(sameSnapshot(out, sentinel));
 }
 
+TEST_CASE("snapshot io: inconsistent texture dimensions are rejected", "[render][snapshot_io]") {
+  RenderSnapshot malformed = makeSnapshot();
+  malformed.uploads.textures[0].width = 2;
+  const std::vector<std::uint8_t> encoded = yr::render::encodeSnapshot(malformed);
+  RenderSnapshot out = makeSnapshot();
+
+  CHECK_FALSE(yr::render::decodeSnapshot(encoded.data(), encoded.size(), out));
+  CHECK(sameSnapshot(out, makeSnapshot()));
+}
+
 TEST_CASE("snapshot io: empty snapshot round-trips", "[render][snapshot_io]") {
   const RenderSnapshot original{};
 
@@ -132,6 +241,7 @@ TEST_CASE("snapshot io: empty snapshot round-trips", "[render][snapshot_io]") {
   RenderSnapshot decoded;
   REQUIRE(yr::render::decodeSnapshot(encoded.data(), encoded.size(), decoded));
 
+  CHECK(yr::render::snapshotByteSize(original) == encoded.size());
   CHECK(decoded.frame_index == 0);
   CHECK(decoded.items.empty());
 }

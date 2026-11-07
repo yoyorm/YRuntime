@@ -8,6 +8,8 @@
 
 namespace yr::render {
 
+  [[nodiscard]] std::uint64_t snapshotByteSize(const RenderSnapshot& snapshot) noexcept;
+
   // 按固定字段顺序写小端字节；不复用结构体内存布局，天然绕开 padding。
   [[nodiscard]] std::vector<std::uint8_t> encodeSnapshot(const RenderSnapshot& snapshot);
 
