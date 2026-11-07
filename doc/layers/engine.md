@@ -104,12 +104,12 @@
   | `void reset() noexcept` | 清除抽取器维护的 resident UID 集合；backend 指针变化时由 `MainLoop::setBackend` 调用 | — |
 
 - **抽取规则**：
-- 前序遍历整棵树（含 `root`），只对 mesh/material 均 ready 且 UID 有效的 `MeshInstanceNode` 产出 `DrawItem`；顺序即前序，无排序键。
-- `DrawItem::object.value = node.id().raw()`；`DrawItem::world = node.globalTransform()`（均为 column-major，逐元素拷贝，不 memcpy 结构体）。
-- `DrawItem::mesh` / `material` 取真实 `AssetUID.value`。mesh/material 不 ready、无效或缺失时跳过该节点；Vulkan backend 对缺失 GPU mesh/material 计入 `missing_assets`。
-- `uploads = current - resident`，首帧因此上传当前全部 mesh/material/baseColor texture；后续只上传新进入当前集合的资源。当前仅上传 baseColor texture。
-- `releases = resident - current`，mesh/material/texture 各自按 UID 升序输出；之后更新 resident 集合。空树安全，空树时释放所有 resident 资源。
-- `CameraPod` 由调用方提供并原样拷贝到快照。
+  - 前序遍历整棵树（含 `root`），只对 mesh/material 均 ready 且 UID 有效的 `MeshInstanceNode` 产出 `DrawItem`；顺序即前序，无排序键。
+  - `DrawItem::object.value = node.id().raw()`；`DrawItem::world = node.globalTransform()`（均为 column-major，逐元素拷贝，不 memcpy 结构体）。
+  - `DrawItem::mesh` / `material` 取真实 `AssetUID.value`。mesh/material 不 ready、无效或缺失时跳过该节点；Vulkan backend 对缺失 GPU mesh/material 计入 `missing_assets`。
+  - `uploads = current - resident`，首帧因此上传当前全部 mesh/material/baseColor texture；后续只上传新进入当前集合的资源。当前仅上传 baseColor texture。
+  - `releases = resident - current`，mesh/material/texture 各自按 UID 升序输出；之后更新 resident 集合。空树安全，空树时释放所有 resident 资源。
+  - `CameraPod` 由调用方提供并原样拷贝到快照。
 - **不变量 / 顺序**：每次 `extract` 清空并重建 items/uploads/releases，不累加；`frame_index` 由 `MainLoop::extractRender` 在本阶段写入。Backend 处理顺序为 releases → uploads → draw。
 - **设计原因**：把 Runtime↔Renderer 的耦合收敛到**一处、单向**，后端拿到的全是值。
 - **Godot 对照**：无直接对应（Godot 走命令式 Server，见 §4.11）。

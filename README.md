@@ -74,7 +74,7 @@ cmake --build --preset debug-vk
 ```bash
 cmake --preset debug-vk
 cmake --build --preset debug-vk
-./build/debug-vk/bin/yr_render_demo          # WASD 移动中间节点
+./build/debug-vk/bin/yr_render_demo          # WASD 平移当前场景根（M7 时代为中间节点）
 
 # 快照 dump / replay：两边应显示同一帧
 ./build/debug-vk/bin/yr_render_demo --frames 600 --dump-snapshot /tmp/m7.yrsnap

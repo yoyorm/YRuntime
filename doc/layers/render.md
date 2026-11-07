@@ -173,7 +173,7 @@
 - **0×0 跳过**：host 在阶段 1 调 `pollEvents()`；`present()` 在 framebuffer 为 0×0（最小化）时直接返回，不 acquire、不重建。
 - **OOD / Suboptimal → 重建**：`needsRecreate()` 用 surface 能力 + `computeExtent()` 计算期望 extent。重建先 `waitIdle`，重建 swapchain 与 depth/frameSync，depth 初始化标记清空；MeshPipeline 仅重新创建 graphics pipeline，descriptor set layout 和 pipeline layout 保留；pending mesh/texture 队列清空。acquire OOD 不推进 slot；异常只记日志，下一帧重试。
 - **`shutdown()` 先 `waitIdle` 再销毁同步对象**：fence / semaphore / command buffer 不能在提交仍 pending 时释放。
-- **snapshot v2 dump/replay**：格式包含 camera eye、uploads、releases；上传数据随快照编码，因此可独立 replay，不依赖 runtime 资源对象。
+- **snapshot v2 dump/replay**：格式包含 camera eye、uploads、releases；首帧 dump 带完整初始 uploads，因此可独立 replay，不依赖 runtime 资源对象。后续帧只带增量，单独 dump 不保证可 replay。
 - **单快照 vs frame-in-flight（M7/D22）**：`kFramesInFlight = 2` 缓冲的是 command buffer / fence / semaphore，不是 `RenderSnapshot`；`present()` 同步到 submit，GPU 执行异步。backend 在 record 阶段把 camera/world 复制进 command buffer/push constant，不保留快照指针，因此 M7 单快照安全；snapshot ring 按 D22 推迟到出现真实异步消费者。
 - **`shouldClose()` 是 host 级平台查询**：不属于 `RendererBackend` 契约；M7a 起由 `DemoLoop::pollInput` 在阶段 1 泵事件后消费并调 `requestQuit()`。`pollEvents()` 同样只由 host 在阶段 1 调用，`present()` 不再泵事件。
 - **`Key` / `isKeyDown()` 是 host 级输入查询（M7c）**：`Key` 只覆盖 W/A/S/D，`isKeyDown()` 在 `pollEvents()` 之后读取当前按键状态；二者不属于 `RendererBackend` 契约，公开头仍保持 GLFW-free。
