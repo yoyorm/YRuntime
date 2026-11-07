@@ -13,6 +13,7 @@
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -79,6 +80,14 @@ namespace yr::render {
       std::array<float, 4> baseColorFactor{};
       float metallic = 0.0F;
       float roughness = 1.0F;
+      std::uint64_t baseColorTexture = 0;
+    };
+
+    struct GpuTexture {
+      ::vk::raii::DeviceMemory memory{nullptr};
+      ::vk::raii::Image image{nullptr};
+      ::vk::raii::ImageView view{nullptr};
+      ::vk::raii::DescriptorSet descriptorSet{nullptr};
     };
 
     struct FrameBuffer {
@@ -97,15 +106,19 @@ namespace yr::render {
     std::optional<vk::MeshPipeline> meshPipeline;
     std::optional<vk::CommandPool> commandPool;
     std::optional<vk::FrameSync> frameSync;
+    std::optional<vk::CommandPool> uploadCommandPool;
+    std::optional<::vk::raii::Sampler> sampler;
 
-    // Reverse destruction: descriptor sets, pool, mapped frame buffers, then pipeline/device.
     std::array<FrameBuffer, kFramesInFlight> frameBuffers;
     std::optional<::vk::raii::DescriptorPool> descriptorPool;
     std::vector<::vk::raii::DescriptorSet> descriptorSets;
 
     std::unordered_map<std::uint64_t, GpuMesh> meshes;
     std::unordered_map<std::uint64_t, GpuMaterial> materials;
+    std::unordered_map<std::uint64_t, GpuTexture> textures;
     std::array<std::vector<GpuMesh>, kFramesInFlight> pendingMeshes;
+    std::array<std::vector<GpuTexture>, kFramesInFlight> pendingTextures;
+    std::optional<GpuTexture> defaultTexture;
     std::array<bool, kFramesInFlight> depthInitialized{};
 
     std::uint32_t frameSlot_ = 0;
@@ -140,11 +153,15 @@ namespace yr::render {
         frame.mapped = frame.memory.mapMemory(0, sizeof(FrameUniforms));
       }
 
-      const ::vk::DescriptorPoolSize poolSize{::vk::DescriptorType::eUniformBuffer, kFramesInFlight};
+      const std::array<::vk::DescriptorPoolSize, 2> poolSizes{{
+          {::vk::DescriptorType::eUniformBuffer, kFramesInFlight},
+          // M9.0c texture budget; increase for Sponza if needed.
+          {::vk::DescriptorType::eCombinedImageSampler, 256},
+      }};
       ::vk::DescriptorPoolCreateInfo poolInfo{};
       poolInfo.setFlags(::vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet)
-          .setMaxSets(kFramesInFlight)
-          .setPoolSizes(poolSize);
+          .setMaxSets(kFramesInFlight + 256)
+          .setPoolSizes(poolSizes);
       descriptorPool.emplace(raiiDevice, poolInfo);
 
       const std::array<::vk::DescriptorSetLayout, kFramesInFlight> layouts{meshPipeline->descriptorSetLayout(),
@@ -163,6 +180,197 @@ namespace yr::render {
         const std::array<::vk::WriteDescriptorSet, 1> writes{write};
         raiiDevice.updateDescriptorSets(writes, {});
       }
+    }
+
+    [[nodiscard]] bool validTextureData(const TextureUpload& upload) const {
+      if (upload.width == 0 || upload.height == 0 ||
+          upload.width > device->physicalDevice().getProperties().limits.maxImageDimension2D ||
+          upload.height > device->physicalDevice().getProperties().limits.maxImageDimension2D ||
+          upload.width > std::numeric_limits<std::size_t>::max() / upload.height / 4) {
+        YR_LOG_WARN("render.vk.texture", "忽略尺寸非法的 baseColor 纹理");
+        return false;
+      }
+      const std::size_t byteCount = static_cast<std::size_t>(upload.width) * upload.height * 4;
+      if (upload.rgba8.size() != byteCount) {
+        YR_LOG_WARN("render.vk.texture", "忽略字节数非法的 baseColor 纹理");
+        return false;
+      }
+      return true;
+    }
+
+    [[nodiscard]] std::vector<GpuTexture> createGpuTextures(const std::vector<TextureUpload>& uploads) {
+      struct StagingBuffer {
+        ::vk::raii::DeviceMemory memory{nullptr};
+        ::vk::raii::Buffer buffer{nullptr};
+      };
+
+      if (uploads.empty()) {
+        return {};
+      }
+      const ::vk::raii::Device& raiiDevice = device->raiiDevice();
+      std::vector<StagingBuffer> stagingBuffers;
+      std::vector<GpuTexture> gpuTextures;
+      stagingBuffers.reserve(uploads.size());
+      gpuTextures.reserve(uploads.size());
+      for (const TextureUpload& upload : uploads) {
+        stagingBuffers.emplace_back();
+        StagingBuffer& staging = stagingBuffers.back();
+        ::vk::BufferCreateInfo bufferInfo{};
+        bufferInfo.setSize(upload.rgba8.size())
+            .setUsage(::vk::BufferUsageFlagBits::eTransferSrc)
+            .setSharingMode(::vk::SharingMode::eExclusive);
+        staging.buffer = ::vk::raii::Buffer(raiiDevice, bufferInfo);
+        const ::vk::MemoryRequirements bufferRequirements = staging.buffer.getMemoryRequirements();
+        ::vk::MemoryAllocateInfo bufferAllocateInfo{};
+        bufferAllocateInfo.setAllocationSize(bufferRequirements.size)
+            .setMemoryTypeIndex(findMemoryType(device->physicalDevice(), bufferRequirements.memoryTypeBits,
+                                               ::vk::MemoryPropertyFlagBits::eHostVisible |
+                                                   ::vk::MemoryPropertyFlagBits::eHostCoherent));
+        staging.memory = ::vk::raii::DeviceMemory(raiiDevice, bufferAllocateInfo);
+        staging.buffer.bindMemory(*staging.memory, 0);
+        void* mapped = staging.memory.mapMemory(0, upload.rgba8.size());
+        std::memcpy(mapped, upload.rgba8.data(), upload.rgba8.size());
+        staging.memory.unmapMemory();
+
+        gpuTextures.emplace_back();
+        GpuTexture& texture = gpuTextures.back();
+        ::vk::ImageCreateInfo imageInfo{};
+        imageInfo.setImageType(::vk::ImageType::e2D)
+            .setFormat(::vk::Format::eR8G8B8A8Srgb)
+            .setExtent(::vk::Extent3D{upload.width, upload.height, 1})
+            .setMipLevels(1)
+            .setArrayLayers(1)
+            .setSamples(::vk::SampleCountFlagBits::e1)
+            .setTiling(::vk::ImageTiling::eOptimal)
+            .setUsage(::vk::ImageUsageFlagBits::eTransferDst | ::vk::ImageUsageFlagBits::eSampled)
+            .setSharingMode(::vk::SharingMode::eExclusive)
+            .setInitialLayout(::vk::ImageLayout::eUndefined);
+        texture.image = ::vk::raii::Image(raiiDevice, imageInfo);
+        const ::vk::MemoryRequirements imageRequirements = texture.image.getMemoryRequirements();
+        ::vk::MemoryAllocateInfo imageAllocateInfo{};
+        imageAllocateInfo.setAllocationSize(imageRequirements.size)
+            .setMemoryTypeIndex(findMemoryType(device->physicalDevice(), imageRequirements.memoryTypeBits,
+                                               ::vk::MemoryPropertyFlagBits::eDeviceLocal));
+        texture.memory = ::vk::raii::DeviceMemory(raiiDevice, imageAllocateInfo);
+        texture.image.bindMemory(*texture.memory, 0);
+
+        ::vk::ImageViewCreateInfo viewInfo{};
+        viewInfo.setImage(*texture.image)
+            .setViewType(::vk::ImageViewType::e2D)
+            .setFormat(::vk::Format::eR8G8B8A8Srgb)
+            .setSubresourceRange(::vk::ImageSubresourceRange{::vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1});
+        texture.view = ::vk::raii::ImageView(raiiDevice, viewInfo);
+      }
+
+      const ::vk::CommandBuffer cmd = uploadCommandPool->commandBuffer(0);
+      cmd.reset();
+      ::vk::CommandBufferBeginInfo beginInfo{};
+      beginInfo.setFlags(::vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
+      cmd.begin(beginInfo);
+      for (std::size_t index = 0; index < uploads.size(); ++index) {
+        GpuTexture& texture = gpuTextures[index];
+        const TextureUpload& upload = uploads[index];
+        const ::vk::ImageSubresourceRange range{::vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
+        ::vk::ImageMemoryBarrier2 toTransfer{};
+        toTransfer.setSrcStageMask(::vk::PipelineStageFlagBits2::eNone)
+            .setSrcAccessMask(::vk::AccessFlagBits2::eNone)
+            .setDstStageMask(::vk::PipelineStageFlagBits2::eTransfer)
+            .setDstAccessMask(::vk::AccessFlagBits2::eTransferWrite)
+            .setOldLayout(::vk::ImageLayout::eUndefined)
+            .setNewLayout(::vk::ImageLayout::eTransferDstOptimal)
+            .setSrcQueueFamilyIndex(::vk::QueueFamilyIgnored)
+            .setDstQueueFamilyIndex(::vk::QueueFamilyIgnored)
+            .setImage(*texture.image)
+            .setSubresourceRange(range);
+        ::vk::DependencyInfo dependency{};
+        dependency.setImageMemoryBarriers(toTransfer);
+        cmd.pipelineBarrier2(dependency);
+
+        const ::vk::BufferImageCopy copyRegion{0,
+                                               0,
+                                               0,
+                                               ::vk::ImageSubresourceLayers{::vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+                                               ::vk::Offset3D{0, 0, 0},
+                                               ::vk::Extent3D{upload.width, upload.height, 1}};
+        cmd.copyBufferToImage(*stagingBuffers[index].buffer, *texture.image, ::vk::ImageLayout::eTransferDstOptimal,
+                              copyRegion);
+
+        ::vk::ImageMemoryBarrier2 toShaderRead{};
+        toShaderRead.setSrcStageMask(::vk::PipelineStageFlagBits2::eTransfer)
+            .setSrcAccessMask(::vk::AccessFlagBits2::eTransferWrite)
+            .setDstStageMask(::vk::PipelineStageFlagBits2::eFragmentShader)
+            .setDstAccessMask(::vk::AccessFlagBits2::eShaderSampledRead)
+            .setOldLayout(::vk::ImageLayout::eTransferDstOptimal)
+            .setNewLayout(::vk::ImageLayout::eShaderReadOnlyOptimal)
+            .setSrcQueueFamilyIndex(::vk::QueueFamilyIgnored)
+            .setDstQueueFamilyIndex(::vk::QueueFamilyIgnored)
+            .setImage(*texture.image)
+            .setSubresourceRange(range);
+        dependency.setImageMemoryBarriers(toShaderRead);
+        cmd.pipelineBarrier2(dependency);
+      }
+      cmd.end();
+      ::vk::CommandBufferSubmitInfo commandBufferInfo{};
+      commandBufferInfo.setCommandBuffer(cmd);
+      ::vk::SubmitInfo2 submitInfo{};
+      submitInfo.setCommandBufferInfos(commandBufferInfo);
+      device->graphicsQueue().submit2(submitInfo, nullptr);
+      device->graphicsQueue().waitIdle();
+
+      for (GpuTexture& texture : gpuTextures) {
+        const ::vk::DescriptorSetLayout layout = meshPipeline->textureDescriptorSetLayout();
+        ::vk::DescriptorSetAllocateInfo allocateInfo{};
+        allocateInfo.setDescriptorPool(**descriptorPool).setSetLayouts(layout);
+        auto allocatedSets = raiiDevice.allocateDescriptorSets(allocateInfo);
+        texture.descriptorSet = std::move(allocatedSets.front());
+        const ::vk::DescriptorImageInfo imageInfo{**sampler, *texture.view, ::vk::ImageLayout::eShaderReadOnlyOptimal};
+        ::vk::WriteDescriptorSet write{};
+        write.setDstSet(*texture.descriptorSet)
+            .setDstBinding(0)
+            .setDescriptorType(::vk::DescriptorType::eCombinedImageSampler)
+            .setImageInfo(imageInfo);
+        const std::array<::vk::WriteDescriptorSet, 1> writes{write};
+        raiiDevice.updateDescriptorSets(writes, {});
+      }
+      return gpuTextures;
+    }
+
+    void uploadTextures(const std::vector<TextureUpload>& uploads) {
+      if (uploads.empty()) {
+        return;
+      }
+      std::vector<TextureUpload> validUploads;
+      std::vector<std::uint64_t> handles;
+      std::unordered_set<std::uint64_t> seen;
+      validUploads.reserve(uploads.size());
+      handles.reserve(uploads.size());
+      for (const TextureUpload& upload : uploads) {
+        if (!upload.texture.isValid() || textures.contains(upload.texture.value) ||
+            !seen.insert(upload.texture.value).second) {
+          continue;
+        }
+        if (!validTextureData(upload)) {
+          continue;
+        }
+        validUploads.push_back(upload);
+        handles.push_back(upload.texture.value);
+      }
+      std::vector<GpuTexture> gpuTextures = createGpuTextures(validUploads);
+      for (std::size_t index = 0; index < gpuTextures.size(); ++index) {
+        const std::size_t byteCount = validUploads[index].rgba8.size();
+        textures.emplace(handles[index], std::move(gpuTextures[index]));
+        ++stats.uploaded_assets;
+        stats.upload_bytes += byteCount;
+      }
+    }
+
+    void createDefaultTexture() {
+      TextureUpload white;
+      white.width = 1;
+      white.height = 1;
+      white.rgba8 = {255, 255, 255, 255};
+      std::vector<GpuTexture> uploaded = createGpuTextures({white});
+      defaultTexture.emplace(std::move(uploaded.front()));
     }
 
     void updateFrameUniforms(std::uint32_t slot, const CameraPod& camera) {
@@ -227,6 +435,7 @@ namespace yr::render {
       std::copy(std::begin(upload.baseColorFactor), std::end(upload.baseColorFactor), material.baseColorFactor.begin());
       material.metallic = upload.metallic;
       material.roughness = upload.roughness;
+      material.baseColorTexture = upload.baseColorTexture.value;
       materials.emplace(upload.material.value, material);
       ++stats.uploaded_assets;
     }
@@ -248,9 +457,19 @@ namespace yr::render {
           ++stats.released_assets;
         }
       }
+      for (AssetHandle handle : snapshot.releases.textures) {
+        auto it = textures.find(handle.value);
+        if (it != textures.end()) {
+          const std::uint32_t pendingSlot = (frameSlot_ + kFramesInFlight - 1) % kFramesInFlight;
+          pendingTextures[pendingSlot].push_back(std::move(it->second));
+          textures.erase(it);
+          ++stats.released_assets;
+        }
+      }
       for (const MeshUpload& upload : snapshot.uploads.meshes) {
         uploadMesh(upload);
       }
+      uploadTextures(snapshot.uploads.textures);
       for (const MaterialUpload& upload : snapshot.uploads.materials) {
         uploadMaterial(upload);
       }
@@ -265,11 +484,18 @@ namespace yr::render {
       }
       meshes.clear();
       materials.clear();
+      textures.clear();
       for (auto& pending : pendingMeshes) {
         pending.clear();
       }
+      for (auto& pending : pendingTextures) {
+        pending.clear();
+      }
+      defaultTexture.reset();
       descriptorSets.clear();
       descriptorPool.reset();
+      sampler.reset();
+      uploadCommandPool.reset();
       for (FrameBuffer& frame : frameBuffers) {
         if (frame.mapped != nullptr && device.has_value()) {
           frame.memory.unmapMemory();
@@ -313,6 +539,9 @@ namespace yr::render {
         for (auto& pending : pendingMeshes) {
           pending.clear();
         }
+        for (auto& pending : pendingTextures) {
+          pending.clear();
+        }
         YR_LOG_INFO("render.vk.backend", "swapchain 已重建 " + std::to_string(swapchain->extent().width) + "x" +
                                              std::to_string(swapchain->extent().height) +
                                              " imageCount=" + std::to_string(swapchain->imageCount()));
@@ -339,6 +568,7 @@ namespace yr::render {
       }
       // This slot's fence has completed, so resources deferred to it are no longer in use.
       pendingMeshes[slot].clear();
+      pendingTextures[slot].clear();
       updateFrameUniforms(slot, snapshot.camera);
 
       const ::vk::ResultValue<std::uint32_t> acquired = swapchain->raiiHandle().acquireNextImage(
@@ -429,6 +659,11 @@ namespace yr::render {
         }
         const GpuMesh& mesh = meshIt->second;
         const GpuMaterial& material = materialIt->second;
+        const auto textureIt = textures.find(material.baseColorTexture);
+        const ::vk::DescriptorSet textureSet =
+            textureIt == textures.end() ? *defaultTexture->descriptorSet : *textureIt->second.descriptorSet;
+        const std::array<::vk::DescriptorSet, 1> textureSets{textureSet};
+        cmd.bindDescriptorSets(::vk::PipelineBindPoint::eGraphics, meshPipeline->layout(), 1, textureSets, {});
         const std::array<::vk::Buffer, 1> vertexBuffers{*mesh.buffer};
         const std::array<::vk::DeviceSize, 1> offsets{0};
         cmd.bindVertexBuffers(0, vertexBuffers, offsets);
@@ -511,7 +746,19 @@ namespace yr::render {
       impl_->meshPipeline.emplace(*impl_->device, impl_->swapchain->format(), kDepthFormat);
       impl_->commandPool.emplace(*impl_->device, kFramesInFlight);
       impl_->frameSync.emplace(*impl_->device, kFramesInFlight, impl_->swapchain->imageCount());
+      ::vk::SamplerCreateInfo samplerInfo{};
+      samplerInfo.setMagFilter(::vk::Filter::eLinear)
+          .setMinFilter(::vk::Filter::eLinear)
+          .setMipmapMode(::vk::SamplerMipmapMode::eLinear)
+          .setAddressModeU(::vk::SamplerAddressMode::eRepeat)
+          .setAddressModeV(::vk::SamplerAddressMode::eRepeat)
+          .setAddressModeW(::vk::SamplerAddressMode::eRepeat)
+          .setMinLod(0.0F)
+          .setMaxLod(0.0F);
+      impl_->sampler.emplace(impl_->device->raiiDevice(), samplerInfo);
+      impl_->uploadCommandPool.emplace(*impl_->device, 1);
       impl_->createFrameResources();
+      impl_->createDefaultTexture();
     } catch (const std::exception& error) {
       YR_LOG_ERROR("render.vk.backend", std::string("初始化失败：") + error.what());
       impl_->lastValidationErrors = 0;

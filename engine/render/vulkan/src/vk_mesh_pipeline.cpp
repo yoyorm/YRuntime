@@ -59,11 +59,17 @@ namespace yr::render::vk {
     descriptorLayoutInfo.setBindings(frameBinding);
     descriptorSetLayout_ = ::vk::raii::DescriptorSetLayout(raiiDevice, descriptorLayoutInfo);
 
+    const ::vk::DescriptorSetLayoutBinding textureBinding{0, ::vk::DescriptorType::eCombinedImageSampler, 1,
+                                                          ::vk::ShaderStageFlagBits::eFragment};
+    descriptorLayoutInfo.setBindings(textureBinding);
+    textureDescriptorSetLayout_ = ::vk::raii::DescriptorSetLayout(raiiDevice, descriptorLayoutInfo);
+
     const ::vk::PushConstantRange pushConstantRange{::vk::ShaderStageFlagBits::eVertex |
                                                         ::vk::ShaderStageFlagBits::eFragment,
                                                     0, static_cast<std::uint32_t>(sizeof(MeshPushConstants))};
     ::vk::PipelineLayoutCreateInfo layoutInfo{};
-    layoutInfo.setSetLayouts(*descriptorSetLayout_).setPushConstantRanges(pushConstantRange);
+    const std::array<::vk::DescriptorSetLayout, 2> setLayouts{*descriptorSetLayout_, *textureDescriptorSetLayout_};
+    layoutInfo.setSetLayouts(setLayouts).setPushConstantRanges(pushConstantRange);
     layout_ = ::vk::raii::PipelineLayout(raiiDevice, layoutInfo);
 
     pipeline_ = createGraphicsPipeline(colorFormat, depthFormat);

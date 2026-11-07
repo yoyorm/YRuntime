@@ -8,6 +8,8 @@ layout(set = 0, binding = 0) uniform Frame {
   vec4 lightColor;
 } frame;
 
+layout(set = 1, binding = 0) uniform sampler2D baseColorTexture;
+
 layout(push_constant) uniform Push {
   mat4 model;
   vec4 baseColorFactor;
@@ -20,7 +22,7 @@ layout(location = 2) in vec2 texCoord;
 layout(location = 0) out vec4 outColor;
 
 void main() {
-  vec3 albedo = pc.baseColorFactor.rgb;
+  vec3 albedo = texture(baseColorTexture, texCoord).rgb * pc.baseColorFactor.rgb;
   vec3 N = normalize(worldNormal);
   vec3 L = normalize(frame.lightDir.xyz);
   vec3 V = normalize(frame.eye.xyz - worldPos);

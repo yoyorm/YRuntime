@@ -29,6 +29,9 @@ namespace yr::render::vk {
     [[nodiscard]] ::vk::Pipeline handle() const noexcept { return *pipeline_; }
     [[nodiscard]] ::vk::PipelineLayout layout() const noexcept { return *layout_; }
     [[nodiscard]] ::vk::DescriptorSetLayout descriptorSetLayout() const noexcept { return *descriptorSetLayout_; }
+    [[nodiscard]] ::vk::DescriptorSetLayout textureDescriptorSetLayout() const noexcept {
+      return *textureDescriptorSetLayout_;
+    }
     [[nodiscard]] ::vk::Format colorFormat() const noexcept { return colorFormat_; }
     [[nodiscard]] ::vk::Format depthFormat() const noexcept { return depthFormat_; }
 
@@ -39,6 +42,7 @@ namespace yr::render::vk {
     ::vk::raii::ShaderModule vertexShader_{nullptr};
     ::vk::raii::ShaderModule fragmentShader_{nullptr};
     ::vk::raii::DescriptorSetLayout descriptorSetLayout_{nullptr};
+    ::vk::raii::DescriptorSetLayout textureDescriptorSetLayout_{nullptr};
     ::vk::raii::PipelineLayout layout_{nullptr};
     ::vk::raii::Pipeline pipeline_{nullptr};
     ::vk::Format colorFormat_{};
