@@ -513,7 +513,7 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 
 > **M9 顺序（D26）**：M9.0 walking skeleton（真实资产 + 同步加载 + 一个带 baseColor 材质的物体上屏）→ M9.1 AssetDatabase/GC → M9.2 协作式异步 + streaming → M9.5 完整 PBR。最终场景：ToyCar（仓库内）+ Sponza（外部路径，压力测试，不进仓库）。每个子系统必须有 demo 消费者，否则删除。
 
-> **M9.1 完成（2026-11-11）**：AssetDatabase 强 Ref 缓存 + fixpoint GC + `evict` + `AssetStats`；glTF loader hooks 复用资源；MainLoop 阶段 12 接 `collectGarbage()`。ToyCar 首次 `resident=13` / `cpu_bytes=22,659,328`（≈22.6 MB 十进制）；同一 DB 二次加载全命中复用；`--drop-at` 后下一帧回收被删 primitive 的 3 个资源；循环结束后 `clearRoot + collectGarbage`，final `resident=0` / `cpu_bytes=0`。debug-vk 410/410、ASan 410/410、validation 0。
+> **M9.1 完成（2026-11-11）**：AssetDatabase 强 Ref 缓存 + fixpoint GC + `evict` + `AssetStats`；glTF loader hooks 复用资源；MainLoop 阶段 12 接 `collectGarbage()`。ToyCar 首次 `resident=12` / `cpu_bytes=22,659,328`（≈22.6 MB 十进制）；同一 DB 二次加载全命中复用；`--drop-at` 后下一帧回收被删 primitive 的 3 个资源；循环结束后 `clearRoot + collectGarbage`，final `resident=0` / `cpu_bytes=0`。debug-vk 410/410、ASan 410/410、validation 0。
 
 > **M9.0c 完成（2026-11-07）**：3 primitives / 108936 triangles / 首帧 uploads=8 / 9,027,840 B / drop-at releases=3 / resize 2 次重建 / validation 0 / dump 8.7MB replay 一致。
 

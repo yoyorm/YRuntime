@@ -30,7 +30,7 @@
 
 ## 2. 下一步：M9.2 协作式异步 + streaming
 
-**M9.1 已收口（2026-11-11）**：`AssetDatabase` 强 Ref 缓存 + fixpoint GC + `evict` + `AssetStats`；glTF loader 通过 hooks 复用资源；MainLoop 阶段 12 接 `collectGarbage()`。ToyCar 首次 `resident=13` / `cpu_bytes=22,659,328` B，循环结束 final `resident=0`；debug-vk 与 ASan 410/410，validation 0。决策见 D31。
+**M9.1 已收口（2026-11-11）**：`AssetDatabase` 强 Ref 缓存 + fixpoint GC + `evict` + `AssetStats`；glTF loader 通过 hooks 复用资源；MainLoop 阶段 12 接 `collectGarbage()`。ToyCar 首次 `resident=12` / `cpu_bytes=22,659,328` B，循环结束 final `resident=0`；debug-vk 与 ASan 410/410，validation 0。决策见 D31。
 
 **最终切片（D26）**：ToyCar（仓库内，视觉/PBR）+ Sponza（外部路径，资源/并行压力测试，大资产不进仓库）。M9 顺序：M9.0 walking skeleton（baseColor + Blinn-Phong）→ M9.1 AssetDatabase/GC → M9.2 协作式异步 + streaming → M9.5 完整 PBR。每个子系统必须出现在视觉/流式/并行 demo 中，否则删除。
 

@@ -691,6 +691,9 @@ namespace yr::asset {
               material = buildMaterial(context, primitive.material);
             }
             if (!material) {
+              if (!context.defaultMaterial) {
+                context.defaultMaterial = buildDefaultMaterial(context);
+              }
               material = context.defaultMaterial;
             }
             node.primitives.push_back(GltfPrimitive{std::move(meshResource), std::move(material)});
@@ -759,7 +762,6 @@ namespace yr::asset {
 
     LoadContext context{source, resPathString, std::filesystem::path(std::string(assetRoot)), result.warnings};
     context.hooks = hooks;
-    context.defaultMaterial = buildDefaultMaterial(context);
 
     result.scene.name = stringOf(scene.name);
     if (result.scene.name.empty()) {
