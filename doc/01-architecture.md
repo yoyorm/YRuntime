@@ -501,7 +501,7 @@ class PakFileAccess : public IFileAccess { /* 从 .yrpak 读，M11 */ };
 3. 加载中被请求卸载 → 状态机必须能表达"加载完成后立即丢弃"。
 4. 失败必须是一等公民：`LoadResult` 带错误码 + 人类可读消息 + 源路径。
 
-**卸载策略**：默认 `collect_garbage()` 在帧末扫 refcount==1 的资源（LRU 见 Godot `core/templates/lru.h`）。
+**卸载策略**：默认 `collect_garbage()` 在帧末扫 refcount==1 的资源（LRU 见 Godot `core/templates/lru.h`）。M9.1 已实现同步 `AssetDatabase`（强 `Ref` 缓存、fixpoint GC、`evict`、`AssetStats`）并接入 `MainLoop` 阶段 12；上面的 `request_load` / `pump` 异步链路仍属 M9.2，`.scn` ExtResource 递归加载与 UID 集中化也未做。
 **Godot 对照**：`core/io/resource.h`、`resource_loader.h`（含 `ResourceLoader::ThreadLoadTask` 异步加载实现，**这是 M9 最值得精读的文件**）、`resource_saver.h`、`resource_uid.h`、`file_access_pack.h`（PCK 格式）、`core/io/file_access.h`。
 **学习点**：异步状态机、引用计数与 GC 的边界、IO 抽象、内容寻址（UID/hash）。
 
@@ -694,7 +694,7 @@ Asset/Job/Renderer 装配与显式 `initialize`/`shutdown` 顺序推迟到确有
 | 9 | `apply_structure` | 执行 `flushDeletions()`（**唯一已实现的结构性修改点**）；`add_child` 待处理队列 **规划中** | 主 | **是** |
 | 10 | `extract_render` | `RenderExtractSystem`：ready 的 MeshInstanceNode → items + uploads/releases（已接线；不做剔除） | 主（可并行剔除） | 否 |
 | 11 | `present` | `RendererBackend::present(snapshot)`（**已接线**；装配者注入非拥有后端，未装配则 no-op） | 主（或渲染线程） | 否 |
-| 12 | `collect_garbage` | 资源 GC、延迟销毁 GPU 资源、`Ref` 归零对象回收（**未实现，空钩子**） | 主 | 否 |
+| 12 | `collect_garbage` | `AssetDatabase::collectGarbage()`（fixpoint，**已接线**）；GPU 延迟销毁仍由后端在 present 内处理 | 主 | 否 |
 | 13 | `end_frame` | `FrameStats` 汇总（整帧 / 各阶段 / 物理步数入环）；日志 flush 规划中，quit 决策在 `MainLoop` 外层 | 主 | 否 |
 
 > **设计要点**：所有"结构性修改"（增删节点）都收敛到 **阶段 9**。阶段 5~8 里的逻辑只能改**数据**，

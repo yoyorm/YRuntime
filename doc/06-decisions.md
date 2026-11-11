@@ -40,6 +40,7 @@
 | D28 | 资源生命周期：Node 持 Ref；上传/卸载走 snapshot；单快照不做 generation | **已确认** | M9.0 |
 | D29 | glTF 同步加载：vendor tinyGLTF v3，loader 只产 CPU 资源 | **已确认** | M9.0b |
 | D30 | M9.0c：运行时 TRS + MeshInstanceNode + snapshot 增量上传 + Blinn-Phong | **已确认** | M9.0c |
+| D31 | AssetDatabase：强 Ref 缓存 + fixpoint GC + evict 仅限 refcount==1 | **已确认** | M9.1 |
 
 ---
 
@@ -678,6 +679,30 @@ CI 首次运行时 `apt-get install libcatch2-dev` 退出码 100，job 失败。
 **后果**：+ ToyCar 真实资产与 Blinn-Phong 上屏；+ 资源上传/释放链路有真实消费者；+ M9.5 的 PBR/光源有直接落点；− snapshot v2 与旧 dump 不兼容；− `.scn` 暂不能保存 rotation/scale；− 固定光源与无阴影只是 M9.0c 的过渡。
 
 **什么情况下改回来**：需要 `.scn` 保存 ToyCar 场景时补完整 TRS 序列化；M9.5 接 LightPod/阴影时替换固定光；backend 重建/device loss 时补资源重传 epoch。
+
+---
+
+## D31 · AssetDatabase：强 Ref 缓存 + fixpoint GC + evict 仅限 refcount==1
+**状态**：已确认 · **里程碑**：M9.1
+
+**背景**：M9.0b 的 glTF loader 每次同步加载都会新建 Mesh/Material/Texture，M9.0c 的节点只按自己的 `Ref` 维持 liveness。没有统一缓存时，同一资源会被重复加载；没有 GC 时，资源只能随场景节点一起释放，无法在场景仍持有引用时安全卸载未被引用的资源。
+
+**决策**：
+1. `AssetDatabase` 持有强 `Ref<Resource>` 缓存，key 为 `AssetUID`；entry 额外保存 `sourcePath`，供诊断与后续异步加载复用。
+2. GC 采用 fixpoint：每轮收集所有 `refcount()==1`（只剩 DB）的资源，重复到一轮没有候选为止。`Material → Texture` 是 DAG，材质析构释放贴图后，贴图要到下一轮才只剩 DB。
+3. `evict(uid)` 只在 `refcount()==1` 时成功；被场景、材质或临时 `Ref` 使用时返回 false，避免同一 UID 出现两个对象。
+4. glTF loader 通过 `GltfResourceHooks` 的 `find`/`store` 复用与注册资源；`AssetDatabase` 是唯一缓存，但 UID 仍由既有 `AssetUID::fromPath` 与 loader 子资源规则生成。UID 集中化（资源注册表/重命名追踪）不在 M9.1。
+5. 加载失败时回滚本次新增且仅 DB 持有的资源，失败路径不留下半成品条目。
+6. 本阶段只做同步加载与帧末 GC：不接异步 `pump`、不接 `.scn` ExtResource 递归加载、不做弱引用缓存。
+
+**备选与否决理由**：
+- *弱引用缓存*：最后一个 `Ref` 死亡时释放，DB 需要回调或主动摘除，释放时机分散在任意 `Ref` 析构路径；否决。
+- *单遍 GC*：`Material → Texture` 会残留一层贴图，`resident_count` 不能归零；否决。
+- *强制 evict（忽略 refcount）*：场景仍在使用时卸载，会产生同 UID 双对象；否决。
+
+**后果**：+ 资源驻留/卸载确定，`resident_count`/`cpu_bytes` 可直接验收；+ 后续异步只需替换执行后端，缓存与 GC 语义不变；− GC 需要多轮；− 表达式里的临时 `Ref` 会让资源延迟一帧回收。
+
+**什么情况下改回来**：出现需要跨帧共享的弱引用缓存、热重载或异步加载与 GC 并发；或 GC 多轮遍历成为可观测瓶颈时，再评估增量/代际收集。
 
 ---
 

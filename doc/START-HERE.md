@@ -18,39 +18,32 @@
 | **M6 最小 Vulkan Bootstrap** | ✅ 已完成 / 收口（2026-10-23）—— M6-1 外壳 + M6-2 Surface / Device / 队列 + M6-3 Swapchain / 清屏上屏 + M6-4 N 帧在飞 + 硬编码三角形 + M6-5 健壮性（resize / 最小化手测、soak） |
 | **M7 Snapshot 驱动画面** | ✅ 已完成 / 收口（2026-10-24）—— 7a/7b/7c/7d/7e：MainLoop 接线、DrawItem/Camera、WASD、dump/replay、帧统计、600s soak、resize、GIF/PNG；双/三缓冲按 D22 推迟 |
 | **M8 序列化** | ✅ 已完成 / 收口（2026-10-31）—— M8a 文本；M8b 引用/连接；M8c headless `--scene` 加载与 1000 节点 benchmark；364 tests |
-| **M9 资源系统** | 🔨 进行中（M9.0c 完成：TRS/MeshInstanceNode/snapshot v2/MeshPipeline/baseColor Blinn-Phong；下一步 M9.1） |
+| **M9 资源系统** | 🔨 进行中（M9.1 完成：AssetDatabase 缓存 / fixpoint GC / evict / AssetStats + loader hooks + MainLoop 阶段 12；下一步 M9.2） |
 | M9.5 ~ M11 | ⬜ 未开始（M9.5 基础 PBR，D21） |
 
-**远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend ✅ → M6 最小 Vulkan bootstrap ✅ → M7 Snapshot 驱动画面（首个主要作品节点）✅ → M8 序列化 ✅ → M9 资源系统 → M9.5 基础 PBR 内容（D21）→ M10 任务系统 → M11 工具链打磨。**当前唯一任务：M9.1 AssetDatabase/GC。**
+**远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend ✅ → M6 最小 Vulkan bootstrap ✅ → M7 Snapshot 驱动画面（首个主要作品节点）✅ → M8 序列化 ✅ → M9 资源系统 → M9.5 基础 PBR 内容（D21）→ M10 任务系统 → M11 工具链打磨。**当前唯一任务：M9.2 协作式异步 + streaming。**
 
 进度**只在两处维护**：根 `README.md` 的里程碑表（对外）+ `02-roadmap.md` 的 checkbox（对内）。
 别的地方不要重复记录，否则一定会漂移。
 
 ---
 
-## 2. 下一步：M9.1 AssetDatabase / GC
+## 2. 下一步：M9.2 协作式异步 + streaming
 
-M8 已收口（2026-10-31）：M8a `.scn` 文本 + Node/position/父子路径；M8b 引用/连接；M8c `yr_runtime_headless --scene` 加载（样例 2 节点 / 140 B / 71 µs；1000 节点 / 73,886 B / ~15.9 ms）；364/364 tests。文本格式不做版本号与迁移（D24）；二进制/JSON 不做（D25）。
+**M9.1 已收口（2026-11-11）**：`AssetDatabase` 强 Ref 缓存 + fixpoint GC + `evict` + `AssetStats`；glTF loader 通过 hooks 复用资源；MainLoop 阶段 12 接 `collectGarbage()`。ToyCar 首次 `resident=13` / `cpu_bytes=22,659,328` B，循环结束 final `resident=0`；debug-vk 与 ASan 410/410，validation 0。决策见 D31。
 
 **最终切片（D26）**：ToyCar（仓库内，视觉/PBR）+ Sponza（外部路径，资源/并行压力测试，大资产不进仓库）。M9 顺序：M9.0 walking skeleton（baseColor + Blinn-Phong）→ M9.1 AssetDatabase/GC → M9.2 协作式异步 + streaming → M9.5 完整 PBR。每个子系统必须出现在视觉/流式/并行 demo 中，否则删除。
 
 **执行模式（D27）**：coder 负责实现、测试、CMake、文档机械同步；用户 review 契约与关键 diff，不再手写核心。
 
-M9-0 已完成（`8478fcc`）：`RefCounted` / `Ref<T>` 实现，隐藏测试 7/7、31 assertions；默认 364/364。循环引用不解决（WeakRef 以后再说）。
+下一步 **M9.2 协作式异步 + streaming**：
 
-M9.0a 已完成（`8821ff0`）：`AssetUID`（canonical path FNV-1a 64）、`Resource` 状态机、`Texture`/`Mesh`/`Material`；`YrTests_asset` 14 cases，全量 378/378。
-
-M9.0b 已完成（2026-11-06）：vendor tinyGLTF v3 + stb_image；`loadGltfScene` 同步加载 ToyCar（11 roots / 3 primitives / 3 materials；66951+8959+1519 vertices）；`YrTests_asset` 18 cases / 260 assertions，全量 382/382。
-
-**M9.0c 已完成**：完整 TRS 与 `MeshInstanceNode`；snapshot v2 uploads/releases；ToyCar 3 primitives / 108936 triangles；首帧 uploads=8、drop-at releases=3；debug-vk/ASan 各 398/398、validation 0；resize 重建 2 次；8.7MB dump/replay 像素一致。
-
-下一步 **M9.1 AssetDatabase / GC**：
-
-1. `AssetDatabase` 强 Ref 缓存；
-2. `refcount()==1` GC fixpoint（Material→Texture 两层）；
-3. `evict` + `AssetStats`；
-4. 用 DB 替换 `render_demo` 直接 `loadGltfScene` 的局部 `GltfScene`；
-5. 不接异步（留给 M9.2）。
+1. `IFileAccess` 抽象：`DiskFileAccess` + `MemoryFileAccess`（测试不碰真实磁盘），之后 `.yrpak` 可复用。
+2. `AssetDatabase::requestLoad` 入队与 in-flight 合并；`pump()` 在主线程推进状态机、完成回调；阶段 4 接线，阶段 12 继续负责 GC。
+3. 每帧预算：`pump()` 只消费有限字节/时间片，未完成部分留到下一帧，避免加载尖峰。
+4. `ThrottledFileAccess`（每次读 sleep N ms）证明主循环帧时间不受影响；streaming demo 复用同一接口。
+5. 先做单线程假异步（入队 + `pump()` 同步执行），M10 换成 JobSystem 工作线程；对象构造仍回主线程（D8）。
+6. 仍不做 `.scn` ExtResource 递归加载与 UID 集中化。
 
 详细计划见 `02-roadmap.md` M9。
 

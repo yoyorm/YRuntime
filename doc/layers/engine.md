@@ -39,7 +39,7 @@
 ## MainLoop（`engine::MainLoop`）
 
 - **职责**：**帧阶段序列的唯一权威实现**。一次 `tick` = 一次 0→13。
-- **所有权 / 生命周期**：`SceneTree` / `EventBus` 由装配者拥有，`MainLoop` **引用非拥有**，二者必须比 `MainLoop` 活得更久。`RendererBackend*`（`setBackend`）同样非拥有，装配者拥有并保证其生命周期长于 `MainLoop`；未装配时阶段 11 为 no-op。不提供默认 `globalEventBus` 路径，避免隐藏的全局依赖。
+- **所有权 / 生命周期**：`SceneTree` / `EventBus` 由装配者拥有，`MainLoop` **引用非拥有**，二者必须比 `MainLoop` 活得更久。`RendererBackend*`（`setBackend`）与 `asset::AssetDatabase*`（`setAssetDatabase`）同样非拥有，装配者拥有并保证其生命周期长于 `MainLoop`；未装配时阶段 11 / 12 分别为 no-op。不提供默认 `globalEventBus` 路径，避免隐藏的全局依赖。
 - **公开 API**：
 
   | 签名 | 语义 / 契约 | 失败模式 |
@@ -56,6 +56,7 @@
   | `double accumulator() const` | 当前未消费的物理累积（诊断用），spiral 截断后始终 `< physicsStep` | — |
   | `SceneTree& tree()` / `EventBus& events()` | 返回注入的引用 | — |
   | `void setBackend(render::RendererBackend*) noexcept` | 注入非拥有后端；`nullptr` 使阶段 11 回到 no-op | — |
+| `void setAssetDatabase(asset::AssetDatabase*) noexcept` | 注入非拥有资源库；`nullptr` 使阶段 12 回到 no-op | — |
   | `RenderSnapshot& snapshot()` / `const RenderSnapshot& snapshot() const` | 阶段 10 产出的当前帧快照；下一次 `tick` 才被覆写（M7 单缓冲；snapshot ring 按 D22 推迟） | — |
   | `FrameStats& stats() const` | 帧统计；构造后、tick 前可配置 | — |
 
@@ -84,10 +85,10 @@
 | 9 | apply_structure | `applyStructure` | ✅ | `SceneTree::flushDeletions`（安全点） | 执行本帧延迟删除 |
 | 10 | extract_render | `extractRender` | ✅ | `RenderExtractSystem::extract` | 只抽取可绘制 `MeshInstanceNode`，填 `items` + `uploads/releases`；`frame_index` 由 `MainLoop` 写 |
 | 11 | present | `present` | ✅ | `RendererBackend::present(snapshot_)`（非拥有后端） | 后端只读快照；未装配后端时 no-op |
-| 12 | collect_garbage | `collectGarbage` | ⬜ 空钩子 | 无 | — |
+| 12 | collect_garbage | `collectGarbage` | ✅ | `AssetDatabase::collectGarbage`（fixpoint，非拥有 DB） | 卸载仅剩 DB 持有的资源；GPU 延迟销毁仍归后端 |
 | 13 | end_frame | `endFrame` | ✅ | `FrameStats::recordFrame` | 量本阶段耗时，汇总整帧 / 各阶段 / 物理步数入环 |
 
-> 空钩子 = 1/2/4/5/12，尚未接任何子系统。per-phase 报告只覆盖已接线阶段（0/3/6/7/8/9/10/11/13）。
+> 空钩子 = 1/2/4/5，尚未接任何子系统。per-phase 报告只覆盖 0/3/6/7/8/9/10/11/13；阶段 12 已接线，但 GC 通常为 0ns，不单独上报。
 
 - **Godot 对照**：`main/main.cpp` 的 `Main::iteration`。
 - **遗留 / 已知缺口**：空钩子见上表。
