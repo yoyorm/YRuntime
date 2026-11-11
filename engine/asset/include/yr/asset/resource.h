@@ -26,6 +26,9 @@ namespace yr::asset {
     [[nodiscard]] const std::string& error() const noexcept { return error_; }
     [[nodiscard]] ResourceKind kind() const noexcept { return kind_; }
 
+    // 资源 payload 的 CPU 字节数；不包含对象头、字符串和引用计数。
+    [[nodiscard]] virtual std::uint64_t cpuBytes() const noexcept = 0;
+
     void setUid(AssetUID uid) noexcept { uid_ = uid; }
     void setSourcePath(std::string path);
     [[nodiscard]] bool markLoading() noexcept;

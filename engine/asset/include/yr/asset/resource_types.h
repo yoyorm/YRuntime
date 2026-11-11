@@ -18,6 +18,8 @@ namespace yr::asset {
     std::uint32_t width = 0;
     std::uint32_t height = 0;
     std::vector<std::uint8_t> rgba8; // width * height * 4
+
+    [[nodiscard]] std::uint64_t cpuBytes() const noexcept override { return static_cast<std::uint64_t>(rgba8.size()); }
   };
 
   struct MeshVertex {
@@ -33,6 +35,10 @@ namespace yr::asset {
 
     std::vector<MeshVertex> vertices;
     std::vector<std::uint32_t> indices;
+
+    [[nodiscard]] std::uint64_t cpuBytes() const noexcept override {
+      return static_cast<std::uint64_t>(vertices.size() * sizeof(MeshVertex) + indices.size() * sizeof(std::uint32_t));
+    }
   };
 
   class Material final : public Resource {
@@ -52,6 +58,9 @@ namespace yr::asset {
     bool doubleSided = false;
     AlphaMode alphaMode = AlphaMode::kOpaque;
     float alphaCutoff = 0.5F;
+
+    // 贴图由各自的 Texture 统计，材质本身只持有引用。
+    [[nodiscard]] std::uint64_t cpuBytes() const noexcept override { return 0; }
   };
 
 } // namespace yr::asset

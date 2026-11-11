@@ -10,6 +10,7 @@ target_include_directories(yr_asset_thirdparty SYSTEM PRIVATE
 add_library(yr_asset
     src/asset_uid.cpp
     src/resource.cpp
+    src/asset_database.cpp
     src/gltf_loader.cpp)
 add_library(yr::asset ALIAS yr_asset)
 
