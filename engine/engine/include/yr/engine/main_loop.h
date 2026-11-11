@@ -15,6 +15,9 @@ namespace yr::scene {
 namespace yr::evt {
   class EventBus;
 }
+namespace yr::asset {
+  class AssetDatabase;
+}
 
 namespace yr::engine {
 
@@ -76,6 +79,9 @@ namespace yr::engine {
       }
     }
 
+    // 非拥有资源库：装配者拥有并保证比 MainLoop 活得更久；nullptr 时阶段 12 为 no-op。
+    void setAssetDatabase(asset::AssetDatabase* database) noexcept { assetDatabase_ = database; }
+
     // 阶段 10 产出的当前帧快照，直到下一次 tick 才被覆写。
     [[nodiscard]] render::RenderSnapshot& snapshot() noexcept { return snapshot_; }
     [[nodiscard]] const render::RenderSnapshot& snapshot() const noexcept { return snapshot_; }
@@ -134,6 +140,8 @@ namespace yr::engine {
 
     // 渲染接线：backend_ 非拥有（装配者拥有）；snapshot_ 每帧阶段 10 重建。
     render::RendererBackend* backend_ = nullptr;
+    // 资源 GC：assetDatabase_ 非拥有（装配者拥有）；nullptr 时阶段 12 no-op。
+    asset::AssetDatabase* assetDatabase_ = nullptr;
     render::RenderSnapshot snapshot_;
     render::CameraPod camera_{};
     RenderExtractSystem renderExtract_;

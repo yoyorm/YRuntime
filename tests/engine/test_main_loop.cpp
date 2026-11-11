@@ -1,6 +1,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <yr/asset/asset_database.h>
 #include <yr/asset/resource_types.h>
 #include <yr/engine/clock.h>
 #include <yr/engine/main_loop.h>
@@ -770,6 +771,54 @@ TEST_CASE("main_loop: present forwards the snapshot to the injected backend dete
       CHECK(stats.uploaded_assets == 0);
     }
   }
+}
+
+TEST_CASE("main_loop: phase 12 collects AssetDatabase garbage after the scene releases resources",
+          "[engine][main_loop][asset][gc]") {
+  yr::asset::AssetDatabase database("/unused");
+  yr::scene::SceneTree tree;
+  yr::evt::EventBus bus;
+  MainLoop loop(tree, bus);
+  loop.setAssetDatabase(&database);
+
+  {
+    auto mesh = yr::obj::make_ref<yr::asset::Mesh>();
+    mesh->setUid(yr::asset::AssetUID{9001});
+    mesh->setSourcePath("res://meshes/gc.mesh");
+    REQUIRE(mesh->markLoading());
+    REQUIRE(mesh->markReady());
+    mesh->vertices.resize(3);
+    mesh->indices = {0, 1, 2};
+
+    auto material = yr::obj::make_ref<yr::asset::Material>();
+    material->setUid(yr::asset::AssetUID{9002});
+    material->setSourcePath("res://materials/gc.material");
+    REQUIRE(material->markLoading());
+    REQUIRE(material->markReady());
+
+    REQUIRE(database.store(mesh));
+    REQUIRE(database.store(material));
+
+    auto instance = std::make_unique<yr::scene::MeshInstanceNode>();
+    instance->setMesh(mesh);
+    instance->setMaterial(material);
+    REQUIRE(tree.setRoot(std::move(instance)));
+  }
+
+  loop.tick(1.0 / 60.0);
+  CHECK(loop.snapshot().items.size() == 1);
+  CHECK(database.stats().resident_count == 2);
+  CHECK(database.stats().cpu_bytes > 0);
+
+  // 节点释放后、下次阶段 12 之前，DB 仍持有资源。
+  (void)tree.clearRoot();
+  CHECK(database.stats().resident_count == 2);
+
+  loop.tick(1.0 / 60.0);
+  const yr::asset::AssetStats stats = database.stats();
+  CHECK(stats.resident_count == 0);
+  CHECK(stats.cpu_bytes == 0);
+  CHECK(stats.evicted == 2);
 }
 
 TEST_CASE("main_loop: changing backend resets extracted resource residency", "[engine][main_loop][render]") {

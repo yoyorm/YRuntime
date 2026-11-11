@@ -16,6 +16,7 @@
 #include <utility>
 #include <vector>
 
+#include <yr/asset/asset_database.h>
 #include <yr/asset/gltf_loader.h>
 #include <yr/core/log.h>
 #include <yr/core/timer.h>
@@ -336,10 +337,13 @@ int main(int argc, char** argv) {
     return runReplay(backend, options);
   }
 
+  // 声明顺序保证析构顺序：loop → tree → assets → backend。
+  yr::asset::AssetDatabase assets(YR_ASSET_ROOT);
+
   std::unique_ptr<yr::scene::Node> root;
   {
-    // GltfScene 仅用于构建节点树；之后资源 liveness 由 MeshInstanceNode 的 Ref 维持。
-    yr::asset::GltfLoadResult loaded = yr::asset::loadGltfScene("res://models/ToyCar/ToyCar.gltf", YR_ASSET_ROOT);
+    // GltfScene 仅用于构建节点树；资源缓存由 AssetDatabase 持有，节点持自己的 Ref。
+    yr::asset::GltfLoadResult loaded = assets.loadGltfScene("res://models/ToyCar/ToyCar.gltf");
     if (!loaded) {
       YR_LOG_ERROR("render_demo", "ToyCar 加载失败：" + loaded.error);
       backend.shutdown();
@@ -391,7 +395,8 @@ int main(int argc, char** argv) {
 
   yr::evt::EventBus events;
   DemoLoop loop(tree, events, backend, *movable, options.dumpSnapshot);
-  loop.setBackend(&backend); // 阶段 11 调 present
+  loop.setBackend(&backend);      // 阶段 11 调 present
+  loop.setAssetDatabase(&assets); // 阶段 12 调 collectGarbage
   loop.setCamera(camera);
   yr::engine::Clock clock;
 
@@ -422,6 +427,13 @@ int main(int argc, char** argv) {
   // BackendStats is per-frame; retain release diagnostics across the run for the summary.
   backendStats.released_assets = releasedAssets;
   const yr::engine::FrameStats& stats = loop.stats();
+
+  // 循环结束后先释放场景，再让 DB 收掉仅剩自己持有的资源；DemoLoop 析构不访问 movable。
+  (void)tree.clearRoot();
+  const yr::asset::GcStats finalGc = assets.collectGarbage();
+  const yr::asset::AssetStats finalAssets = assets.stats();
+  (void)finalGc; // 累计 evicted 已包含本次清理，摘要只输出 AssetStats 口径。
+
   backend.shutdown();
 
   const std::uint32_t errors = backend.validationErrorCount();
@@ -440,6 +452,10 @@ int main(int argc, char** argv) {
              " releases=" + std::to_string(backendStats.released_assets) +
              " missing=" + std::to_string(backendStats.missing_assets) +
              " upload_bytes=" + std::to_string(backendStats.upload_bytes);
+  summary +=
+      " resident=" + std::to_string(finalAssets.resident_count) +
+      " cpu_bytes=" + std::to_string(finalAssets.cpu_bytes) + " gc_evicted=" + std::to_string(finalAssets.evicted) +
+      " asset_loads=" + std::to_string(finalAssets.loads) + " asset_hits=" + std::to_string(finalAssets.cache_hits);
   summary += " validation_errors=" + std::to_string(errors);
   YR_LOG_INFO("render_demo", summary);
   return errors == 0 && !loop.dumpFailed() ? 0 : 1;

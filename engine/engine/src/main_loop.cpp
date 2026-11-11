@@ -1,5 +1,6 @@
 #include <cmath>
 #include <cstddef>
+#include <yr/asset/asset_database.h>
 #include <yr/core/log.h>
 #include <yr/engine/main_loop.h>
 #include <yr/event/event_bus.h>
@@ -17,7 +18,7 @@ namespace yr::engine {
   }
 
   MainLoop::MainLoop(scene::SceneTree& tree, evt::EventBus& events) noexcept : sceneTree_(tree), eventBus_(events) {
-    // 只报告真正接线的阶段；空钩子（1/2/4/5/10/11/12）省略，避免日志里全是 0ns 噪音。
+    // 只报告真正接线的阶段；空钩子（1/2/4/5）与通常为 0ns 的 GC 省略，避免日志噪音。
     stats_.setPhaseReported(Phase::kBeginFrame, true);
     stats_.setPhaseReported(Phase::kFlushEvents, true);
     stats_.setPhaseReported(Phase::kPhysicsSteps, true);
@@ -83,7 +84,7 @@ namespace yr::engine {
   }
 
   void MainLoop::pumpAssets() {
-    // TODO: AssetDatabase::pump 完成异步加载回调与失败上报。
+    // M9.2: AssetDatabase::pump 完成异步加载回调与失败上报。
   }
 
   void MainLoop::prePhysics() {
@@ -139,7 +140,10 @@ namespace yr::engine {
   }
 
   void MainLoop::collectGarbage() {
-    // TODO: AssetDatabase::collect_garbage 与延迟销毁 GPU 资源。
+    // 阶段 12：卸载仅剩 DB 持有的资源；GPU 延迟销毁仍由后端在 present 内处理。
+    if (assetDatabase_ != nullptr) {
+      (void)assetDatabase_->collectGarbage();
+    }
   }
 
   void MainLoop::endFrame() {

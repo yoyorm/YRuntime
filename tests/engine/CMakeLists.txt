@@ -6,6 +6,7 @@ add_executable(YrTests_engine
 
 target_link_libraries(YrTests_engine PRIVATE
     yr::engine
+    yr::asset
     yr::render_null
     Catch2::Catch2WithMain)
 
