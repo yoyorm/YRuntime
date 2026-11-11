@@ -50,6 +50,50 @@ namespace yr::asset {
     return it != cache_.end() ? it->second.sourcePath : std::string{};
   }
 
+  GltfLoadResult AssetDatabase::loadGltfScene(std::string_view resPath) {
+    ++counters_.loads;
+
+    std::vector<AssetUID> newUids;
+    GltfResourceHooks hooks{
+        .find = [this](AssetUID uid) -> obj::Ref<Resource> {
+          auto it = cache_.find(uid);
+          if (it == cache_.end()) {
+            ++counters_.cache_misses;
+            return {};
+          }
+          ++counters_.cache_hits;
+          return it->second.resource;
+        },
+        .store =
+            [this, &newUids](obj::Ref<Resource> resource) {
+              const AssetUID uid = resource ? resource->uid() : AssetUID{};
+              const bool alreadyCached = contains(uid);
+              if (!store(std::move(resource))) {
+                return false;
+              }
+              if (!alreadyCached && uid.valid()) {
+                newUids.push_back(uid);
+              }
+              return true;
+            },
+    };
+
+    GltfLoadResult result = ::yr::asset::loadGltfScene(resPath, assetRoot_, &hooks);
+    if (!result.ok) {
+      ++counters_.failed_loads;
+      for (AssetUID uid : newUids) {
+        auto it = cache_.find(uid);
+        if (it != cache_.end() && it->second.resource->refcount() == 1) {
+          cache_.erase(it);
+          if (counters_.registered > 0) {
+            --counters_.registered;
+          }
+        }
+      }
+    }
+    return result;
+  }
+
   bool AssetDatabase::evict(AssetUID uid) {
     const auto it = cache_.find(uid);
     if (it == cache_.end() || it->second.resource->refcount() != 1) {

@@ -238,6 +238,8 @@ namespace yr::asset {
       std::string resPath;
       std::filesystem::path assetRoot;
       std::vector<std::string>& warnings;
+      const GltfResourceHooks* hooks = nullptr;
+      bool storeFailed = false;
       std::unordered_map<std::int32_t, obj::Ref<Material>> materialCache;
       std::unordered_map<std::int32_t, obj::Ref<Texture>> textureCache;
       std::unordered_map<std::uint64_t, obj::Ref<Mesh>> meshCache;
@@ -246,6 +248,27 @@ namespace yr::asset {
 
     void addWarning(LoadContext& context, std::string message) {
       context.warnings.push_back(std::move(message));
+    }
+
+    template <typename T> obj::Ref<T> findCached(const GltfResourceHooks* hooks, AssetUID uid) {
+      if (hooks == nullptr || !hooks->find) {
+        return {};
+      }
+      obj::Ref<Resource> resource = hooks->find(uid);
+      auto* typed = dynamic_cast<T*>(resource.get());
+      return typed != nullptr ? obj::Ref<T>(typed) : obj::Ref<T>{};
+    }
+
+    bool storeResource(LoadContext& context, const obj::Ref<Resource>& resource) {
+      if (context.hooks == nullptr || !context.hooks->store) {
+        return true;
+      }
+      if (context.hooks->store(resource)) {
+        return true;
+      }
+      addWarning(context, "资源注册失败：UID 冲突或无效");
+      context.storeFailed = true;
+      return false;
     }
 
     [[nodiscard]] obj::Ref<Texture> loadTexture(LoadContext& context, std::int32_t textureIndex) {
@@ -286,10 +309,16 @@ namespace yr::asset {
       }
       const std::filesystem::path filePath =
           context.assetRoot / std::string(imageResPath.substr(std::string("res://").size()));
+      const AssetUID uid = AssetUID::fromPath(imageResPath);
+
+      if (const obj::Ref<Texture> cachedResource = findCached<Texture>(context.hooks, uid); cachedResource.valid()) {
+        context.textureCache.emplace(imageIndex, cachedResource);
+        return cachedResource;
+      }
 
       obj::Ref<Texture> resource = obj::make_ref<Texture>();
       (void)resource->markLoading();
-      resource->setUid(AssetUID::fromPath(imageResPath));
+      resource->setUid(uid);
       resource->setSourcePath(imageResPath);
 
       int width = 0;
@@ -325,6 +354,9 @@ namespace yr::asset {
         return fail("RGBA 数据大小不匹配");
       }
       (void)resource->markReady();
+      if (!storeResource(context, resource)) {
+        return {};
+      }
       context.textureCache.emplace(imageIndex, resource);
       return resource;
     }
@@ -339,10 +371,17 @@ namespace yr::asset {
         return cached->second;
       }
 
+      const std::string materialPath = context.resPath + "#material/" + std::to_string(materialIndex);
+      const AssetUID uid = AssetUID::fromPath(materialPath);
+      if (const obj::Ref<Material> cachedResource = findCached<Material>(context.hooks, uid); cachedResource.valid()) {
+        context.materialCache.emplace(materialIndex, cachedResource);
+        return cachedResource;
+      }
+
       const tg3_material& source = context.model.materials[materialIndex];
       obj::Ref<Material> material = obj::make_ref<Material>();
       (void)material->markLoading();
-      material->setUid(AssetUID::fromPath(context.resPath + "#material/" + std::to_string(materialIndex)));
+      material->setUid(uid);
       material->setSourcePath(context.resPath);
 
       // glTF 默认值；再覆盖文件里的 factors。
@@ -387,14 +426,22 @@ namespace yr::asset {
       material->emissiveTexture = loadTexture(context, source.emissive_texture.index);
 
       (void)material->markReady();
+      if (!storeResource(context, material)) {
+        return {};
+      }
       context.materialCache.emplace(materialIndex, material);
       return material;
     }
 
     [[nodiscard]] obj::Ref<Material> buildDefaultMaterial(LoadContext& context) {
+      const AssetUID uid = AssetUID::fromPath(context.resPath + "#material/default");
+      if (const obj::Ref<Material> cachedResource = findCached<Material>(context.hooks, uid); cachedResource.valid()) {
+        return cachedResource;
+      }
+
       obj::Ref<Material> material = obj::make_ref<Material>();
       (void)material->markLoading();
-      material->setUid(AssetUID::fromPath(context.resPath + "#material/default"));
+      material->setUid(uid);
       material->setSourcePath(context.resPath);
       material->baseColorFactor = math::Vec3{1.0F, 1.0F, 1.0F};
       material->baseColorAlpha = 1.0F;
@@ -405,6 +452,9 @@ namespace yr::asset {
       material->alphaMode = AlphaMode::kOpaque;
       material->alphaCutoff = 0.5F;
       (void)material->markReady();
+      if (!storeResource(context, material)) {
+        return {};
+      }
       return material;
     }
 
@@ -430,6 +480,15 @@ namespace yr::asset {
       if (primitiveIndex >= mesh.primitives_count) {
         return fail("primitive 索引越界");
       }
+
+      const std::string meshPath =
+          context.resPath + "#mesh/" + std::to_string(meshIndex) + "/primitive/" + std::to_string(primitiveIndex);
+      const AssetUID uid = AssetUID::fromPath(meshPath);
+      if (const obj::Ref<Mesh> cachedResource = findCached<Mesh>(context.hooks, uid); cachedResource.valid()) {
+        context.meshCache.emplace(cacheKey, cachedResource);
+        return cachedResource;
+      }
+
       const tg3_primitive& primitive = mesh.primitives[primitiveIndex];
       if (primitive.mode != -1 && primitive.mode != TG3_MODE_TRIANGLES) {
         return fail("不支持的 primitive.mode " + std::to_string(primitive.mode));
@@ -490,8 +549,7 @@ namespace yr::asset {
 
       obj::Ref<Mesh> resource = obj::make_ref<Mesh>();
       (void)resource->markLoading();
-      resource->setUid(AssetUID::fromPath(context.resPath + "#mesh/" + std::to_string(meshIndex) + "/primitive/" +
-                                          std::to_string(primitiveIndex)));
+      resource->setUid(uid);
       resource->setSourcePath(context.resPath);
 
       resource->vertices.resize(static_cast<std::size_t>(positions.count));
@@ -523,6 +581,9 @@ namespace yr::asset {
       }
 
       (void)resource->markReady();
+      if (!storeResource(context, resource)) {
+        return {};
+      }
       context.meshCache.emplace(cacheKey, resource);
       return resource;
     }
@@ -651,7 +712,7 @@ namespace yr::asset {
 
   } // namespace
 
-  GltfLoadResult loadGltfScene(std::string_view resPath, std::string_view assetRoot) {
+  GltfLoadResult loadGltfScene(std::string_view resPath, std::string_view assetRoot, const GltfResourceHooks* hooks) {
     GltfLoadResult result;
 
     const AssetPath canonical = canonicalizeAssetPath(resPath);
@@ -697,6 +758,7 @@ namespace yr::asset {
     const tg3_scene& scene = source.scenes[sceneIndex];
 
     LoadContext context{source, resPathString, std::filesystem::path(std::string(assetRoot)), result.warnings};
+    context.hooks = hooks;
     context.defaultMaterial = buildDefaultMaterial(context);
 
     result.scene.name = stringOf(scene.name);
@@ -710,6 +772,12 @@ namespace yr::asset {
       if (buildNode(context, scene.nodes[index], active, root)) {
         result.scene.roots.push_back(std::move(root));
       }
+    }
+
+    if (context.storeFailed) {
+      result.ok = false;
+      result.error = "资源注册失败（UID 冲突或无效）";
+      return result;
     }
 
     result.ok = true;

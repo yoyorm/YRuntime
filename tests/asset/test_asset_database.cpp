@@ -1,11 +1,13 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <type_traits>
 #include <utility>
 
 #include <yr/asset/asset_database.h>
+#include <yr/asset/gltf_loader.h>
 #include <yr/asset/resource_types.h>
 #include <yr/object/object_db.h>
 #include <yr/object/ref.h>
@@ -13,7 +15,10 @@
 namespace {
 
   using yr::asset::AssetDatabase;
+  using yr::asset::AssetStats;
   using yr::asset::AssetUID;
+  using yr::asset::GcStats;
+  using yr::asset::GltfLoadResult;
   using yr::asset::Material;
   using yr::asset::Mesh;
   using yr::asset::MeshVertex;
@@ -245,4 +250,67 @@ TEST_CASE("asset db: empty database is safe", "[asset][asset_db]") {
 
   database.clear();
   CHECK(database.stats().resident_count == 0);
+}
+
+TEST_CASE("asset db: loadGltfScene reuses resources and tracks stats", "[asset][asset_db][gltf]") {
+  yr::obj::ObjectDB& objectDatabase = yr::obj::globalObjectDB();
+  const std::size_t baseline = objectDatabase.aliveCount();
+
+  AssetDatabase database(YR_TEST_ASSET_ROOT);
+  {
+    const GltfLoadResult first = database.loadGltfScene("res://models/ToyCar/ToyCar.gltf");
+    CAPTURE(first.error);
+    REQUIRE(first.ok);
+
+    const AssetStats firstStats = database.stats();
+    CHECK(firstStats.resident_count > 0);
+    CHECK(firstStats.loads == 1);
+    CHECK(firstStats.failed_loads == 0);
+
+    REQUIRE_FALSE(first.scene.roots.empty());
+    REQUIRE_FALSE(first.scene.roots[0].primitives.empty());
+    const yr::obj::Ref<Mesh> mesh = first.scene.roots[0].primitives[0].mesh;
+    REQUIRE(mesh.valid());
+
+    const AssetUID meshUid = mesh->uid();
+    CHECK(meshUid.valid());
+    CHECK(database.contains(meshUid));
+    CHECK(database.findAs<Mesh>(meshUid).get() == mesh.get());
+    CHECK_FALSE(database.pathFor(meshUid).empty());
+
+    const GltfLoadResult second = database.loadGltfScene("res://models/ToyCar/ToyCar.gltf");
+    CAPTURE(second.error);
+    REQUIRE(second.ok);
+    REQUIRE_FALSE(second.scene.roots.empty());
+    REQUIRE_FALSE(second.scene.roots[0].primitives.empty());
+    CHECK(second.scene.roots[0].primitives[0].mesh.get() == mesh.get());
+
+    const AssetStats secondStats = database.stats();
+    CHECK(secondStats.loads == 2);
+    CHECK(secondStats.cache_hits > 0);
+    CHECK(secondStats.resident_count == firstStats.resident_count);
+  }
+
+  const AssetStats resident = database.stats();
+  CHECK(resident.resident_count > 0);
+
+  const GcStats gc = database.collectGarbage();
+  CHECK(gc.evicted == resident.resident_count);
+  CHECK(database.stats().resident_count == 0);
+  CHECK(database.stats().cpu_bytes == 0);
+  CHECK(objectDatabase.aliveCount() == baseline);
+}
+
+TEST_CASE("asset db: loadGltfScene failure leaves cache untouched", "[asset][asset_db][gltf]") {
+  AssetDatabase database(YR_TEST_ASSET_ROOT);
+  const std::size_t before = database.stats().resident_count;
+
+  const GltfLoadResult result = database.loadGltfScene("res://models/NoSuchFile.gltf");
+  CHECK_FALSE(result.ok);
+  CHECK_FALSE(result.error.empty());
+
+  const AssetStats stats = database.stats();
+  CHECK(stats.loads == 1);
+  CHECK(stats.failed_loads == 1);
+  CHECK(stats.resident_count == before);
 }

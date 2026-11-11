@@ -3,8 +3,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 
+#include <yr/asset/gltf_loader.h>
 #include <yr/asset/resource.h>
 #include <yr/object/ref.h>
 
@@ -51,6 +53,9 @@ namespace yr::asset {
     }
 
     [[nodiscard]] std::string pathFor(AssetUID uid) const;
+
+    // 解析 glTF 结构并通过 hooks 复用/注册资源；失败时回滚本次新增的资源。
+    [[nodiscard]] GltfLoadResult loadGltfScene(std::string_view resPath);
 
     // 只有 refcount()==1（只剩 DB）时才允许；被场景/材质使用时返回 false。
     [[nodiscard]] bool evict(AssetUID uid);

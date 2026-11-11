@@ -5,20 +5,27 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
+#include <yr/asset/asset_uid.h>
 #include <yr/asset/gltf_loader.h>
 #include <yr/asset/resource_types.h>
 #include <yr/math/vec3.h>
+#include <yr/object/ref.h>
 
 namespace {
 
   using yr::asset::AlphaMode;
+  using yr::asset::AssetUID;
   using yr::asset::GltfLoadResult;
   using yr::asset::GltfNode;
+  using yr::asset::GltfResourceHooks;
   using yr::asset::LoadState;
   using yr::asset::Material;
   using yr::asset::Mesh;
+  using yr::asset::Resource;
   using yr::asset::Texture;
 
   [[nodiscard]] std::size_t countPrimitives(const GltfNode& node) {
@@ -227,4 +234,42 @@ TEST_CASE("gltf loader: ToyCar resource UIDs are deterministic", "[asset][gltf][
   const auto& secondPrimitive = second.scene.roots[0].primitives[0];
   CHECK(secondPrimitive.mesh->uid() == firstMeshUid);
   CHECK(secondPrimitive.material->baseColorTexture->uid() == firstTextureUid);
+}
+
+TEST_CASE("gltf loader: resource hooks reuse cached objects", "[asset][gltf][hooks]") {
+  std::unordered_map<AssetUID, yr::obj::Ref<Resource>> cache;
+  const GltfResourceHooks hooks{
+      .find = [&cache](AssetUID uid) -> yr::obj::Ref<Resource> {
+        const auto it = cache.find(uid);
+        return it != cache.end() ? it->second : yr::obj::Ref<Resource>{};
+      },
+      .store =
+          [&cache](yr::obj::Ref<Resource> resource) {
+            if (!resource || !resource->uid().valid()) {
+              return false;
+            }
+            const AssetUID uid = resource->uid();
+            return cache.emplace(uid, std::move(resource)).second;
+          },
+  };
+
+  const GltfLoadResult first = yr::asset::loadGltfScene("res://triangle.gltf", YR_TEST_FIXTURE_ROOT, &hooks);
+  CAPTURE(first.error);
+  REQUIRE(first.ok);
+  REQUIRE_FALSE(cache.empty());
+  REQUIRE_FALSE(first.scene.roots.empty());
+  REQUIRE_FALSE(first.scene.roots[0].primitives.empty());
+
+  const Mesh* const firstMesh = first.scene.roots[0].primitives[0].mesh.get();
+  const Material* const firstMaterial = first.scene.roots[0].primitives[0].material.get();
+  REQUIRE(firstMesh != nullptr);
+  REQUIRE(firstMaterial != nullptr);
+
+  const GltfLoadResult second = yr::asset::loadGltfScene("res://triangle.gltf", YR_TEST_FIXTURE_ROOT, &hooks);
+  CAPTURE(second.error);
+  REQUIRE(second.ok);
+  REQUIRE_FALSE(second.scene.roots.empty());
+  REQUIRE_FALSE(second.scene.roots[0].primitives.empty());
+  CHECK(second.scene.roots[0].primitives[0].mesh.get() == firstMesh);
+  CHECK(second.scene.roots[0].primitives[0].material.get() == firstMaterial);
 }
