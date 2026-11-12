@@ -20,6 +20,7 @@ namespace yr::asset {
 
   struct LoadCompletion {
     AssetUID uid;
+    std::string resPath;
     ResourceKind kind = ResourceKind::kUnknown;
     std::vector<std::uint8_t> payload;
     std::string error;

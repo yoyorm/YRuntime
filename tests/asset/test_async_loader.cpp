@@ -36,11 +36,11 @@ namespace {
     }
 
     void complete(AssetUID uid, std::vector<std::uint8_t> payload) {
-      completed.push_back(LoadCompletion{uid, ResourceKind::kUnknown, std::move(payload), {}});
+      completed.push_back(LoadCompletion{uid, {}, ResourceKind::kUnknown, std::move(payload), {}});
     }
 
     void fail(AssetUID uid, std::string error) {
-      completed.push_back(LoadCompletion{uid, ResourceKind::kUnknown, {}, std::move(error)});
+      completed.push_back(LoadCompletion{uid, {}, ResourceKind::kUnknown, {}, std::move(error)});
     }
 
     std::vector<LoadRequest> submitted;

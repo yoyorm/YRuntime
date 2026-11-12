@@ -62,6 +62,7 @@ namespace yr::asset {
 
       LoadCompletion completion;
       completion.uid = request.uid;
+      completion.resPath = request.resPath;
       completion.kind = request.kind;
       try {
         if (access_ == nullptr) {

@@ -65,6 +65,7 @@ TEST_CASE("loader worker: reads file on worker thread", "[asset][loader_worker]"
   const std::vector<LoadCompletion> completions = collect(worker, 1);
   REQUIRE(completions.size() == 1);
   CHECK(completions[0].uid == AssetUID{1});
+  CHECK(completions[0].resPath == "res://data.bin");
   CHECK(completions[0].kind == ResourceKind::kTexture);
   CHECK(completions[0].payload == bytesOf("payload"));
   CHECK(completions[0].error.empty());
@@ -79,6 +80,7 @@ TEST_CASE("loader worker: missing file reports error", "[asset][loader_worker]")
   const std::vector<LoadCompletion> completions = collect(worker, 1);
   REQUIRE(completions.size() == 1);
   CHECK(completions[0].uid == AssetUID{2});
+  CHECK(completions[0].resPath == "res://data/missing.bin");
   CHECK(completions[0].kind == ResourceKind::kMesh);
   CHECK_FALSE(completions[0].error.empty());
   CHECK(completions[0].payload.empty());

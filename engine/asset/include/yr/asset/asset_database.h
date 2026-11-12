@@ -2,15 +2,20 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 
+#include <yr/asset/file_access.h>
 #include <yr/asset/gltf_loader.h>
 #include <yr/asset/resource.h>
 #include <yr/object/ref.h>
 
 namespace yr::asset {
+
+  class LoaderWorker;
+  class AsyncLoader;
 
   struct AssetStats {
     std::size_t resident_count = 0;
@@ -30,9 +35,12 @@ namespace yr::asset {
 
   // 已加载资源的 UID -> 强引用缓存，负责驻留统计与 fixpoint GC。
   // 仅允许主线程使用：ObjectDB、RefCounted 的释放路径和本类都没有跨线程同步。
+  // 异步读取只发生在内部 LoaderWorker 线程；解码与对象构造仍在调用 pump 的主线程。
   class AssetDatabase final {
   public:
     explicit AssetDatabase(std::string assetRoot);
+    // access 非空且归本类所有；用于 Memory/Throttled 等注入实现。
+    explicit AssetDatabase(std::unique_ptr<IFileAccess> access);
     ~AssetDatabase();
 
     AssetDatabase(const AssetDatabase&) = delete;
@@ -57,6 +65,14 @@ namespace yr::asset {
     // 解析 glTF 结构并通过 hooks 复用/注册资源；失败时回滚本次新增的资源。
     [[nodiscard]] GltfLoadResult loadGltfScene(std::string_view resPath);
 
+    // 异步加载：worker 读取原始文件字节，pump 在主线程解码并安装到 cache_。
+    [[nodiscard]] AssetUID requestLoad(std::string_view resPath, ResourceKind kind = ResourceKind::kTexture);
+    [[nodiscard]] LoadState state(AssetUID uid) const;
+    [[nodiscard]] std::string error(AssetUID uid) const;
+
+    // 每次最多安装 maxCompleted 个完成项，避免一帧内解码多个纹理。
+    void pump(std::size_t maxCompleted = 1);
+
     // 只有 refcount()==1（只剩 DB）时才允许；被场景/材质使用时返回 false。
     [[nodiscard]] bool evict(AssetUID uid);
 
@@ -76,6 +92,10 @@ namespace yr::asset {
     };
 
     std::string assetRoot_;
+    // 声明顺序即析构顺序的逆序：async → worker（join）→ access。
+    std::unique_ptr<IFileAccess> fileAccess_;
+    std::unique_ptr<LoaderWorker> loaderWorker_;
+    std::unique_ptr<AsyncLoader> asyncLoader_;
     std::unordered_map<AssetUID, Entry> cache_;
     AssetStats counters_{}; // 只使用 registered/evicted/loads/hits/misses/failed
   };

@@ -84,7 +84,10 @@ namespace yr::engine {
   }
 
   void MainLoop::pumpAssets() {
-    // M9.2: AssetDatabase::pump 完成异步加载回调与失败上报。
+    // 阶段 4：每次 tick 最多安装 1 个完成项，避免一帧内解码多个纹理。
+    if (assetDatabase_ != nullptr) {
+      assetDatabase_->pump(1);
+    }
   }
 
   void MainLoop::prePhysics() {

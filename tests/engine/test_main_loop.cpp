@@ -2,6 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <yr/asset/asset_database.h>
+#include <yr/asset/memory_file_access.h>
 #include <yr/asset/resource_types.h>
 #include <yr/engine/clock.h>
 #include <yr/engine/main_loop.h>
@@ -14,6 +15,7 @@
 #include <yr/scene/node.h>
 #include <yr/scene/scene_tree.h>
 
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -21,6 +23,7 @@
 #include <memory>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 using yr::engine::Clock;
@@ -83,6 +86,19 @@ namespace {
     (void)material->markLoading();
     (void)material->markReady();
     return material;
+  }
+
+  // 1x1 RGBA PNG：filter 0 + 不透明红色像素。
+  constexpr std::array<std::uint8_t, 70> kPng1x1 = {
+      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00,
+      0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00,
+      0x0D, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0xF8, 0xCF, 0xC0, 0xF0, 0x1F, 0x00, 0x05, 0x00, 0x01, 0xFF,
+      0x89, 0x99, 0x3D, 0x1D, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82};
+
+  std::unique_ptr<yr::asset::AssetDatabase> makeAsyncAssetDatabase() {
+    auto access = std::make_unique<yr::asset::MemoryFileAccess>();
+    access->addFile("res://textures/pixel.png", std::vector<std::uint8_t>(kPng1x1.begin(), kPng1x1.end()));
+    return std::make_unique<yr::asset::AssetDatabase>(std::move(access));
   }
 
   // 测试探针：派生并逐个记录阶段调用。阶段方法为 protected virtual，记录顺序不侵入生产代码。
@@ -819,6 +835,38 @@ TEST_CASE("main_loop: phase 12 collects AssetDatabase garbage after the scene re
   CHECK(stats.resident_count == 0);
   CHECK(stats.cpu_bytes == 0);
   CHECK(stats.evicted == 2);
+}
+
+TEST_CASE("main_loop: phase 4 pumps async texture installs from AssetDatabase", "[engine][main_loop][asset][async]") {
+  const std::unique_ptr<yr::asset::AssetDatabase> database = makeAsyncAssetDatabase();
+  const yr::asset::AssetUID uid = yr::asset::AssetUID::fromPath("res://textures/pixel.png");
+
+  // 预置 placeholder：模拟 glTF defer 已注册、被场景引用的纹理。
+  auto placeholder = yr::obj::make_ref<yr::asset::Texture>();
+  placeholder->setUid(uid);
+  placeholder->setSourcePath("res://textures/pixel.png");
+  REQUIRE(placeholder->markLoading());
+  REQUIRE(database->store(placeholder));
+
+  REQUIRE(database->requestLoad("res://textures/pixel.png") == uid);
+  CHECK(database->state(uid) == yr::asset::LoadState::kLoading);
+
+  yr::scene::SceneTree tree;
+  yr::evt::EventBus bus;
+  MainLoop loop(tree, bus);
+  loop.setAssetDatabase(database.get());
+
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+  while (database->state(uid) != yr::asset::LoadState::kReady && std::chrono::steady_clock::now() < deadline) {
+    loop.tick(1.0 / 60.0);
+  }
+
+  REQUIRE(database->state(uid) == yr::asset::LoadState::kReady);
+  CHECK(placeholder->state() == yr::asset::LoadState::kReady);
+  CHECK(placeholder->width == 1);
+  CHECK(placeholder->height == 1);
+  CHECK(placeholder->rgba8.size() == 4);
+  CHECK(database->findAs<yr::asset::Texture>(uid).get() == placeholder.get());
 }
 
 TEST_CASE("main_loop: changing backend resets extracted resource residency", "[engine][main_loop][render]") {
