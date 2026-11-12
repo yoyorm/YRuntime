@@ -136,6 +136,7 @@ namespace {
     std::uint64_t dropAt = 0;
     std::string dumpSnapshot;
     std::string replaySnapshot;
+    bool asyncTextures = false;
     bool help = false;
   };
 
@@ -149,7 +150,9 @@ namespace {
 
   void printUsage(std::FILE* stream, const char* program) {
     std::fprintf(stream,
-                 "usage: %s [--frames N] [--drop-at N] [--dump-snapshot PATH] [--replay-snapshot PATH]\n"
+                 "usage: %s [--frames N] [--drop-at N] [--dump-snapshot PATH] [--replay-snapshot PATH] "
+                 "[--async-textures]\n"
+                 "  --async-textures         stream glTF textures through AssetDatabase/LoaderWorker\n"
                  "  --dump-snapshot PATH     dump the first presented RenderSnapshot\n"
                  "  --drop-at N              queue the first MeshInstanceNode for deletion after tick N\n"
                  "  --replay-snapshot PATH   replay a dumped snapshot without a SceneTree\n",
@@ -193,6 +196,8 @@ namespace {
           return false;
         }
         options.replaySnapshot = argv[++i];
+      } else if (arg == "--async-textures") {
+        options.asyncTextures = true; // 幂等：重复出现不改变结果
       } else if (arg == "--help" || arg == "-h") {
         options.help = true;
       } else {
@@ -343,7 +348,7 @@ int main(int argc, char** argv) {
   std::unique_ptr<yr::scene::Node> root;
   {
     // GltfScene 仅用于构建节点树；资源缓存由 AssetDatabase 持有，节点持自己的 Ref。
-    yr::asset::GltfLoadResult loaded = assets.loadGltfScene("res://models/ToyCar/ToyCar.gltf");
+    yr::asset::GltfLoadResult loaded = assets.loadGltfScene("res://models/ToyCar/ToyCar.gltf", options.asyncTextures);
     if (!loaded) {
       YR_LOG_ERROR("render_demo", "ToyCar 加载失败：" + loaded.error);
       backend.shutdown();
