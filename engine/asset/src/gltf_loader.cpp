@@ -239,6 +239,8 @@ namespace yr::asset {
       std::filesystem::path assetRoot;
       std::vector<std::string>& warnings;
       const GltfResourceHooks* hooks = nullptr;
+      bool deferTextures = false;
+      std::vector<GltfTextureRequest>* pendingTextures = nullptr;
       bool storeFailed = false;
       std::unordered_map<std::int32_t, obj::Ref<Material>> materialCache;
       std::unordered_map<std::int32_t, obj::Ref<Texture>> textureCache;
@@ -320,6 +322,17 @@ namespace yr::asset {
       (void)resource->markLoading();
       resource->setUid(uid);
       resource->setSourcePath(imageResPath);
+
+      if (context.deferTextures) {
+        if (!storeResource(context, resource)) {
+          return {};
+        }
+        context.textureCache.emplace(imageIndex, resource);
+        if (context.pendingTextures != nullptr) {
+          context.pendingTextures->push_back(GltfTextureRequest{uid, imageResPath});
+        }
+        return resource;
+      }
 
       int width = 0;
       int height = 0;
@@ -715,7 +728,8 @@ namespace yr::asset {
 
   } // namespace
 
-  GltfLoadResult loadGltfScene(std::string_view resPath, std::string_view assetRoot, const GltfResourceHooks* hooks) {
+  GltfLoadResult loadGltfScene(std::string_view resPath, std::string_view assetRoot, const GltfResourceHooks* hooks,
+                               const GltfLoadOptions* options) {
     GltfLoadResult result;
 
     const AssetPath canonical = canonicalizeAssetPath(resPath);
@@ -762,6 +776,8 @@ namespace yr::asset {
 
     LoadContext context{source, resPathString, std::filesystem::path(std::string(assetRoot)), result.warnings};
     context.hooks = hooks;
+    context.deferTextures = (options != nullptr && options->deferTextures);
+    context.pendingTextures = &result.pendingTextures;
 
     result.scene.name = stringOf(scene.name);
     if (result.scene.name.empty()) {

@@ -222,6 +222,44 @@ TEST_CASE("gltf loader: ToyCar geometry, materials, textures and warnings", "[as
   CHECK(material1->normalTexture->state() == LoadState::kReady);
 }
 
+TEST_CASE("gltf loader: deferTextures registers kLoading placeholders and pending requests",
+          "[asset][gltf][toycar][defer]") {
+  const yr::asset::GltfLoadOptions options{.deferTextures = true};
+  const GltfLoadResult result =
+      yr::asset::loadGltfScene("res://models/ToyCar/ToyCar.gltf", YR_TEST_ASSET_ROOT, nullptr, &options);
+  CAPTURE(result.error);
+  REQUIRE(result.ok);
+
+  REQUIRE_FALSE(result.pendingTextures.empty());
+  for (const auto& request : result.pendingTextures) {
+    CHECK(request.uid.valid());
+    CHECK(request.resPath.starts_with("res://models/ToyCar/"));
+  }
+
+  REQUIRE_FALSE(result.scene.roots.empty());
+  REQUIRE_FALSE(result.scene.roots[0].primitives.empty());
+  const auto& primitive = result.scene.roots[0].primitives[0];
+  REQUIRE(primitive.mesh.valid());
+  REQUIRE(primitive.material.valid());
+  CHECK(primitive.mesh->state() == LoadState::kReady);
+  CHECK(primitive.material->state() == LoadState::kReady);
+
+  const auto& baseColorTexture = primitive.material->baseColorTexture;
+  REQUIRE(baseColorTexture.valid());
+  CHECK(baseColorTexture->state() == LoadState::kLoading);
+  CHECK(baseColorTexture->uid().valid());
+  CHECK(baseColorTexture->width == 0);
+  CHECK(baseColorTexture->height == 0);
+  CHECK(baseColorTexture->rgba8.empty());
+  CHECK(baseColorTexture->sourcePath().starts_with("res://models/ToyCar/"));
+
+  const auto pending = std::find_if(
+      result.pendingTextures.begin(), result.pendingTextures.end(),
+      [&](const yr::asset::GltfTextureRequest& request) { return request.uid == baseColorTexture->uid(); });
+  REQUIRE(pending != result.pendingTextures.end());
+  CHECK(pending->resPath == baseColorTexture->sourcePath());
+}
+
 TEST_CASE("gltf loader: ToyCar resource UIDs are deterministic", "[asset][gltf][toycar]") {
   const GltfLoadResult first = yr::asset::loadGltfScene("res://models/ToyCar/ToyCar.gltf", YR_TEST_ASSET_ROOT);
   REQUIRE(first.ok);

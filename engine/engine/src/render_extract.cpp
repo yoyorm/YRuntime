@@ -28,6 +28,13 @@ namespace yr::engine {
       return texture->rgba8.size() == expected;
     }
 
+    [[nodiscard]] bool materialTexturesReady(const asset::Material& material) noexcept {
+      if (material.baseColorTexture.valid() && material.baseColorTexture->state() != asset::LoadState::kReady) {
+        return false;
+      }
+      return true;
+    }
+
     void appendTexture(const asset::Texture& texture, render::RenderSnapshot& out) {
       render::TextureUpload upload;
       upload.texture.value = texture.uid().value;
@@ -64,7 +71,8 @@ namespace yr::engine {
         const asset::Mesh* const mesh = instance->mesh().get();
         const asset::Material* const material = instance->material().get();
         if (mesh != nullptr && material != nullptr && mesh->state() == asset::LoadState::kReady &&
-            material->state() == asset::LoadState::kReady && mesh->uid().valid() && material->uid().valid()) {
+            material->state() == asset::LoadState::kReady && materialTexturesReady(*material) && mesh->uid().valid() &&
+            material->uid().valid()) {
           render::DrawItem item;
           item.object.value = node.id().raw();
           const math::Mat4 world = node.globalTransform();

@@ -63,7 +63,8 @@ namespace yr::asset {
     [[nodiscard]] std::string pathFor(AssetUID uid) const;
 
     // 解析 glTF 结构并通过 hooks 复用/注册资源；失败时回滚本次新增的资源。
-    [[nodiscard]] GltfLoadResult loadGltfScene(std::string_view resPath);
+    // deferTextures 时 Texture 只注册占位，并通过 AsyncLoader 排队异步加载。
+    [[nodiscard]] GltfLoadResult loadGltfScene(std::string_view resPath, bool deferTextures = false);
 
     // 异步加载：worker 读取原始文件字节，pump 在主线程解码并安装到 cache_。
     [[nodiscard]] AssetUID requestLoad(std::string_view resPath, ResourceKind kind = ResourceKind::kTexture);

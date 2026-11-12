@@ -8,6 +8,7 @@
 
 #include <yr/asset/async_loader.h>
 #include <yr/asset/disk_file_access.h>
+#include <yr/core/assert.h>
 #include <yr/core/log.h>
 
 #include "loader_worker.h"
@@ -73,7 +74,7 @@ namespace yr::asset {
     return it != cache_.end() ? it->second.sourcePath : std::string{};
   }
 
-  GltfLoadResult AssetDatabase::loadGltfScene(std::string_view resPath) {
+  GltfLoadResult AssetDatabase::loadGltfScene(std::string_view resPath, bool deferTextures) {
     ++counters_.loads;
 
     std::vector<AssetUID> newUids;
@@ -101,7 +102,8 @@ namespace yr::asset {
             },
     };
 
-    GltfLoadResult result = ::yr::asset::loadGltfScene(resPath, assetRoot_, &hooks);
+    const GltfLoadOptions options{.deferTextures = deferTextures};
+    GltfLoadResult result = ::yr::asset::loadGltfScene(resPath, assetRoot_, &hooks, &options);
     if (!result.ok) {
       ++counters_.failed_loads;
       for (AssetUID uid : newUids) {
@@ -112,6 +114,16 @@ namespace yr::asset {
             --counters_.registered;
           }
         }
+      }
+      return result;
+    }
+
+    if (deferTextures && asyncLoader_ != nullptr) {
+      // 直接委托 AsyncLoader，避免 AssetDatabase::requestLoad 重复计入 loads。
+      for (const GltfTextureRequest& request : result.pendingTextures) {
+        const AssetUID uid = asyncLoader_->requestLoad(request.resPath, ResourceKind::kTexture);
+        YR_ASSERT_MSG(uid == request.uid, "glTF pending texture 的 UID 不一致");
+        (void)uid;
       }
     }
     return result;

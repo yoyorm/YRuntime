@@ -51,6 +51,13 @@ namespace {
     return texture;
   }
 
+  Ref<Texture> makeLoadingTexture(std::uint64_t uid) {
+    Ref<Texture> texture = yr::obj::make_ref<Texture>();
+    texture->setUid(AssetUID{uid});
+    REQUIRE(texture->markLoading());
+    return texture;
+  }
+
   Ref<Material> makeMaterial(std::uint64_t uid, const Ref<Texture>& texture) {
     Ref<Material> material = yr::obj::make_ref<Material>();
     material->setUid(AssetUID{uid});
@@ -230,6 +237,66 @@ TEST_CASE("render_extract: ordinary nodes, invalid resources, and empty trees ar
   CHECK(snapshot.releases.meshes.empty());
   CHECK(snapshot.releases.materials.empty());
   CHECK(snapshot.releases.textures.empty());
+}
+
+TEST_CASE("render_extract: loading base color texture skips the mesh instance", "[engine][render][extract][async]") {
+  SceneTree tree;
+  auto root = std::make_unique<MeshInstanceNode>();
+  MeshInstanceNode* const instance = root.get();
+  Ref<Mesh> mesh = makeMesh(1);
+  Ref<Texture> texture = makeLoadingTexture(3);
+  Ref<Material> material = makeMaterial(2, texture);
+  instance->setMesh(mesh);
+  instance->setMaterial(material);
+  REQUIRE(tree.setRoot(std::move(root)));
+
+  RenderSnapshot snapshot;
+  RenderExtractSystem extractor;
+  extractor.extract(tree, CameraPod{}, snapshot);
+
+  CHECK(snapshot.items.empty());
+  CHECK(snapshot.uploads.meshes.empty());
+  CHECK(snapshot.uploads.materials.empty());
+  CHECK(snapshot.uploads.textures.empty());
+  CHECK(snapshot.releases.meshes.empty());
+  CHECK(snapshot.releases.materials.empty());
+  CHECK(snapshot.releases.textures.empty());
+
+  texture->width = 1;
+  texture->height = 1;
+  texture->rgba8 = {1, 2, 3, 4};
+  REQUIRE(texture->markReady());
+
+  extractor.extract(tree, CameraPod{}, snapshot);
+
+  REQUIRE(snapshot.items.size() == 1);
+  REQUIRE(snapshot.uploads.meshes.size() == 1);
+  REQUIRE(snapshot.uploads.materials.size() == 1);
+  CHECK(snapshot.uploads.materials[0].baseColorTexture.value == 3);
+  REQUIRE(snapshot.uploads.textures.size() == 1);
+  CHECK(snapshot.uploads.textures[0].texture.value == 3);
+}
+
+TEST_CASE("render_extract: material without base color texture still emits an item",
+          "[engine][render][extract][async]") {
+  SceneTree tree;
+  auto root = std::make_unique<MeshInstanceNode>();
+  MeshInstanceNode* const instance = root.get();
+  Ref<Mesh> mesh = makeMesh(1);
+  Ref<Material> material = makeMaterial(2, {});
+  instance->setMesh(mesh);
+  instance->setMaterial(material);
+  REQUIRE(tree.setRoot(std::move(root)));
+
+  RenderSnapshot snapshot;
+  RenderExtractSystem extractor;
+  extractor.extract(tree, CameraPod{}, snapshot);
+
+  REQUIRE(snapshot.items.size() == 1);
+  CHECK(snapshot.items[0].material.value == 2);
+  REQUIRE(snapshot.uploads.materials.size() == 1);
+  CHECK(snapshot.uploads.materials[0].baseColorTexture.value == 0);
+  CHECK(snapshot.uploads.textures.empty());
 }
 
 TEST_CASE("render_extract: malformed base color texture is omitted from upload and material handle",

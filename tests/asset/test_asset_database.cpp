@@ -1,10 +1,14 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <thread>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include <yr/asset/asset_database.h>
 #include <yr/asset/gltf_loader.h>
@@ -19,6 +23,7 @@ namespace {
   using yr::asset::AssetUID;
   using yr::asset::GcStats;
   using yr::asset::GltfLoadResult;
+  using yr::asset::LoadState;
   using yr::asset::Material;
   using yr::asset::Mesh;
   using yr::asset::MeshVertex;
@@ -31,6 +36,24 @@ namespace {
     REQUIRE(resource->markLoading());
     REQUIRE(resource->markReady());
     return resource;
+  }
+
+  bool pumpUntilAllReady(AssetDatabase& database, const std::vector<yr::asset::GltfTextureRequest>& requests,
+                         std::chrono::milliseconds timeout = std::chrono::seconds(10)) {
+    const auto allReady = [&] {
+      return std::all_of(requests.begin(), requests.end(), [&](const yr::asset::GltfTextureRequest& request) {
+        return database.state(request.uid) == LoadState::kReady;
+      });
+    };
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (std::chrono::steady_clock::now() < deadline) {
+      database.pump(1);
+      if (allReady()) {
+        return true;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return allReady();
   }
 
 } // namespace
@@ -313,4 +336,56 @@ TEST_CASE("asset db: loadGltfScene failure leaves cache untouched", "[asset][ass
   CHECK(stats.loads == 1);
   CHECK(stats.failed_loads == 1);
   CHECK(stats.resident_count == before);
+}
+
+TEST_CASE("asset db: loadGltfScene defers textures and pump fills placeholders", "[asset][asset_db][gltf][async]") {
+  yr::obj::ObjectDB& objectDatabase = yr::obj::globalObjectDB();
+  const std::size_t baseline = objectDatabase.aliveCount();
+
+  AssetDatabase database(YR_TEST_ASSET_ROOT);
+  {
+    const GltfLoadResult loaded = database.loadGltfScene("res://models/ToyCar/ToyCar.gltf", true);
+    CAPTURE(loaded.error);
+    REQUIRE(loaded.ok);
+    REQUIRE_FALSE(loaded.pendingTextures.empty());
+
+    REQUIRE_FALSE(loaded.scene.roots.empty());
+    REQUIRE_FALSE(loaded.scene.roots[0].primitives.empty());
+    const yr::obj::Ref<Texture> baseColorTexture = loaded.scene.roots[0].primitives[0].material->baseColorTexture;
+    REQUIRE(baseColorTexture.valid());
+    CHECK(baseColorTexture->state() == LoadState::kLoading);
+    CHECK(baseColorTexture->width == 0);
+    CHECK(baseColorTexture->height == 0);
+    CHECK(database.state(baseColorTexture->uid()) == LoadState::kLoading);
+    CHECK(database.findAs<Texture>(baseColorTexture->uid()).get() == baseColorTexture.get());
+
+    REQUIRE(pumpUntilAllReady(database, loaded.pendingTextures));
+
+    for (const yr::asset::GltfTextureRequest& request : loaded.pendingTextures) {
+      CHECK(database.state(request.uid) == LoadState::kReady);
+      const yr::obj::Ref<Texture> texture = database.findAs<Texture>(request.uid);
+      REQUIRE(texture.valid());
+      CHECK(texture->state() == LoadState::kReady);
+      CHECK(texture->width > 0);
+      CHECK(texture->height > 0);
+      CHECK(texture->rgba8.size() ==
+            static_cast<std::size_t>(texture->width) * texture->height * static_cast<std::size_t>(4));
+    }
+
+    CHECK(baseColorTexture->state() == LoadState::kReady);
+    CHECK(baseColorTexture->width > 0);
+    CHECK(baseColorTexture->height > 0);
+    CHECK(database.findAs<Texture>(baseColorTexture->uid()).get() == baseColorTexture.get());
+
+    const AssetStats stats = database.stats();
+    CHECK(stats.loads == 1);
+    CHECK(stats.failed_loads == 0);
+    CHECK(stats.resident_count >= loaded.pendingTextures.size());
+  }
+
+  const GcStats gc = database.collectGarbage();
+  CHECK(gc.evicted > 0);
+  CHECK(database.stats().resident_count == 0);
+  CHECK(database.stats().cpu_bytes == 0);
+  CHECK(objectDatabase.aliveCount() == baseline);
 }
