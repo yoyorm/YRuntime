@@ -130,24 +130,54 @@ namespace yr::asset {
   }
 
   AssetUID AssetDatabase::requestLoad(std::string_view resPath, ResourceKind kind) {
+    const AssetUID uid = AssetUID::fromPath(resPath);
+    if (!uid.valid()) {
+      return AssetUID{};
+    }
+
+    const auto it = cache_.find(uid);
+    if (it != cache_.end()) {
+      if (kind != ResourceKind::kUnknown && it->second.resource->kind() != kind) {
+        YR_LOG_ERROR("asset.db", "requestLoad: kind mismatch " + uid.toString());
+        return AssetUID{};
+      }
+      if (it->second.resource->state() == LoadState::kReady) {
+        return uid; // 已在 cache 中，无需重新 submit。
+      }
+    }
+
     if (asyncLoader_ == nullptr) {
       return AssetUID{};
     }
 
     // AsyncLoader 会合并重复请求；只有真正进入加载的请求才计入 loads。
-    const LoadState previous = asyncLoader_->state(AssetUID::fromPath(resPath));
-    const AssetUID uid = asyncLoader_->requestLoad(resPath, kind);
-    if (uid.valid() && previous != LoadState::kLoading && previous != LoadState::kReady) {
+    const LoadState previous = asyncLoader_->state(uid);
+    const AssetUID requested = asyncLoader_->requestLoad(resPath, kind);
+    if (requested.valid() && previous != LoadState::kLoading && previous != LoadState::kReady) {
       ++counters_.loads;
     }
-    return uid;
+    return requested;
   }
 
   LoadState AssetDatabase::state(AssetUID uid) const {
+    const auto it = cache_.find(uid);
+    if (it != cache_.end()) {
+      return it->second.resource->state();
+    }
     return asyncLoader_ != nullptr ? asyncLoader_->state(uid) : LoadState::kUnloaded;
   }
 
   std::string AssetDatabase::error(AssetUID uid) const {
+    const auto it = cache_.find(uid);
+    if (it != cache_.end()) {
+      if (it->second.resource->state() == LoadState::kFailed) {
+        return it->second.resource->error();
+      }
+      if (it->second.resource->state() == LoadState::kReady) {
+        return {};
+      }
+      // kLoading/kUnloaded：可能还没安装，回退到 AsyncLoader 的错误。
+    }
     return asyncLoader_ != nullptr ? asyncLoader_->error(uid) : std::string{};
   }
 
@@ -160,12 +190,22 @@ namespace yr::asset {
       const AssetUID uid = completion.uid;
 
       if (!completion.error.empty()) {
-        continue; // AsyncLoader 已置 kFailed，无需安装。
+        // AsyncLoader 已置 kFailed；cache 中尚未安装的 placeholder 需要同步。
+        const auto it = cache_.find(uid);
+        if (it != cache_.end() && it->second.resource->state() == LoadState::kLoading) {
+          (void)it->second.resource->markFailed(completion.error);
+        }
+        continue;
       }
 
       if (completion.kind != ResourceKind::kTexture) {
+        const std::string text = "AssetDatabase::pump: 仅支持 Texture 异步加载";
+        const auto it = cache_.find(uid);
+        if (it != cache_.end() && it->second.resource->state() == LoadState::kLoading) {
+          (void)it->second.resource->markFailed(text);
+        }
         ++counters_.failed_loads;
-        asyncLoader_->markFailed(uid, "AssetDatabase::pump: 仅支持 Texture 异步加载");
+        asyncLoader_->markFailed(uid, text);
         continue;
       }
 
@@ -176,8 +216,12 @@ namespace yr::asset {
       if (existing != cache_.end()) {
         texture = obj::Ref<Texture>(dynamic_cast<Texture*>(existing->second.resource.get()));
         if (!texture.valid()) {
+          const std::string text = "AssetDatabase::pump: UID 已被非 Texture 资源占用";
+          if (existing->second.resource->state() == LoadState::kLoading) {
+            (void)existing->second.resource->markFailed(text);
+          }
           ++counters_.failed_loads;
-          asyncLoader_->markFailed(uid, "AssetDatabase::pump: UID 已被非 Texture 资源占用");
+          asyncLoader_->markFailed(uid, text);
           continue;
         }
         if (texture->state() == LoadState::kUnloaded || texture->state() == LoadState::kFailed) {
@@ -240,8 +284,12 @@ namespace yr::asset {
       stbi_image_free(pixels);
 
       if (!texture->markReady()) {
+        const std::string text = "AssetDatabase::pump: Texture 状态转换失败";
+        if (texture->state() == LoadState::kLoading) {
+          (void)texture->markFailed(text);
+        }
         ++counters_.failed_loads;
-        asyncLoader_->markFailed(uid, "AssetDatabase::pump: Texture 状态转换失败");
+        asyncLoader_->markFailed(uid, text);
         continue;
       }
 

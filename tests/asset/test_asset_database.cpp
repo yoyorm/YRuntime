@@ -324,6 +324,24 @@ TEST_CASE("asset db: loadGltfScene reuses resources and tracks stats", "[asset][
   CHECK(objectDatabase.aliveCount() == baseline);
 }
 
+TEST_CASE("asset db: synchronous gltf resources report cache state", "[asset][asset_db][gltf]") {
+  AssetDatabase database(YR_TEST_ASSET_ROOT);
+
+  const GltfLoadResult loaded = database.loadGltfScene("res://models/ToyCar/ToyCar.gltf");
+  CAPTURE(loaded.error);
+  REQUIRE(loaded.ok);
+  REQUIRE_FALSE(loaded.scene.roots.empty());
+  REQUIRE_FALSE(loaded.scene.roots[0].primitives.empty());
+
+  const yr::obj::Ref<Mesh> mesh = loaded.scene.roots[0].primitives[0].mesh;
+  REQUIRE(mesh.valid());
+  const AssetUID meshUid = mesh->uid();
+  REQUIRE(meshUid.valid());
+
+  CHECK(database.state(meshUid) == LoadState::kReady);
+  CHECK(database.error(meshUid).empty());
+}
+
 TEST_CASE("asset db: loadGltfScene failure leaves cache untouched", "[asset][asset_db][gltf]") {
   AssetDatabase database(YR_TEST_ASSET_ROOT);
   const std::size_t before = database.stats().resident_count;

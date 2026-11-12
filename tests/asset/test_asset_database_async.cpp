@@ -53,6 +53,15 @@ namespace {
     return database.state(uid) == expected;
   }
 
+  yr::obj::Ref<Texture> makeReadyTexture(AssetUID uid, std::string sourcePath) {
+    yr::obj::Ref<Texture> texture = yr::obj::make_ref<Texture>();
+    texture->setUid(uid);
+    texture->setSourcePath(std::move(sourcePath));
+    REQUIRE(texture->markLoading());
+    REQUIRE(texture->markReady());
+    return texture;
+  }
+
 } // namespace
 
 TEST_CASE("asset db async: requestLoad installs a texture on the main thread", "[asset][asset_db][async]") {
@@ -177,4 +186,79 @@ TEST_CASE("asset db async: non-texture requests fail at install time", "[asset][
   CHECK_FALSE(database->error(uid).empty());
   CHECK_FALSE(database->contains(uid));
   CHECK(database->stats().failed_loads == 1);
+}
+
+TEST_CASE("asset db async: cached ready resource skips redundant request", "[asset][asset_db][async]") {
+  const std::unique_ptr<AssetDatabase> database = makeDatabase();
+  const AssetUID uid = AssetUID::fromPath("res://pixel.png");
+
+  const yr::obj::Ref<Texture> texture = makeReadyTexture(uid, "res://pixel.png");
+  REQUIRE(database->store(texture));
+
+  const std::uint64_t loadsBefore = database->stats().loads;
+  CHECK(database->requestLoad("res://pixel.png", yr::asset::ResourceKind::kTexture) == uid);
+  CHECK(database->stats().loads == loadsBefore);
+  CHECK(database->state(uid) == LoadState::kReady);
+  CHECK(database->error(uid).empty());
+}
+
+TEST_CASE("asset db async: cached ready resource rejects kind mismatch", "[asset][asset_db][async]") {
+  const std::unique_ptr<AssetDatabase> database = makeDatabase();
+  const AssetUID uid = AssetUID::fromPath("res://pixel.png");
+
+  const yr::obj::Ref<Texture> texture = makeReadyTexture(uid, "res://pixel.png");
+  REQUIRE(database->store(texture));
+
+  const std::uint64_t loadsBefore = database->stats().loads;
+  CHECK_FALSE(database->requestLoad("res://pixel.png", yr::asset::ResourceKind::kMesh).valid());
+  CHECK(database->stats().loads == loadsBefore);
+  CHECK(database->state(uid) == LoadState::kReady);
+}
+
+TEST_CASE("asset db async: failed completion marks cached placeholder failed", "[asset][asset_db][async]") {
+  auto access = std::make_unique<MemoryFileAccess>();
+  access->addFile("res://bad.png", std::vector<std::uint8_t>{0x00, 0x01, 0x02, 0x03});
+  AssetDatabase database(std::move(access));
+
+  const AssetUID uid = AssetUID::fromPath("res://bad.png");
+  yr::obj::Ref<Texture> placeholder = yr::obj::make_ref<Texture>();
+  placeholder->setUid(uid);
+  placeholder->setSourcePath("res://bad.png");
+  REQUIRE(placeholder->markLoading());
+  REQUIRE(database.store(placeholder));
+
+  REQUIRE(database.requestLoad("res://bad.png", yr::asset::ResourceKind::kTexture) == uid);
+  REQUIRE(pumpUntil(database, uid, LoadState::kFailed));
+  CHECK_FALSE(database.error(uid).empty());
+
+  yr::obj::Ref<Texture> cached = database.findAs<Texture>(uid);
+  REQUIRE(cached.valid());
+  CHECK(cached->state() == LoadState::kFailed);
+  CHECK_FALSE(cached->error().empty());
+  cached.reset();
+  placeholder.reset();
+  REQUIRE(database.evict(uid));
+  CHECK(database.state(uid) == LoadState::kUnloaded);
+}
+
+TEST_CASE("asset db async: cached ready resource hides stale loader error", "[asset][asset_db][async]") {
+  auto access = std::make_unique<MemoryFileAccess>();
+  access->addFile("res://broken.png", std::vector<std::uint8_t>{0x00, 0x01, 0x02, 0x03});
+  AssetDatabase database(std::move(access));
+
+  const AssetUID uid = AssetUID::fromPath("res://broken.png");
+  REQUIRE(database.requestLoad("res://broken.png", yr::asset::ResourceKind::kTexture) == uid);
+  REQUIRE(pumpUntil(database, uid, LoadState::kFailed));
+  REQUIRE_FALSE(database.error(uid).empty());
+  REQUIRE_FALSE(database.contains(uid));
+
+  const yr::obj::Ref<Texture> texture = makeReadyTexture(uid, "res://broken.png");
+  REQUIRE(database.store(texture));
+
+  const std::uint64_t loadsBefore = database.stats().loads;
+  CHECK(database.state(uid) == LoadState::kReady);
+  CHECK(database.error(uid).empty());
+  CHECK(database.requestLoad("res://broken.png", yr::asset::ResourceKind::kTexture) == uid);
+  CHECK(database.stats().loads == loadsBefore);
+  CHECK(database.state(uid) == LoadState::kReady);
 }

@@ -67,7 +67,9 @@ namespace yr::asset {
     [[nodiscard]] GltfLoadResult loadGltfScene(std::string_view resPath, bool deferTextures = false);
 
     // 异步加载：worker 读取原始文件字节，pump 在主线程解码并安装到 cache_。
+    // cache 中已 ready 时直接返回，不再重复 submit。
     [[nodiscard]] AssetUID requestLoad(std::string_view resPath, ResourceKind kind = ResourceKind::kTexture);
+    // 优先查询 cache_，异步结果尚未安装时才回退到 AsyncLoader。
     [[nodiscard]] LoadState state(AssetUID uid) const;
     [[nodiscard]] std::string error(AssetUID uid) const;
 
