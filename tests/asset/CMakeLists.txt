@@ -2,7 +2,8 @@ add_executable(YrTests_asset
     test_asset_uid.cpp
     test_resource.cpp
     test_asset_database.cpp
-    test_gltf_loader.cpp)
+    test_gltf_loader.cpp
+    test_file_access.cpp)
 
 target_link_libraries(YrTests_asset PRIVATE
     yr::asset
