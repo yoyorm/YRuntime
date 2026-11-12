@@ -41,6 +41,7 @@
 | D29 | glTF 同步加载：vendor tinyGLTF v3，loader 只产 CPU 资源 | **已确认** | M9.0b |
 | D30 | M9.0c：运行时 TRS + MeshInstanceNode + snapshot 增量上传 + Blinn-Phong | **已确认** | M9.0c |
 | D31 | AssetDatabase：强 Ref 缓存 + fixpoint GC + evict 仅限 refcount==1 | **已确认** | M9.1 |
+| D32 | M9.2a：单 LoaderWorker + 主线程 pump + glTF 纹理 defer | **已确认** | M9.2a |
 
 ---
 
@@ -703,6 +704,32 @@ CI 首次运行时 `apt-get install libcatch2-dev` 退出码 100，job 失败。
 **后果**：+ 资源驻留/卸载确定，`resident_count`/`cpu_bytes` 可直接验收；+ 后续异步只需替换执行后端，缓存与 GC 语义不变；− GC 需要多轮；− 表达式里的临时 `Ref` 会让资源延迟一帧回收。
 
 **什么情况下改回来**：出现需要跨帧共享的弱引用缓存、热重载或异步加载与 GC 并发；或 GC 多轮遍历成为可观测瓶颈时，再评估增量/代际收集。
+
+---
+
+## D32 · M9.2a：单 LoaderWorker + 主线程 pump + glTF 纹理 defer
+**状态**：已确认 · **里程碑**：M9.2a
+
+**背景**：M9.1 的加载全程同步：ToyCar 的纹理解码与 memcpy 都在调用线程完成，慢 IO 会直接拉长帧时间；但 `Object`/`ObjectDB` 又只能在主线程触碰（D8）。需要一个"慢 IO 移出主线程、对象构造仍回主线程"的最小异步边界。
+
+**决策**：
+1. `IFileAccess` 使用 canonical `res://` 虚拟路径；`DiskFileAccess` 负责 root 映射，`MemoryFileAccess` 供测试，`ThrottledFileAccess` 包装慢 IO；未来 `PakFileAccess` 复用同一接口。
+2. `AsyncLoader` 管请求状态 / in-flight 合并 / pump 预算；`ILoadBackend` 是执行后端 seam；`LoaderWorker` 是单线程实现；M10 可换成 JobSystem。
+3. worker 只读原始字节，不构造 `Object`、不碰 `ObjectDB`；`AssetDatabase::pump` 在主线程解码并安装 Texture。
+4. glTF `deferTextures`：为贴图创建 `kLoading` Texture 占位并注册，material 持 `Ref`，返回 `pendingTextures` 由 `AssetDatabase` 调度；`RenderExtract` 在 baseColor texture 未 ready 时跳过该 `MeshInstanceNode`，不画半成品。
+5. `MainLoop` 阶段 4 `pump(1)` 每帧最多安装一个完成项，阶段 12 继续 GC；`evict`/GC 调 `AsyncLoader::forget`，避免已完成项被后续安装复活。
+6. `render_demo --async-textures` 是 opt-in；默认仍走同步加载，保持 M9.0c demo 与 `--dump-snapshot` / `--replay-snapshot` 的首帧行为不变。
+7. 本阶段只做纹理 streaming；mesh/scene streaming、accessor 并行解码与 Sponza 留 M9.2b。
+
+**备选与否决理由**：
+- *纯主线程 pump*：慢 IO 仍阻塞主线程，达不到本阶段目标；否决。
+- *每个请求一个 `std::async`*：线程数随请求数增长、不可控；否决。
+- *worker 直接构造 Resource/Object*：违反主线程 `ObjectDB` 约束，会引入跨线程注册与释放竞态；否决。
+- *默认全异步*：首帧纹理必然缺位，破坏现有 dump/replay 的确定性基线；否决。
+
+**后果**：+ 慢 IO 真正移出主线程；+ 纹理逐步出现，帧时间不再被单次大读拉长；− 多一个临时线程与生命周期顺序要求（async → worker join → access）；− 解码仍在主线程；− mesh/scene 仍同步加载。
+
+**什么情况下改回来**：M10 接入 JobSystem 后可替换 `LoaderWorker`；若主线程解码成为瓶颈，则把 stb_image 解码也移入 worker（只回传 CPU 字节），但对象安装仍留在主线程。
 
 ---
 

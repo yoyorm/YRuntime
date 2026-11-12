@@ -77,7 +77,7 @@
 | 1 | poll_input | `pollInput` | ⬜ 空钩子 | 无 | — |
 | 2 | flush_messages | `flushMessages` | ⬜ 空钩子 | 无 | — |
 | 3 | flush_events | `flushEvents` | ✅ | `EventBus::flush`（安全点） | 派发上一帧 post 的事件 |
-| 4 | pump_assets | `pumpAssets` | ⬜ 空钩子 | 无 | — |
+| 4 | pump_assets | `pumpAssets` | ✅ | `AssetDatabase::pump(1)`（非拥有 DB） | 每帧最多安装 1 个异步完成项 |
 | 5 | pre_physics | `prePhysics` | ⬜ 空钩子 | 无 | — |
 | 6 | physics_step | `physicsSteps` | ✅ | `onPhysicsStep`（默认 no-op，可覆写） | 消费 `accumulator_`，写 `physicsStepsFrame_` |
 | 7 | process | `processPhase` | ✅ | `SceneTree::process`（安全点） | 前序派发 `onUpdate` |
@@ -88,7 +88,7 @@
 | 12 | collect_garbage | `collectGarbage` | ✅ | `AssetDatabase::collectGarbage`（fixpoint，非拥有 DB） | 卸载仅剩 DB 持有的资源；GPU 延迟销毁仍归后端 |
 | 13 | end_frame | `endFrame` | ✅ | `FrameStats::recordFrame` | 量本阶段耗时，汇总整帧 / 各阶段 / 物理步数入环 |
 
-> 空钩子 = 1/2/4/5，尚未接任何子系统。per-phase 报告只覆盖 0/3/6/7/8/9/10/11/13；阶段 12 已接线，但 GC 通常为 0ns，不单独上报。
+> 空钩子 = 1/2/5，尚未接任何子系统。per-phase 报告只覆盖 0/3/6/7/8/9/10/11/13；阶段 4/12 已接线，但通常为 0ns，不单独上报。
 
 - **Godot 对照**：`main/main.cpp` 的 `Main::iteration`。
 - **遗留 / 已知缺口**：空钩子见上表。

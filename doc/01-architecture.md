@@ -686,7 +686,7 @@ Asset/Job/Renderer 装配与显式 `initialize`/`shutdown` 顺序推迟到确有
 | 1 | `poll_input` | 平台输入 → `InputEvent`（**未实现，空钩子**） | 主 | 否 |
 | 2 | `flush_messages` | `MessageQueue::flush()`（上一帧的 deferred call；**尚未实现**，见 §4.5） | 主 | 是（安全点） |
 | 3 | `flush_events` | `EventBus::flush()`（上一帧 post 的事件） | 主 | 是（安全点） |
-| 4 | `pump_assets` | `AssetDatabase::pump()`：完成异步加载回调、失败上报（**未实现，空钩子**） | 主 | 是 |
+| 4 | `pump_assets` | `AssetDatabase::pump()`：完成异步加载回调、失败上报（**M9.2a 已接 `AssetDatabase::pump`**；异步线程只读原始字节，解码与资源安装回主线程） | 主 | 是 |
 | 5 | `pre_physics` | 派发 `kPrePhysicsProcess`（**未实现，空钩子**） | 主 | 否（只改数据） |
 | 6 | `physics_step` ×N | 固定步长循环：每步调用 `onPhysicsStep`（默认 no-op）；物理后端 / `kPhysicsProcess` / 碰撞事件 **规划中** | 主（后端可并行） | 否 |
 | 7 | `process` | 派发 `onUpdate`（`SceneTree::process`，前序 ObjectID 快照） | 主 | 否（改结构用 `queueFree` 延迟） |

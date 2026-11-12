@@ -511,7 +511,9 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 
 **目标**：资源有身份（UID）、有注册表、有引用计数、能异步加载不卡帧、能自动卸载；并用**正式 `AssetUID`/`AssetDatabase` 替换 M5 的临时内建 triangle/default material 注册表**，正式完成 `AssetHandle → GPU` 资源桥接。
 
-> **M9 顺序（D26）**：M9.0 walking skeleton（真实资产 + 同步加载 + 一个带 baseColor 材质的物体上屏）→ M9.1 AssetDatabase/GC → M9.2 协作式异步 + streaming → M9.5 完整 PBR。最终场景：ToyCar（仓库内）+ Sponza（外部路径，压力测试，不进仓库）。每个子系统必须有 demo 消费者，否则删除。
+> **M9 顺序（D26）**：M9.0 walking skeleton（真实资产 + 同步加载 + 一个带 baseColor 材质的物体上屏）→ M9.1 AssetDatabase/GC → M9.2a 协作式异步 + 纹理 streaming → M9.2b mesh/scene streaming + Sponza → M9.5 完整 PBR。最终场景：ToyCar（仓库内）+ Sponza（外部路径，压力测试，不进仓库）。每个子系统必须有 demo 消费者，否则删除。
+
+> **M9.2a 完成（2026-11-12）**：协作式异步纹理 streaming：`IFileAccess`（Disk/Memory/Throttled）+ `AsyncLoader`（状态 / in-flight 合并 / pump 预算）+ 单线程 `LoaderWorker` + glTF `deferTextures` 占位 + MainLoop 阶段 4 `pump(1)`；`render_demo --async-textures` 为 opt-in，默认同步。debug-vk 454/454、ASan 454/454、`--async-textures` validation 0。
 
 > **M9.1 完成（2026-11-11）**：AssetDatabase 强 Ref 缓存 + fixpoint GC + `evict` + `AssetStats`；glTF loader hooks 复用资源；MainLoop 阶段 12 接 `collectGarbage()`。ToyCar 首次 `resident=12` / `cpu_bytes=22,659,328`（≈22.6 MB 十进制）；同一 DB 二次加载全命中复用；`--drop-at` 后下一帧回收被删 primitive 的 3 个资源；循环结束后 `clearRoot + collectGarbage`，final `resident=0` / `cpu_bytes=0`。debug-vk 410/410、ASan 410/410、validation 0。
 
@@ -524,7 +526,8 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 - [x] M9.0b 同步加载：vendor tinyGLTF v3 + stb_image，ToyCar → `GltfScene`（`Ref<Mesh/Material/Texture>`，D29）
 - [x] M9.0c：完整 TRS + MeshInstanceNode；snapshot v2 uploads/releases（首帧增量）；MeshPipeline / D32 depth / Frame UBO / texture descriptor；ToyCar 3 primitive + baseColor + Blinn-Phong；debug-vk 与 ASan 398/398、Vulkan validation 0 ✅ 2026-11-07
 - [x] M9.1 AssetDatabase：强 Ref 缓存 / fixpoint GC / evict / `AssetStats`；loader hooks 复用资源；MainLoop 阶段 12；debug-vk 与 ASan 410/410 ✅ 2026-11-11
-- [ ] **下一步 M9.2** 协作式异步：每帧预算分块读 + ThrottledFileAccess + streaming demo
+- [x] M9.2a 协作式异步 + 纹理 streaming：IFileAccess / AsyncLoader / LoaderWorker / deferTextures / `--async-textures`；454/454 ✅ 2026-11-12
+- [ ] **下一步 M9.2b** mesh/scene streaming + Sponza
 - [ ] `yr/asset/asset_uid.h`：`AssetUID`（内容哈希或稳定 ID）+ `path ↔ uid` 映射表（对照 Godot `resource_uid.h`）
 - [ ] `yr/asset/resource.h`：`Resource : RefCounted`（source_path / uid / 加载状态 / 元数据）
 - [ ] `yr/asset/file_access.h`：`IFileAccess` 抽象 + `DiskFileAccess` + **`MemoryFileAccess`（测试用，见原则 P5）**
