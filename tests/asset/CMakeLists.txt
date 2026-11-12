@@ -4,7 +4,11 @@ add_executable(YrTests_asset
     test_asset_database.cpp
     test_gltf_loader.cpp
     test_file_access.cpp
-    test_async_loader.cpp)
+    test_async_loader.cpp
+    test_loader_worker.cpp)
+
+target_include_directories(YrTests_asset PRIVATE
+    ${PROJECT_SOURCE_DIR}/engine/asset/src)
 
 target_link_libraries(YrTests_asset PRIVATE
     yr::asset
