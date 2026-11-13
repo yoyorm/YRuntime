@@ -501,7 +501,7 @@ class PakFileAccess : public IFileAccess { /* 从 .yrpak 读，M11 */ };
 3. 加载中被请求卸载 → 状态机必须能表达"加载完成后立即丢弃"。
 4. 失败必须是一等公民：`LoadResult` 带错误码 + 人类可读消息 + 源路径。
 
-**卸载策略**：默认 `collect_garbage()` 在帧末扫 refcount==1 的资源（LRU 见 Godot `core/templates/lru.h`）。M9.1 已实现同步 `AssetDatabase`（强 `Ref` 缓存、fixpoint GC、`evict`、`AssetStats`）并接入 `MainLoop` 阶段 12；上面的 `request_load` / `pump` 异步链路仍属 M9.2，`.scn` ExtResource 递归加载与 UID 集中化也未做。
+**卸载策略**：默认 `collect_garbage()` 在帧末扫 refcount==1 的资源（LRU 见 Godot `core/templates/lru.h`）。M9.1 已实现同步 `AssetDatabase`（强 `Ref` 缓存、fixpoint GC、`evict`、`AssetStats`）并接入 `MainLoop` 阶段 12；M9.2a 接入了纹理异步读取/解码，M9.2b 接入了 mesh defer + pump 预算安装（worker 仍只读字节，mesh 构造回主线程）。异步 scene parse、`.scn` ExtResource 递归加载与 UID 集中化仍未做。
 **Godot 对照**：`core/io/resource.h`、`resource_loader.h`（含 `ResourceLoader::ThreadLoadTask` 异步加载实现，**这是 M9 最值得精读的文件**）、`resource_saver.h`、`resource_uid.h`、`file_access_pack.h`（PCK 格式）、`core/io/file_access.h`。
 **学习点**：异步状态机、引用计数与 GC 的边界、IO 抽象、内容寻址（UID/hash）。
 
@@ -686,7 +686,7 @@ Asset/Job/Renderer 装配与显式 `initialize`/`shutdown` 顺序推迟到确有
 | 1 | `poll_input` | 平台输入 → `InputEvent`（**未实现，空钩子**） | 主 | 否 |
 | 2 | `flush_messages` | `MessageQueue::flush()`（上一帧的 deferred call；**尚未实现**，见 §4.5） | 主 | 是（安全点） |
 | 3 | `flush_events` | `EventBus::flush()`（上一帧 post 的事件） | 主 | 是（安全点） |
-| 4 | `pump_assets` | `AssetDatabase::pump()`：完成异步加载回调、失败上报（**M9.2a 已接 `AssetDatabase::pump`**；异步线程只读原始字节，解码与资源安装回主线程） | 主 | 是 |
+| 4 | `pump_assets` | `AssetDatabase::pump(maxTextureCompletions, maxMeshVertices)`：完成纹理 I/O、按顶点预算安装 mesh（**M9.2b 已接**；worker 只读原始字节，解码/资源构造回主线程） | 主 | 是 |
 | 5 | `pre_physics` | 派发 `kPrePhysicsProcess`（**未实现，空钩子**） | 主 | 否（只改数据） |
 | 6 | `physics_step` ×N | 固定步长循环：每步调用 `onPhysicsStep`（默认 no-op）；物理后端 / `kPhysicsProcess` / 碰撞事件 **规划中** | 主（后端可并行） | 否 |
 | 7 | `process` | 派发 `onUpdate`（`SceneTree::process`，前序 ObjectID 快照） | 主 | 否（改结构用 `queueFree` 延迟） |

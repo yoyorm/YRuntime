@@ -18,36 +18,38 @@
 | **M6 最小 Vulkan Bootstrap** | ✅ 已完成 / 收口（2026-10-23）—— M6-1 外壳 + M6-2 Surface / Device / 队列 + M6-3 Swapchain / 清屏上屏 + M6-4 N 帧在飞 + 硬编码三角形 + M6-5 健壮性（resize / 最小化手测、soak） |
 | **M7 Snapshot 驱动画面** | ✅ 已完成 / 收口（2026-10-24）—— 7a/7b/7c/7d/7e：MainLoop 接线、DrawItem/Camera、WASD、dump/replay、帧统计、600s soak、resize、GIF/PNG；双/三缓冲按 D22 推迟 |
 | **M8 序列化** | ✅ 已完成 / 收口（2026-10-31）—— M8a 文本；M8b 引用/连接；M8c headless `--scene` 加载与 1000 节点 benchmark；364 tests |
-| **M9 资源系统** | 🔨 进行中（M9.2a 完成：IFileAccess / AsyncLoader / LoaderWorker / deferTextures / `--async-textures`；下一步 M9.2b） |
+| **M9 资源系统** | 🔨 进行中（M9.2b 完成：mesh/texture streaming + Sponza + trace；下一步 M9.5 契约规划） |
 | M9.5 ~ M11 | ⬜ 未开始（M9.5 基础 PBR，D21） |
 
-**远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend ✅ → M6 最小 Vulkan bootstrap ✅ → M7 Snapshot 驱动画面（首个主要作品节点）✅ → M8 序列化 ✅ → M9 资源系统 → M9.5 基础 PBR 内容（D21）→ M10 任务系统 → M11 工具链打磨。**当前唯一任务：M9.2b mesh/scene streaming + Sponza。**
+**远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend ✅ → M6 最小 Vulkan bootstrap ✅ → M7 Snapshot 驱动画面（首个主要作品节点）✅ → M8 序列化 ✅ → M9 资源系统 → M9.5 基础 PBR 内容（D21）→ M10 任务系统 → M11 工具链打磨。**当前唯一任务：M9.5 契约规划（纹理尺寸/解码、材质 POD、LightPod、shadow）。**
 
 进度**只在两处维护**：根 `README.md` 的里程碑表（对外）+ `02-roadmap.md` 的 checkbox（对内）。
 别的地方不要重复记录，否则一定会漂移。
 
 ---
 
-## 2. 下一步：M9.2b mesh/scene streaming + Sponza
+## 2. 下一步：M9.5 基础 PBR 契约规划
 
 **M9.1 已收口（2026-11-11）**：`AssetDatabase` 强 Ref 缓存 + fixpoint GC + `evict` + `AssetStats`；glTF loader 通过 hooks 复用资源；MainLoop 阶段 12 接 `collectGarbage()`。ToyCar 首次 `resident=12` / `cpu_bytes=22,659,328` B，循环结束 final `resident=0`；debug-vk 与 ASan 410/410，validation 0。决策见 D31。
 
 **M9.2a 已完成（2026-11-12）**：`IFileAccess`（Disk/Memory/Throttled）+ `AsyncLoader` 状态机 / in-flight 合并 / pump 预算 + 单线程 `LoaderWorker` + glTF `deferTextures` + MainLoop 阶段 4 `pump(1)`；`render_demo --async-textures` 为 opt-in。debug-vk 与 ASan 454/454，validation 0。决策见 D32。
 
+**M9.2b 已完成（2026-11-13）**：显式 `GltfDeferredMesh` + `shared_ptr<GltfSourceData>` + `AssetDatabase` job 队列 + `pump(maxTextureCompletions, maxMeshVertices)` 预算安装 + `evict/GC/clear` 取消 + Mesh local AABB；`render_demo --gltf/--asset-root/--stream-assets/--skip-textures/--trace`。Sponza 405 primitives / 3,747,018 triangles / 140MB bin；debug-vk 与 ASan 472/472，validation 0。数据见 [`m9-2b-streaming-report.md`](m9-2b-streaming-report.md)，决策见 D33。
+
 **最终切片（D26）**：ToyCar（仓库内，视觉/PBR）+ Sponza（外部路径，资源/并行压力测试，大资产不进仓库）。M9 顺序：M9.0 walking skeleton（baseColor + Blinn-Phong）→ M9.1 AssetDatabase/GC → M9.2a 协作式异步 + 纹理 streaming → M9.2b mesh/scene streaming + Sponza → M9.5 完整 PBR。每个子系统必须出现在视觉/流式/并行 demo 中，否则删除。
 
 **执行模式（D27）**：coder 负责实现、测试、CMake、文档机械同步；用户 review 契约与关键 diff，不再手写核心。
 
-下一步 **M9.2b mesh/scene streaming + Sponza**：
+下一步 **M9.5 基础 PBR 契约规划**：
 
-1. 把 defer 扩展到 mesh / accessor：worker 仍只读原始 buffer 字节，主线程解析 accessor 并构造 `Mesh`。
-2. 场景节点构建留主线程（`ObjectDB` 约束不变），streaming 只搬运字节与 CPU 数据。
-3. 预算与背压：`pump` 按字节/时间片消费，未完成部分顺延到下一帧，避免大资产首帧尖峰。
-4. Sponza 走外部路径（不进仓库），复用 `DiskFileAccess` + streaming demo，先记录网格/纹理规模、内存与帧时间。
-5. `render_demo` 默认保持同步，异步仍为 opt-in；不改 dump/replay 的确定性基线。
-6. 仍不做 `.scn` ExtResource 递归加载与 UID 集中化。
+1. 纹理策略：先定 `maxTextureDimension`（Sponza 4K 不能全量加载）与解码位置（主线程 vs worker）；确认 sRGB/linear 格式。
+2. 材质 POD：`MaterialUpload` 扩展 BaseColor/Normal/MetallicRoughness/Emissive 四贴图 + factors；`TextureUpload` 增加色彩空间。
+3. 光照：`LightNode` / `LightPod`，Directional + Point（≤8），Cook-Torrance；决定是否解析 `KHR_lights_punctual`。
+4. 阴影与 alpha mask：单张平行光 shadow map + PCF；mask 用 `discard`；不做 alpha blend。
+5. demo：ToyCar PBR + Sponza 带纹理运行，validation 0，输出帧时间/内存数据。
+6. 仍不做 IBL/skybox/spot/ImGui；仍不做 `.scn` ExtResource 递归加载与 UID 集中化。
 
-详细计划见 `02-roadmap.md` M9。
+详细计划见 `02-roadmap.md` M9.5。
 
 ### M7 复盘题（已收口，供面试自测）
 

@@ -42,6 +42,7 @@
 | D30 | M9.0c：运行时 TRS + MeshInstanceNode + snapshot 增量上传 + Blinn-Phong | **已确认** | M9.0c |
 | D31 | AssetDatabase：强 Ref 缓存 + fixpoint GC + evict 仅限 refcount==1 | **已确认** | M9.1 |
 | D32 | M9.2a：单 LoaderWorker + 主线程 pump + glTF 纹理 defer | **已确认** | M9.2a |
+| D33 | M9.2b：显式 mesh job + 主线程预算安装 + Sponza 外部路径 | **已确认** | M9.2b |
 
 ---
 
@@ -730,6 +731,38 @@ CI 首次运行时 `apt-get install libcatch2-dev` 退出码 100，job 失败。
 **后果**：+ 慢 IO 真正移出主线程；+ 纹理逐步出现，帧时间不再被单次大读拉长；− 多一个临时线程与生命周期顺序要求（async → worker join → access）；− 解码仍在主线程；− mesh/scene 仍同步加载。
 
 **什么情况下改回来**：M10 接入 JobSystem 后可替换 `LoaderWorker`；若主线程解码成为瓶颈，则把 stb_image 解码也移入 worker（只回传 CPU 字节），但对象安装仍留在主线程。
+
+---
+
+## D33 · M9.2b：显式 mesh job + 主线程预算安装 + Sponza 外部路径
+**状态**：已确认 · **里程碑**：M9.2b
+
+**背景**：M9.2a 只把纹理读取/解码移出了主线程；Sponza 的 405 个 primitive、约 205 万顶点仍在 `loadGltfScene` 里一次性同步构建，首帧再一次性上传约 110MB，造成明显的启动卡顿。`ObjectDB` 只能在主线程触碰（D8），不能把 `Mesh` 构造放到 worker。
+
+**决策**：
+1. `deferMeshes` 时 loader 只做 accessor 校验、count 与 bounds 计算，注册 `kLoading` 的 Mesh 占位；真正的顶点/索引拼装留到 `AssetDatabase::pump`。
+2. 延迟任务使用显式 `GltfDeferredMesh{uid, vertexCount, source, meshIndex, primitiveIndex}`；`source` 是 `shared_ptr<const GltfSourceData>`，持有 tinyGLTF model，保证 accessor 字节活到最后一个 job。
+3. job **不持有** `obj::Ref<Mesh>`，只持 uid；否则会阻止 `evict/GC` 回收无人使用的占位对象。
+4. `AssetDatabase` 用 `deque + unordered_set<AssetUID>` 接管 job、按 UID 去重；`pump(maxTextureCompletions, maxMeshVertices)` 先处理纹理 completion，再按顶点预算安装 mesh；至少安装 1 个，避免大 primitive 饥饿。
+5. 安装时只查 cache：占位缺失（已被 evict/GC）就丢弃 job；不是 `kLoading` 就跳过；失败时 `markFailed` 并计入 `failed_loads`。不调用 `store` / `markLoading`，因为占位已经在 load 时注册。
+6. `evict` / `collectGarbage` / `clear` 必须取消对应 pending job；GC 取消 job 可以尽早释放 `GltfSourceData`（Sponza 约 140MB）。
+7. `Mesh` 增加 local AABB（`boundsMin/boundsMax/hasBounds`），defer 时来自 POSITION accessor 的 min/max（缺失时扫描兜底）；demo 相机用 AABB 角点，不再依赖 `vertices` 非空。
+8. `skipTextures` 只作为调试/压力选项：不创建 Texture、不产生 pendingTextures；Sponza 4K 纹理（解码后约 4.6GB）留到 M9.5 的尺寸上限。
+9. `render_demo` 增加 `--gltf` / `--asset-root` / `--stream-assets` / `--skip-textures` / `--trace`；默认仍同步，保持 M9.0c 的 dump/replay 基线。
+10. 统一 `AssetDatabase::loadGltfScene(resPath, const GltfLoadOptions&)`；旧的 `bool deferTextures` 重载在 b-3 收口时删除。
+
+**备选与否决理由**：
+- *worker 构造 Mesh*：违反主线程 `ObjectDB` 约束；否决。
+- *把 mesh job 塞进 AsyncLoader*：mesh 没有外部 IO 请求，会引入假的 `LoadRequest/payload` 语义；否决。
+- *每个 primitive 一帧或逐顶点时间切片*：实测预算内 `pump` p95 2.6ms、max 7.7ms，暂时不值得增加恢复状态；先保留顶点预算，后续场景若出现 >10–15ms 尖峰再加 job 数上限/分片。
+- *M9.2b 直接异步 parse glTF*：tinyGLTF 在 parse 阶段就读入外部 buffer；要做需要新的 scene 交接通道。实测 warm `load_ms` 115ms，先记录为 2b-4 条件项。
+- *默认全 streaming*：小场景（ToyCar）会推迟完全 ready，且破坏默认同步基线；否决。
+
+**后果**：+ Sponza 首帧资产卡顿从约 156ms 降到 19.5ms，首帧上传从 110.5MB 降到 2.0MB；+ items 逐帧出现，主线程不被一次性构建/上传占满；− 完全 ready 时间变长（347ms → 1441ms，Xephyr 40ms 帧率下）；− 峰值 RSS 约 +4.8%（model 驻留更久）；− glTF parse 与 `.bin` 读取仍在主线程。
+
+**什么情况下改回来**：冷启动 `load_ms` 成为主要瓶颈 → 做 2b-4 异步 scene parse；未来场景单帧 `pump` 超过 10–15ms → 加 `maxMeshJobsPerPump` 或顶点分片；Sponza 纹理要在 M9.5 前先解决尺寸/解码预算。
+
+**复盘**（2026-11-13）：debug-vk 472/472、ASan 472/472、format/deps 通过。Sponza（--skip-textures）sync 405 items / 3,747,018 triangles / validation 0；stream 最终一致，首帧 items=3，第 40 帧 ready。完整数据与原始 CSV 说明见 `doc/m9-2b-streaming-report.md`。
 
 ---
 

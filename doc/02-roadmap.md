@@ -515,6 +515,8 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 
 > **M9.2a 完成（2026-11-12）**：协作式异步纹理 streaming：`IFileAccess`（Disk/Memory/Throttled）+ `AsyncLoader`（状态 / in-flight 合并 / pump 预算）+ 单线程 `LoaderWorker` + glTF `deferTextures` 占位 + MainLoop 阶段 4 `pump(1)`；`render_demo --async-textures` 为 opt-in，默认同步。debug-vk 454/454、ASan 454/454、`--async-textures` validation 0。
 
+> **M9.2b 完成（2026-11-13）**：mesh streaming：显式 `GltfDeferredMesh` + `shared_ptr<GltfSourceData>` 保活 + `AssetDatabase` job 队列 + `pump(maxTextureCompletions, maxMeshVertices)` 预算安装 + `evict/GC/clear` 取消；Mesh local AABB；`render_demo --gltf/--asset-root/--stream-assets/--skip-textures/--trace`；Sponza 外部路径接入（405 primitives / 3,747,018 triangles / 140MB bin）。debug-vk 与 ASan 472/472，validation 0。完整数据见 [`m9-2b-streaming-report.md`](m9-2b-streaming-report.md)。
+
 > **M9.1 完成（2026-11-11）**：AssetDatabase 强 Ref 缓存 + fixpoint GC + `evict` + `AssetStats`；glTF loader hooks 复用资源；MainLoop 阶段 12 接 `collectGarbage()`。ToyCar 首次 `resident=12` / `cpu_bytes=22,659,328`（≈22.6 MB 十进制）；同一 DB 二次加载全命中复用；`--drop-at` 后下一帧回收被删 primitive 的 3 个资源；循环结束后 `clearRoot + collectGarbage`，final `resident=0` / `cpu_bytes=0`。debug-vk 410/410、ASan 410/410、validation 0。
 
 > **M9.0c 完成（2026-11-07）**：3 primitives / 108936 triangles / 首帧 uploads=8 / 9,027,840 B / drop-at releases=3 / resize 2 次重建 / validation 0 / dump 8.7MB replay 一致。
@@ -527,7 +529,8 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 - [x] M9.0c：完整 TRS + MeshInstanceNode；snapshot v2 uploads/releases（首帧增量）；MeshPipeline / D32 depth / Frame UBO / texture descriptor；ToyCar 3 primitive + baseColor + Blinn-Phong；debug-vk 与 ASan 398/398、Vulkan validation 0 ✅ 2026-11-07
 - [x] M9.1 AssetDatabase：强 Ref 缓存 / fixpoint GC / evict / `AssetStats`；loader hooks 复用资源；MainLoop 阶段 12；debug-vk 与 ASan 410/410 ✅ 2026-11-11
 - [x] M9.2a 协作式异步 + 纹理 streaming：IFileAccess / AsyncLoader / LoaderWorker / deferTextures / `--async-textures`；454/454 ✅ 2026-11-12
-- [ ] **下一步 M9.2b** mesh/scene streaming + Sponza
+- [x] **M9.2b mesh/scene streaming + Sponza**：GltfDeferredMesh / AssetDatabase job 队列 / pump 双预算 / AABB / `--gltf`/`--asset-root`/`--stream-assets`/`--skip-textures`/`--trace`；Sponza 405 primitives / 3,747,018 triangles；472/472 ✅ 2026-11-13
+- [ ] **下一步 M9.5** 基础 PBR 契约规划（纹理尺寸/解码、材质 POD、LightPod、shadow）
 - [ ] `yr/asset/asset_uid.h`：`AssetUID`（内容哈希或稳定 ID）+ `path ↔ uid` 映射表（对照 Godot `resource_uid.h`）
 - [ ] `yr/asset/resource.h`：`Resource : RefCounted`（source_path / uid / 加载状态 / 元数据）
 - [ ] `yr/asset/file_access.h`：`IFileAccess` 抽象 + `DiskFileAccess` + **`MemoryFileAccess`（测试用，见原则 P5）**

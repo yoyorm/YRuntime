@@ -44,7 +44,7 @@ Runtime，再以 renderer-neutral 的渲染契约把游戏状态接到渲染后�
 | M6 最小 Vulkan Bootstrap | 完成 | 窗口 + 清屏 + 硬编码三角形；N 帧在飞 |
 | M7 Snapshot 驱动画面 | 完成 | MainLoop 接线 + DrawItem/Camera + WASD + dump/replay + 帧统计；双/三缓冲按 D22 推迟 |
 | M8 序列化 | 完成 | M8a `.scn` 文本；M8b 引用/连接；M8c headless `--scene` 加载 + 1000 节点 benchmark |
-| M9 资源系统 | 进行中 | M9.2a 完成：IFileAccess / AsyncLoader / LoaderWorker / deferTextures / `--async-textures`；下一步 M9.2b mesh/scene streaming + Sponza |
+| M9 资源系统 | 进行中 | M9.2b 完成：mesh/texture streaming + Sponza + `--gltf/--asset-root/--stream-assets/--skip-textures/--trace`；下一步 M9.5 契约规划 |
 | M9.5+ 基础 PBR / 任务 / 工具链 | 未开始 | 见路线图 |
 
 进度同时维护在根 README 与 [`doc/02-roadmap.md`](doc/02-roadmap.md)。
@@ -61,9 +61,21 @@ cmake --build --preset debug-vk
 ./build/debug-vk/bin/yr_render_demo --frames 1 --dump-snapshot /tmp/m9c.yrsnap
 ./build/debug-vk/bin/yr_render_demo --replay-snapshot /tmp/m9c.yrsnap --frames 600
 ./build/debug-vk/bin/yr_render_demo --frames 60 --async-textures
+./build/debug-vk/bin/yr_render_demo --frames 60 --stream-assets
+./build/debug-vk/bin/yr_render_demo --frames 60 --stream-assets --trace /tmp/yr-trace.csv
+
+# Sponza：外部路径，几何压力测试（纹理留到 M9.5）
+ASSET_ROOT=/path/to/main1_sponza
+./build/debug-vk/bin/yr_render_demo \
+  --asset-root "$ASSET_ROOT" \
+  --gltf res://NewSponza_Main_glTF_003.gltf \
+  --skip-textures --stream-assets --frames 240
 ```
 
-默认同步加载；加 `--async-textures` 后，纹理由 AssetDatabase/LoaderWorker 流式加载，前几帧先只显示无纹理的 Glass，ready 后 body/Fabric 出现。
+默认同步加载；`--async-textures` 只流式加载纹理；`--stream-assets` 同时流式加载 mesh 与纹理。
+Sponza 只测几何与 mesh streaming，`--skip-textures` 避免 4K 纹理占用；完整 PBR 与纹理尺寸上限属于 M9.5。
+
+Sponza（405 primitives / 3,747,018 triangles）实测：sync 首帧 tick≈156.6ms、上传≈110.5MB；stream 首帧 tick≈19.5ms、上传≈2.0MB，首 item 347ms→135ms，完全 ready 347ms→1441ms。完整数据见 [`doc/m9-2b-streaming-report.md`](doc/m9-2b-streaming-report.md)。
 
 当前渲染使用 baseColor 纹理与 Blinn-Phong；完整 PBR、光源与阴影仍属于 M9.5。
 实测：600 帧 p50≈6.0ms；首帧 items/draw_calls=3、triangles=108936、uploads=8、upload_bytes=9,027,840、missing=0、validation_errors=0；drop-at 运行 releases=3；dump/replay 像素差为 0。
