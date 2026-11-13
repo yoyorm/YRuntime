@@ -530,7 +530,9 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 - [x] M9.1 AssetDatabase：强 Ref 缓存 / fixpoint GC / evict / `AssetStats`；loader hooks 复用资源；MainLoop 阶段 12；debug-vk 与 ASan 410/410 ✅ 2026-11-11
 - [x] M9.2a 协作式异步 + 纹理 streaming：IFileAccess / AsyncLoader / LoaderWorker / deferTextures / `--async-textures`；454/454 ✅ 2026-11-12
 - [x] **M9.2b mesh/scene streaming + Sponza**：GltfDeferredMesh / AssetDatabase job 队列 / pump 双预算 / AABB / `--gltf`/`--asset-root`/`--stream-assets`/`--skip-textures`/`--trace`；Sponza 405 primitives / 3,747,018 triangles；472/472 ✅ 2026-11-13
-- [ ] **下一步 M9.5** 基础 PBR 契约规划（纹理尺寸/解码、材质 POD、LightPod、shadow）
+- [x] **M9.5 主体**：Cook-Torrance / 四贴图 / LightNode 多光源 / 单方向光 shadow / alpha mask / snapshot v3；ToyCar PBR；Sponza 几何 405 primitives；504/504 ✅ 2026-11-13
+- [ ] **M9.5d-0**：Sponza 4K 纹理 worker 解码 / 1K 缓存 / 室内点光与 shadow 预算
+- [ ] **下一步 M10** 任务系统规划
 - [ ] `yr/asset/asset_uid.h`：`AssetUID`（内容哈希或稳定 ID）+ `path ↔ uid` 映射表（对照 Godot `resource_uid.h`）
 - [ ] `yr/asset/resource.h`：`Resource : RefCounted`（source_path / uid / 加载状态 / 元数据）
 - [ ] `yr/asset/file_access.h`：`IFileAccess` 抽象 + `DiskFileAccess` + **`MemoryFileAccess`（测试用，见原则 P5）**
@@ -562,6 +564,10 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 
 ## M9.5 · 基础 PBR 内容接入（2~3 周）★ 真实画面
 
+> **M9.5 主体完成（2026-11-13）**：Cook-Torrance + 四贴图（BaseColor/Normal/MR/Emissive）+ `LightNode`（Directional/Point ≤8）+ 单张方向光 2048² D32 shadow map（3×3 PCF）+ alpha mask；snapshot v3；ToyCar PBR + 3 光源 + shadow；Sponza 室内相机几何 405 primitives / 3,747,018 triangles。debug-vk 与 ASan 504/504，validation 0。截图 `doc/media/m9.5-toycar.png`、`doc/media/m9.5-sponza.png`，数据见 [`m9-5-pbr-report.md`](m9-5-pbr-report.md)。
+>
+> **遗留**：Sponza 4K 纹理同步解码实测约 98s，M9.5 用 `--skip-textures` 只验收几何；Sponza 开 shadow 后室内点光不足、帧时间明显上升。纹理 worker 解码 / 1K 缓存与室内布光留 M9.5d-0。
+
 **目标**：把 Yo_Renderer 已验证的基础 PBR 内容接到 `RenderSnapshot → RendererBackend` 链路上；不研究新图形特性。
 
 **范围（D21）**：
@@ -575,7 +581,7 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 **验收标准**
 - ToyCar 在 PBR 材质 + 平行光/点光 + 单张阴影下正确显示；validation 0。
 - 截图 / GIF 进 `doc/media/`；`engine/`（除 `render/vulkan/`）零 Vulkan include。
-- 帧时间统计：shadow pass 与 scene pass 分别可见。
+- 帧时间统计：通过 `--no-shadow` 对比总帧时间；shadow pass 内部暂未单独计时。
 
 **降级方案**：先 PBR-min（无 shadow），阴影后补；IBL/skybox/GUI 永久留在 Stretch。
 **学习点**：descriptor set 布局、材质/纹理上传、shadow pass、GPU 资源延迟释放、Snapshot 扩展的契约成本。

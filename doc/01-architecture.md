@@ -637,7 +637,7 @@ std::unique_ptr<RendererBackend> create_null_backend();  // 工厂在各自 targ
 }
 ```
 
-**规划与兑现**：M9.0c 已实现 `uploads` / `releases`，按前帧驻留状态提供资源增量（首帧全量）；`LightPod` / `sort_key` / 多相机仍未实现。双/三缓冲按 D22 推迟到出现真实异步消费者。§7 的解耦方案保持不变。
+**规划与兑现**：M9.0c 已实现 `uploads` / `releases`，按前帧驻留状态提供资源增量（首帧全量）；M9.5 已加入 `LightPod[8]`、`ShadowPod`、四贴图材质与方向光 shadow。`sort_key` / 多相机仍未实现。双/三缓冲按 D22 推迟到出现真实异步消费者。§7 的解耦方案保持不变。
 
 **四条硬性规则**（写进 CI 检查）：
 1. `RenderSnapshot` 里**不允许**出现 `yr::scene::*` / `yr::obj::Object*` 类型 → 只能传 ID 和值。

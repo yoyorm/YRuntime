@@ -20,9 +20,9 @@
 
 **定位一句话（可直接用于简历/自我介绍）**：
 > 独立设计并实现了一个 C++20 游戏运行时（YRuntime）：从零实现句柄/反射/事件/场景树/主循环等模块，
-> 用分层 CMake target + CI 强制依赖方向，Catch2 + ASan 覆盖核心逻辑；当前已完成 M0~M7，
+> 用分层 CMake target + CI 强制依赖方向，Catch2 + ASan 覆盖核心逻辑；当前已完成 M0~M9.5（主体），
 > 跑通 headless scene simulation 与 `游戏状态 → Runtime → RenderSnapshot → Renderer → GPU` 的 Vulkan 画面链路，
-> 并用快照 dump/replay 证明渲染契约自包含；M8~M10（序列化 / 异步资源 / 任务调度）与 M9.5 基础 PBR 按路线图继续推进；
+> 并用快照 dump/replay 证明渲染契约自包含；M9.5 PBR/多光源/阴影已接入，M10（任务调度）按路线图继续推进；
 > 全程以 Godot 4.x 源码为参照系，能说清每个模块"Godot 怎么做 / 我怎么做 / 为什么不同"。
 
 （把 LOC、测试数等占位符在项目后期填成真实数字。**不要写没有证据支撑的形容词**，比如"高性能""工业级"。）
@@ -78,7 +78,7 @@
 | M8 | 手写 `.scn` + save→load→save round-trip + 引用/连接 + headless 加载（M8 完成） | 截图 + 格式规范（写进 `engine/scene/include/yr/scene/scene_format.h` 头注释） | `doc/media/` |
 | M9 | 慢 IO 下异步加载不卡帧（E10）+ AssetHandle→GPU 桥接 | 帧时间曲线图（Python 画） | `benchmarks/README.md` |
 | M9.0c | ToyCar walking skeleton：完整 TRS + MeshInstanceNode + snapshot 上传/释放 + baseColor Blinn-Phong | PNG | doc/media/m9c-toycar.png |
-| M9.5 | 基础 PBR 内容（ToyCar 仓库内 + Sponza 外部压力场景 + 平行光/点光 + 单张阴影，D21/D26） | 截图 / GIF + 资源/并行数据 | `doc/media/` |
+| M9.5 | PBR 主体：四贴图 Cook-Torrance + LightNode 多光源 + 单方向光 shadow + alpha mask；Sponza 几何室内压力场景；4K 纹理 worker 解码待 M9.5d-0 | PNG + 数据报告 | `doc/media/m9.5-toycar.png`、`doc/media/m9.5-sponza.png`、`doc/m9-5-pbr-report.md` |
 | M10 | 并行加速比曲线 + false sharing 实测（E11/E12） | 数据表 + 图 | `benchmarks/README.md` |
 | M11 | `.yrpak` 打包 + 完整文档（覆盖率徽章可选） | README + CI | 根目录 |
 

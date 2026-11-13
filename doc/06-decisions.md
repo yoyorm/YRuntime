@@ -43,6 +43,7 @@
 | D31 | AssetDatabase：强 Ref 缓存 + fixpoint GC + evict 仅限 refcount==1 | **已确认** | M9.1 |
 | D32 | M9.2a：单 LoaderWorker + 主线程 pump + glTF 纹理 defer | **已确认** | M9.2a |
 | D33 | M9.2b：显式 mesh job + 主线程预算安装 + Sponza 外部路径 | **已确认** | M9.2b |
+| D34 | M9.5：四贴图 Cook-Torrance + 多光源 + 单方向光阴影 | **已确认** | M9.5 |
 
 ---
 
@@ -763,6 +764,39 @@ CI 首次运行时 `apt-get install libcatch2-dev` 退出码 100，job 失败。
 **什么情况下改回来**：冷启动 `load_ms` 成为主要瓶颈 → 做 2b-4 异步 scene parse；未来场景单帧 `pump` 超过 10–15ms → 加 `maxMeshJobsPerPump` 或顶点分片；Sponza 纹理要在 M9.5 前先解决尺寸/解码预算。
 
 **复盘**（2026-11-13）：debug-vk 472/472、ASan 472/472、format/deps 通过。Sponza（--skip-textures）sync 405 items / 3,747,018 triangles / validation 0；stream 最终一致，首帧 items=3，第 40 帧 ready。完整数据与原始 CSV 说明见 `doc/m9-2b-streaming-report.md`。
+
+---
+
+## D34 · M9.5：四贴图 Cook-Torrance + 多光源 + 单方向光阴影
+**状态**：已确认 · **里程碑**：M9.5
+
+**背景**：M9.0c 只有 baseColor 纹理 + Blinn-Phong + 一个硬编码方向光；Sponza 的 4K 纹理、normal/MR/emissive、多光源与阴影都未接入，无法作为最终 PBR 画面。
+
+**决策**：
+1. 材质使用 Cook-Torrance（GGX D / Smith-Schlick G / Schlick F）+ metallic-roughness；BaseColor/Normal/MetallicRoughness/Emissive 四贴图。
+2. 色彩空间：BaseColor/Emissive 用 sRGB，Normal/MetallicRoughness 用 linear；Vulkan image/view 按 `TextureColorSpace` 选择 `eR8G8B8A8Srgb` / `eR8G8B8A8Unorm`。
+3. 纹理导入：`maxTextureDimension` 默认 1024，box filter 等比下采样；ToyCar ≤1024 不受影响。解码仍在主线程（worker 只读字节），4K Sponza 的解码成本留给后续。
+4. Snapshot v3：`TextureUpload.colorSpace`；`MaterialUpload` 四贴图 handle + normalScale/emissiveFactor/alphaCutoff/alphaMode；`RenderSnapshot` 增加 `LightPod[8] + lightCount` 与 `ShadowPod`。
+5. 灯光：新增 `scene::LightNode`（Directional/Point，color/intensity/range/direction），demo 手动布光；不解析 `KHR_lights_punctual`（Sponza 资产内 intensity 全为 0），`.scn` 不序列化灯光。
+6. 收集：`RenderExtractSystem` 前序收集 LightNode，最多 8 个，前 8 个保留；不做距离排序/优先级/光源剔除。
+7. Vulkan：set 0 为 624B Frame UBO（camera + 8 lights + shadow）；set 1 为每材质 4 张贴图；push constants 128B（model/baseColor/emissive+normalScale/metallic+roughness+alphaCutoff+alphaMode/reserved）；默认纹理兜底。
+8. 阴影：单张方向光 2048² D32 shadow map，depth-only pass，3×3 PCF；host 用 `Mat4::orthographic` + `lookAt` 计算 viewProj，经 `ShadowPod` 传入；点光不投影；shadow pass 暂不做 alpha mask。
+9. 透明：alpha mask 用 `discard`；`alphaMode=BLEND` 按 opaque 渲染，不做排序/混合；pipeline 保持 cull none。
+10. Sponza：M9.5 只跑几何 + PBR factors（`--skip-textures`）与室内相机；4K 纹理同步加载实测约 98s，纹理 Sponza 留到 worker 解码 / 1K 缓存后再验收。
+
+**备选与否决理由**：
+- *继续 Blinn-Phong，只加贴图*：高光不物理、金属/粗糙度不可信；否决。
+- *IBL/skybox/env map*：D21 明确不做；否决。
+- *解析 KHR_lights_punctual*：Sponza 的 intensity 全为 0，解析后仍需手动布光；本阶段手动更直接。
+- *TANGENT 顶点属性*：Sponza 有、ToyCar 没有；先用 derivative TBN，避免改顶点格式。
+- *worker 解码立即可做*：数据表明 4K 解码是瓶颈，但本阶段先 deferred；后续单独做（D32 预留 fallback）。
+- *alpha blend/排序*：D21 不做；BLEND 按 opaque。
+
+**后果**：+ ToyCar 有完整 PBR/多光源/阴影；+ Sponza 405 primitives 几何 PBR 可跑；+ snapshot v3/dump-replay 完整；− Sponza 带纹理未验收；− shadow pass 使 draw 数翻倍，Sponza 帧时间显著上升；− 无 light culling/mipmap/IBL；− 4K 解码阻塞。
+
+**什么情况下改回来**：Sponza 纹理必须进入最终 demo → 先做 worker 解码或 1K 缓存；shadow 成为帧时间瓶颈 → 降低 map 尺寸/只给 ToyCar；需要资产自带灯光 → 补 `KHR_lights_punctual`；需要透明玻璃 → 设计排序与 blend。
+
+**复盘**（2026-11-13）：debug-vk 504/504、ASan 504/504、format/deps 通过。ToyCar 3 items / 108,936 triangles / validation 0；Sponza `--skip-textures` 405 items / 3,747,018 triangles / validation 0。ToyCar PBR+3 光源+阴影在 Xephyr 下 p50≈29.2ms/p95≈42.5ms；Sponza 室内相机（no-shadow）p50≈43.6–58ms，开阴影约 69.5–107ms（Xephyr 波动）。截图 `doc/media/m9.5-toycar.png`、`doc/media/m9.5-sponza.png`，数据见 `doc/m9-5-pbr-report.md`。
 
 ---
 

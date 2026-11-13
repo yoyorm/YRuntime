@@ -128,6 +128,13 @@
 - **反射**：`classInfo()` 返回 `MeshInstanceNode` 的 `ClassInfo`，继承 `Node`；`register_scene_classes()` 注册该类。
 - **序列化限制**：`.scn` 当前不保存 mesh/material 引用；空资源节点可写，任一资源引用有效时 writer 返回错误。此限制不影响运行时 `RenderSnapshot` 抽取。
 
+## LightNode（`scene::LightNode`）
+
+- **职责**：M9.5 的运行时灯光节点；`LightType{kDirectional,kPoint}` + `color/intensity/range/direction`，方向表示光传播方向（光源 → 场景）。
+- **继承 / 反射**：`classInfo()` 返回 `LightNode` 的 `ClassInfo`，父类为 `Node`；`register_scene_classes()` 注册该类。
+- **收集**：`RenderExtractSystem` 前序收集，最多 8 个；不做距离排序/剔除；灯光不产生 DrawItem。
+- **序列化限制**：`.scn` 不保存 LightNode 参数；M9.5 demo 由代码手动布光。当前不解析 `KHR_lights_punctual`。
+
 ## TransformStore（`scene::TransformStore`）
 
 - **职责**：`TransformData` 的 `SlotMap` 容器；槽分配 / 释放由 `Node` 驱动。
@@ -160,5 +167,5 @@
 - **canonical 顺序**：sub_resource 属性按属性名升序；node 属性在 Node 树版本按 ClassInfo 顺序（基类在前），IR 版本保持存储顺序。`save → load → save` 逐字节相同。
 - **依赖**：`scene → serialize`（`VariantCodec`）与 `asset`（MeshInstanceNode 资源 Ref）；`serialize → object`，不反向依赖 scene/render。
 - **Transform 限制**：运行时 Node 使用完整 TRS；`.scn` 仍只读写 `position`，writer 对非 translation-only Node 返回错误且不产出半份文本。
-- **MeshInstanceNode**：运行时持有 `Ref<Mesh>` / `Ref<Material>`；空节点可写 `.scn`，带任一资源引用时 writer 报错（资源引用序列化留到 M9.5）。
+- **MeshInstanceNode**：运行时持有 `Ref<Mesh>` / `Ref<Material>`；空节点可写 `.scn`，带任一资源引用时 writer 报错（资源引用序列化仍未做）。
 - **范围**：M8a 支持 Node / position / 父子路径；M8b 支持 ext/sub 引用与 connection。场景源格式只做文本。

@@ -18,17 +18,17 @@
 | **M6 最小 Vulkan Bootstrap** | ✅ 已完成 / 收口（2026-10-23）—— M6-1 外壳 + M6-2 Surface / Device / 队列 + M6-3 Swapchain / 清屏上屏 + M6-4 N 帧在飞 + 硬编码三角形 + M6-5 健壮性（resize / 最小化手测、soak） |
 | **M7 Snapshot 驱动画面** | ✅ 已完成 / 收口（2026-10-24）—— 7a/7b/7c/7d/7e：MainLoop 接线、DrawItem/Camera、WASD、dump/replay、帧统计、600s soak、resize、GIF/PNG；双/三缓冲按 D22 推迟 |
 | **M8 序列化** | ✅ 已完成 / 收口（2026-10-31）—— M8a 文本；M8b 引用/连接；M8c headless `--scene` 加载与 1000 节点 benchmark；364 tests |
-| **M9 资源系统** | 🔨 进行中（M9.2b 完成：mesh/texture streaming + Sponza + trace；下一步 M9.5 契约规划） |
-| M9.5 ~ M11 | ⬜ 未开始（M9.5 基础 PBR，D21） |
+| **M9 资源系统** | ✅ 主体完成（M9.2b streaming + M9.5 PBR/多光源/阴影；Sponza 4K 纹理待 M9.5d-0） |
+| **M9.5 ~ M11** | 🔨 M9.5 主体完成；下一步 M9.5d-0 worker 解码 / M10 任务系统 |
 
-**远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend ✅ → M6 最小 Vulkan bootstrap ✅ → M7 Snapshot 驱动画面（首个主要作品节点）✅ → M8 序列化 ✅ → M9 资源系统 → M9.5 基础 PBR 内容（D21）→ M10 任务系统 → M11 工具链打磨。**当前唯一任务：M9.5 契约规划（纹理尺寸/解码、材质 POD、LightPod、shadow）。**
+**远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend ✅ → M6 最小 Vulkan bootstrap ✅ → M7 Snapshot 驱动画面（首个主要作品节点）✅ → M8 序列化 ✅ → M9 资源系统 ✅ → M9.5 基础 PBR 主体 ✅ → M10 任务系统 → M11 工具链打磨。**当前任务：M9.5d-0（Sponza 4K 纹理 worker 解码 / 1K 缓存）或 M10 任务系统规划。**
 
 进度**只在两处维护**：根 `README.md` 的里程碑表（对外）+ `02-roadmap.md` 的 checkbox（对内）。
 别的地方不要重复记录，否则一定会漂移。
 
 ---
 
-## 2. 下一步：M9.5 基础 PBR 契约规划
+## 2. 下一步：M9.5d-0 或 M10
 
 **M9.1 已收口（2026-11-11）**：`AssetDatabase` 强 Ref 缓存 + fixpoint GC + `evict` + `AssetStats`；glTF loader 通过 hooks 复用资源；MainLoop 阶段 12 接 `collectGarbage()`。ToyCar 首次 `resident=12` / `cpu_bytes=22,659,328` B，循环结束 final `resident=0`；debug-vk 与 ASan 410/410，validation 0。决策见 D31。
 
@@ -36,20 +36,28 @@
 
 **M9.2b 已完成（2026-11-13）**：显式 `GltfDeferredMesh` + `shared_ptr<GltfSourceData>` + `AssetDatabase` job 队列 + `pump(maxTextureCompletions, maxMeshVertices)` 预算安装 + `evict/GC/clear` 取消 + Mesh local AABB；`render_demo --gltf/--asset-root/--stream-assets/--skip-textures/--trace`。Sponza 405 primitives / 3,747,018 triangles / 140MB bin；debug-vk 与 ASan 472/472，validation 0。数据见 [`m9-2b-streaming-report.md`](m9-2b-streaming-report.md)，决策见 D33。
 
+**M9.5 主体完成（2026-11-13）**：Cook-Torrance + 四贴图 + `LightNode` 多光源（Directional/Point ≤8）+ 单张方向光 2048² shadow map（3×3 PCF）+ alpha mask；snapshot v3；`render_demo --gltf/--asset-root/--stream-assets/--skip-textures/--trace/--camera/--target/--no-shadow`。ToyCar PBR + 3 光源 + 阴影；Sponza 室内几何 405 primitives。debug-vk 与 ASan 504/504，validation 0。截图 `doc/media/m9.5-toycar.png`、`doc/media/m9.5-sponza.png`，数据见 [`m9-5-pbr-report.md`](m9-5-pbr-report.md)，决策见 D34。
+
 **最终切片（D26）**：ToyCar（仓库内，视觉/PBR）+ Sponza（外部路径，资源/并行压力测试，大资产不进仓库）。M9 顺序：M9.0 walking skeleton（baseColor + Blinn-Phong）→ M9.1 AssetDatabase/GC → M9.2a 协作式异步 + 纹理 streaming → M9.2b mesh/scene streaming + Sponza → M9.5 完整 PBR。每个子系统必须出现在视觉/流式/并行 demo 中，否则删除。
 
 **执行模式（D27）**：coder 负责实现、测试、CMake、文档机械同步；用户 review 契约与关键 diff，不再手写核心。
 
-下一步 **M9.5 基础 PBR 契约规划**：
+下一步二选一：
 
-1. 纹理策略：先定 `maxTextureDimension`（Sponza 4K 不能全量加载）与解码位置（主线程 vs worker）；确认 sRGB/linear 格式。
-2. 材质 POD：`MaterialUpload` 扩展 BaseColor/Normal/MetallicRoughness/Emissive 四贴图 + factors；`TextureUpload` 增加色彩空间。
-3. 光照：`LightNode` / `LightPod`，Directional + Point（≤8），Cook-Torrance；决定是否解析 `KHR_lights_punctual`。
-4. 阴影与 alpha mask：单张平行光 shadow map + PCF；mask 用 `discard`；不做 alpha blend。
-5. demo：ToyCar PBR + Sponza 带纹理运行，validation 0，输出帧时间/内存数据。
-6. 仍不做 IBL/skybox/spot/ImGui；仍不做 `.scn` ExtResource 递归加载与 UID 集中化。
+**A. M9.5d-0（推荐先做）**
+1. worker 纹理解码 + 下采样：`LoaderWorker` 读字节后直接 `decodeRgba8`，completion 回传 RGBA；
+2. in-flight/字节预算，避免 72 张 4K completion 堆积；
+3. 或预生成 1K Sponza 纹理缓存，作为 demo 的快速路径；
+4. Sponza 室内点光调参，决定 shadow 默认开关；
+5. 重新跑带纹理 Sponza，补齐 M9.5 最终画面。
 
-详细计划见 `02-roadmap.md` M9.5。
+**B. 直接进入 M10**
+1. JobSystem + MtQueue；
+2. 把 AssetDatabase IO/解码搬到 worker；
+3. Transform 并行刷新；
+4. 再回头处理 Sponza 纹理与室内光照。
+
+详细计划见 `02-roadmap.md` M9.5 / M10。
 
 ### M7 复盘题（已收口，供面试自测）
 
@@ -142,7 +150,7 @@ AI 已能写实现，瓶颈不再是"会不会写 API"，而是"能不能判断�
 | `00-vision.md` | 怀疑方向、或想砍功能时 |
 | `03-learning-map.md` | 卡住、需要补知识时 |
 | `06-decisions.md` | 要做取舍前，先查有没有已经定过的 |
-| `07-portfolio.md` | M7 已收口，现已修订；下一个视觉节点是 M9.5 |
+| `07-portfolio.md` | M9.5 主体已收口，现已修订；下一个视觉节点是 M10 任务系统 |
 
 > **一次开工实际需要的阅读量 ≈ 30 行。** 如果你发现自己在一次读 500 行文档，停下来 ——
 > 那是在用"准备"代替"动手"。
