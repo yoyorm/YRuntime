@@ -789,6 +789,36 @@ TEST_CASE("main_loop: present forwards the snapshot to the injected backend dete
   }
 }
 
+TEST_CASE("main_loop: extract forwards the configured shadow into the snapshot",
+          "[engine][main_loop][render][shadow]") {
+  yr::scene::SceneTree tree;
+  yr::evt::EventBus bus;
+  MainLoop loop(tree, bus);
+
+  CHECK(loop.shadow().enabled == 0); // 默认 disabled
+
+  yr::render::ShadowPod shadow;
+  shadow.viewProj.m[12] = 1.5F;
+  shadow.bias = 0.003F;
+  shadow.texelSize = 1.0F / 512.0F;
+  shadow.enabled = 1;
+  loop.setShadow(shadow);
+
+  loop.tick(1.0 / 60.0);
+
+  CHECK(loop.shadow().enabled == 1);
+  CHECK(loop.snapshot().shadow.enabled == 1);
+  CHECK(loop.snapshot().shadow.bias == 0.003F);
+  CHECK(loop.snapshot().shadow.texelSize == 1.0F / 512.0F);
+  CHECK(loop.snapshot().shadow.viewProj.m[12] == 1.5F);
+
+  // setShadow 在 tick 之外调用，下一帧仍然同步。
+  loop.setShadow({});
+  loop.tick(1.0 / 60.0);
+  CHECK(loop.shadow().enabled == 0);
+  CHECK(loop.snapshot().shadow.enabled == 0);
+}
+
 TEST_CASE("main_loop: phase 12 collects AssetDatabase garbage after the scene releases resources",
           "[engine][main_loop][asset][gc]") {
   yr::asset::AssetDatabase database("/unused");

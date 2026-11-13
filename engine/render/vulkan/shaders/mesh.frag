@@ -6,13 +6,21 @@ struct Light {
   vec4 colorIntensity;
 };
 
+struct Shadow {
+  mat4 viewProj;
+  vec4 params; // bias, texelSize, enabled, pad
+};
+
 layout(set = 0, binding = 0) uniform Frame {
   mat4 view;
   mat4 proj;
   vec4 eye;
   vec4 lightCount;
   Light lights[8];
+  Shadow shadow;
 } frame;
+
+layout(set = 0, binding = 1) uniform sampler2D shadowMap;
 
 layout(set = 1, binding = 0) uniform sampler2D baseColorTexture;
 layout(set = 1, binding = 1) uniform sampler2D normalTexture;
@@ -50,6 +58,29 @@ float geometrySmith(float NdotV, float NdotL, float roughness) {
 
 vec3 fresnelSchlick(float cosTheta, vec3 F0) {
   return F0 + (vec3(1.0) - F0) * pow(1.0 - cosTheta, 5.0);
+}
+
+// 单张方向光 shadow map + 3x3 PCF；uv 直接取 ndc*0.5+0.5（shadow pass 用正高度视口）。
+float shadowFactor(vec3 worldPos, vec3 N, vec3 L) {
+  if (frame.shadow.params.z < 0.5) {
+    return 1.0;
+  }
+  vec4 clip = frame.shadow.viewProj * vec4(worldPos, 1.0);
+  vec3 ndc = clip.xyz / clip.w;
+  vec2 uv = ndc.xy * 0.5 + 0.5;
+  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || ndc.z < 0.0 || ndc.z > 1.0) {
+    return 1.0;
+  }
+  float bias = max(frame.shadow.params.x * (1.0 - dot(N, L)), 0.0005);
+  vec2 texel = vec2(frame.shadow.params.y);
+  float sum = 0.0;
+  for (int y = -1; y <= 1; ++y) {
+    for (int x = -1; x <= 1; ++x) {
+      float depth = texture(shadowMap, uv + vec2(x, y) * texel).r;
+      sum += (ndc.z - bias > depth) ? 0.0 : 1.0;
+    }
+  }
+  return sum / 9.0;
 }
 
 void main() {
@@ -96,6 +127,7 @@ void main() {
 
     if (light.positionType.w < 0.5) {
       L = normalize(-light.directionRange.xyz);
+      attenuation *= shadowFactor(worldPos, N, L);
     } else {
       vec3 toLight = light.positionType.xyz - worldPos;
       float dist2 = dot(toLight, toLight);

@@ -32,7 +32,8 @@ namespace yr::render::vk {
         .setArrayLayers(1)
         .setSamples(::vk::SampleCountFlagBits::e1)
         .setTiling(::vk::ImageTiling::eOptimal)
-        .setUsage(::vk::ImageUsageFlagBits::eDepthStencilAttachment)
+        // eSampled 供 shadow map 作为纹理采样；主 depth buffer 多一个 usage 无副作用。
+        .setUsage(::vk::ImageUsageFlagBits::eDepthStencilAttachment | ::vk::ImageUsageFlagBits::eSampled)
         .setSharingMode(::vk::SharingMode::eExclusive)
         // Vulkan image creation only permits UNDEFINED/PREINITIALIZED; first use transitions to depth attachment.
         .setInitialLayout(::vk::ImageLayout::eUndefined);

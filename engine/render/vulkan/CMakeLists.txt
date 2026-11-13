@@ -36,7 +36,9 @@ find_program(YR_GLSLC_EXECUTABLE glslc REQUIRED)
 set(YR_VULKAN_SHADER_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders")
 set(YR_VULKAN_SHADER_BINARIES
     "${YR_VULKAN_SHADER_DIR}/mesh.vert.spv"
-    "${YR_VULKAN_SHADER_DIR}/mesh.frag.spv")
+    "${YR_VULKAN_SHADER_DIR}/mesh.frag.spv"
+    "${YR_VULKAN_SHADER_DIR}/shadow.vert.spv"
+    "${YR_VULKAN_SHADER_DIR}/shadow.frag.spv")
 
 add_custom_command(
     OUTPUT "${YR_VULKAN_SHADER_DIR}/mesh.vert.spv"
@@ -54,6 +56,22 @@ add_custom_command(
     DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/mesh.frag"
     COMMENT "编译 Vulkan shader：mesh.frag"
     VERBATIM)
+add_custom_command(
+    OUTPUT "${YR_VULKAN_SHADER_DIR}/shadow.vert.spv"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${YR_VULKAN_SHADER_DIR}"
+    COMMAND "${YR_GLSLC_EXECUTABLE}" -o "${YR_VULKAN_SHADER_DIR}/shadow.vert.spv"
+            "${CMAKE_CURRENT_SOURCE_DIR}/shaders/shadow.vert"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/shadow.vert"
+    COMMENT "编译 Vulkan shader：shadow.vert"
+    VERBATIM)
+add_custom_command(
+    OUTPUT "${YR_VULKAN_SHADER_DIR}/shadow.frag.spv"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${YR_VULKAN_SHADER_DIR}"
+    COMMAND "${YR_GLSLC_EXECUTABLE}" -o "${YR_VULKAN_SHADER_DIR}/shadow.frag.spv"
+            "${CMAKE_CURRENT_SOURCE_DIR}/shaders/shadow.frag"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/shadow.frag"
+    COMMENT "编译 Vulkan shader：shadow.frag"
+    VERBATIM)
 add_custom_target(yr_vulkan_shaders DEPENDS ${YR_VULKAN_SHADER_BINARIES})
 
 add_library(yr_render_vulkan
@@ -68,6 +86,7 @@ add_library(yr_render_vulkan
     src/vk_command_pool.cpp
     src/vk_frame_sync.cpp
     src/vk_mesh_pipeline.cpp
+    src/vk_shadow_pipeline.cpp
     src/vk_depth_buffer.cpp)
 add_library(yr::render_vulkan ALIAS yr_render_vulkan)
 add_dependencies(yr_render_vulkan yr_vulkan_shaders)

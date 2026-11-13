@@ -132,6 +132,7 @@ namespace yr::engine {
   void MainLoop::extractRender() {
     // 阶段 10：取当前帧 0-based 序号并抽取场景与资源增量；frame_index 由本阶段写入。
     snapshot_.frame_index = frameIndex();
+    renderExtract_.setShadow(shadow_);
     renderExtract_.extract(sceneTree_, camera_, snapshot_);
   }
 

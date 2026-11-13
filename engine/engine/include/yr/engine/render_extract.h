@@ -17,7 +17,11 @@ namespace yr::engine {
     void extract(const scene::SceneTree& tree, const render::CameraPod& camera, render::RenderSnapshot& out);
     void reset() noexcept;
 
+    // host 计算的方向光阴影；阶段 10 原样写入快照。默认 disabled。
+    void setShadow(const render::ShadowPod& shadow) noexcept { shadow_ = shadow; }
+
   private:
+    render::ShadowPod shadow_{};
     std::unordered_set<asset::AssetUID> residentMeshes_;
     std::unordered_set<asset::AssetUID> residentMaterials_;
     std::unordered_set<asset::AssetUID> residentTextures_;

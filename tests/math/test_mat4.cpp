@@ -160,6 +160,47 @@ TEST_CASE("mat4: perspective 缩放与 Vulkan 深度区间", "[core][mat4]") {
   CHECK(ndcDepth(-farPlane) == Catch::Approx(1.0F).margin(1e-6F));
 }
 
+TEST_CASE("mat4: orthographic maps view space to Vulkan NDC", "[core][mat4]") {
+  constexpr float left = -2.0F;
+  constexpr float right = 2.0F;
+  constexpr float bottom = -1.0F;
+  constexpr float top = 1.0F;
+  constexpr float nearPlane = 0.1F;
+  constexpr float farPlane = 100.0F;
+  const Mat4 projection = Mat4::orthographic(left, right, bottom, top, nearPlane, farPlane);
+
+  // 正交投影 w 恒为 1，transformPoint 的结果即 NDC。
+  CHECK(projection[15] == 1.0F);
+  CHECK(projection[3] == 0.0F);
+  CHECK(projection[7] == 0.0F);
+  CHECK(projection[11] == 0.0F);
+
+  const Vec3 nearCenter = projection.transformPoint(Vec3{0.0F, 0.0F, -nearPlane});
+  CHECK(nearCenter.x == Catch::Approx(0.0F).margin(1e-6F));
+  CHECK(nearCenter.y == Catch::Approx(0.0F).margin(1e-6F));
+  CHECK(nearCenter.z == Catch::Approx(0.0F).margin(1e-6F));
+
+  const Vec3 farCenter = projection.transformPoint(Vec3{0.0F, 0.0F, -farPlane});
+  CHECK(farCenter.x == Catch::Approx(0.0F).margin(1e-6F));
+  CHECK(farCenter.y == Catch::Approx(0.0F).margin(1e-6F));
+  CHECK(farCenter.z == Catch::Approx(1.0F).margin(1e-6F));
+
+  // 左右 / 上下边界映射到 ±1，与深度无关。
+  CHECK(projection.transformPoint(Vec3{left, 0.0F, -nearPlane}).x == Catch::Approx(-1.0F).margin(1e-6F));
+  CHECK(projection.transformPoint(Vec3{right, 0.0F, -nearPlane}).x == Catch::Approx(1.0F).margin(1e-6F));
+  CHECK(projection.transformPoint(Vec3{0.0F, bottom, -nearPlane}).y == Catch::Approx(-1.0F).margin(1e-6F));
+  CHECK(projection.transformPoint(Vec3{0.0F, top, -nearPlane}).y == Catch::Approx(1.0F).margin(1e-6F));
+
+  // 与 perspective 一致的深度约定：near → 0，far → 1（Vulkan [0,1]）。
+  const Mat4 perspective = Mat4::perspective(1.0F, 16.0F / 9.0F, nearPlane, farPlane);
+  const auto perspectiveDepth = [&perspective](float eyeZ) {
+    const Vec3 clip = perspective.transformPoint(Vec3{0.0F, 0.0F, eyeZ});
+    return clip.z / -eyeZ;
+  };
+  CHECK(perspectiveDepth(-nearPlane) == Catch::Approx(nearCenter.z).margin(1e-6F));
+  CHECK(perspectiveDepth(-farPlane) == Catch::Approx(farCenter.z).margin(1e-6F));
+}
+
 TEST_CASE("mat4: lookAt 从 +Z 看原点等于平移 -Z", "[core][mat4]") {
   const Vec3 eye{0.0F, 0.0F, 4.0F};
   const Mat4 view = Mat4::lookAt(eye, Vec3{0.0F, 0.0F, 0.0F}, Vec3{0.0F, 1.0F, 0.0F});

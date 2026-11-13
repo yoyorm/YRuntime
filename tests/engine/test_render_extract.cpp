@@ -29,6 +29,7 @@ using yr::obj::Ref;
 using yr::render::CameraPod;
 using yr::render::MaterialAlphaMode;
 using yr::render::RenderSnapshot;
+using yr::render::ShadowPod;
 using yr::scene::LightNode;
 using yr::scene::LightType;
 using yr::scene::MeshInstanceNode;
@@ -601,6 +602,40 @@ TEST_CASE("render_extract: keeps the first eight lights in preorder", "[engine][
     CHECK(snapshot.lights[index].position[0] == lights[index]->globalTransform()[12]);
     CHECK(snapshot.lights[index].position[0] == static_cast<float>(index));
   }
+}
+
+TEST_CASE("render_extract: forwards the configured shadow pod into the snapshot", "[engine][render][extract][shadow]") {
+  SceneTree tree;
+  RenderSnapshot snapshot;
+  RenderExtractSystem extractor;
+
+  // 默认不配置时为 disabled。
+  extractor.extract(tree, CameraPod{}, snapshot);
+  CHECK(snapshot.shadow.enabled == 0);
+
+  ShadowPod shadow;
+  for (std::size_t index = 0; index < 16; ++index) {
+    shadow.viewProj.m[index] = static_cast<float>(index) + 0.5F;
+  }
+  shadow.bias = 0.002F;
+  shadow.texelSize = 1.0F / 4096.0F;
+  shadow.enabled = 1;
+
+  extractor.setShadow(shadow);
+  extractor.extract(tree, CameraPod{}, snapshot);
+
+  CHECK(snapshot.shadow.enabled == 1);
+  CHECK(snapshot.shadow.bias == shadow.bias);
+  CHECK(snapshot.shadow.texelSize == shadow.texelSize);
+  for (std::size_t index = 0; index < 16; ++index) {
+    CHECK(snapshot.shadow.viewProj.m[index] == shadow.viewProj.m[index]);
+  }
+
+  // 每次 extract 都重新写入，而不是只在 setShadow 后的首帧生效。
+  snapshot.shadow = {};
+  extractor.extract(tree, CameraPod{}, snapshot);
+  CHECK(snapshot.shadow.enabled == 1);
+  CHECK(snapshot.shadow.viewProj.m[15] == shadow.viewProj.m[15]);
 }
 
 TEST_CASE("render_extract: lights emit no draw items", "[engine][render][extract][light]") {

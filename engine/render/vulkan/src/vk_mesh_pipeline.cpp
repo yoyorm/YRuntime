@@ -52,11 +52,13 @@ namespace yr::render::vk {
     vertexShader_ = createShaderModule(raiiDevice, vertexWords);
     fragmentShader_ = createShaderModule(raiiDevice, fragmentWords);
 
-    const ::vk::DescriptorSetLayoutBinding frameBinding{0, ::vk::DescriptorType::eUniformBuffer, 1,
-                                                        ::vk::ShaderStageFlagBits::eVertex |
-                                                            ::vk::ShaderStageFlagBits::eFragment};
+    const std::array<::vk::DescriptorSetLayoutBinding, 2> frameBindings{{
+        {0, ::vk::DescriptorType::eUniformBuffer, 1,
+         ::vk::ShaderStageFlagBits::eVertex | ::vk::ShaderStageFlagBits::eFragment},
+        {1, ::vk::DescriptorType::eCombinedImageSampler, 1, ::vk::ShaderStageFlagBits::eFragment},
+    }};
     ::vk::DescriptorSetLayoutCreateInfo descriptorLayoutInfo{};
-    descriptorLayoutInfo.setBindings(frameBinding);
+    descriptorLayoutInfo.setBindings(frameBindings);
     descriptorSetLayout_ = ::vk::raii::DescriptorSetLayout(raiiDevice, descriptorLayoutInfo);
 
     const std::array<::vk::DescriptorSetLayoutBinding, 4> textureBindings{{

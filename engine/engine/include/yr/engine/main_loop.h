@@ -90,6 +90,10 @@ namespace yr::engine {
     [[nodiscard]] const render::CameraPod& camera() const noexcept { return camera_; }
     void setCamera(const render::CameraPod& camera) noexcept { camera_ = camera; }
 
+    // host 计算的方向光阴影；阶段 10 原样写入快照。默认 disabled。
+    [[nodiscard]] const render::ShadowPod& shadow() const noexcept { return shadow_; }
+    void setShadow(const render::ShadowPod& shadow) noexcept { shadow_ = shadow; }
+
     // 组合持有：记录本帧各阶段耗时、环形窗口与周期报告。构造后、tick 前可配置报告频率 /
     // CSV 路径 / 静默（setReportInterval(0)）。
     [[nodiscard]] FrameStats& stats() noexcept { return stats_; }
@@ -144,6 +148,7 @@ namespace yr::engine {
     asset::AssetDatabase* assetDatabase_ = nullptr;
     render::RenderSnapshot snapshot_;
     render::CameraPod camera_{};
+    render::ShadowPod shadow_{};
     RenderExtractSystem renderExtract_;
 
     // 帧统计：tick 全程计时 + 每阶段计时，endFrame 汇总入环。

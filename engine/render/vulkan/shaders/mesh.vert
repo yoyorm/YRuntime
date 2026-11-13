@@ -6,12 +6,18 @@ struct Light {
   vec4 colorIntensity;
 };
 
+struct Shadow {
+  mat4 viewProj;
+  vec4 params; // bias, texelSize, enabled, pad
+};
+
 layout(set = 0, binding = 0) uniform Frame {
   mat4 view;
   mat4 proj;
   vec4 eye;
   vec4 lightCount;
   Light lights[8];
+  Shadow shadow;
 } frame;
 
 layout(push_constant) uniform Push {

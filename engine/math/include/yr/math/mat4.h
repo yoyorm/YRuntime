@@ -41,6 +41,25 @@ namespace yr::math {
       return result;
     }
 
+    // 正交投影：右手视图空间，Vulkan 深度 [0,1]；near/far 为正距离。
+    [[nodiscard]] static constexpr Mat4 orthographic(float left, float right, float bottom, float top, float nearPlane,
+                                                     float farPlane) noexcept {
+      Mat4 result;
+      for (float& value : result.m_) {
+        value = 0.0F;
+      }
+      const float rl = right - left;
+      const float tb = top - bottom;
+      result[0] = 2.0F / rl;
+      result[5] = 2.0F / tb;
+      result[10] = 1.0F / (nearPlane - farPlane);
+      result[12] = -(right + left) / rl;
+      result[13] = -(top + bottom) / tb;
+      result[14] = nearPlane / (nearPlane - farPlane);
+      result[15] = 1.0F;
+      return result;
+    }
+
     // 视图矩阵：右手 lookAt，eye 为相机位置。
     [[nodiscard]] static Mat4 lookAt(const Vec3& eye, const Vec3& target, const Vec3& up) noexcept {
       const Vec3 f = (target - eye).normalized();
@@ -116,6 +135,6 @@ namespace yr::math {
     return result;
   }
 
-  // TODO(M?)：inverse、ortho、TRS 合成与分解。
+  // TODO(M?)：inverse、TRS 合成与分解。
 
 } // namespace yr::math

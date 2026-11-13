@@ -196,7 +196,7 @@ namespace yr::engine {
     out.camera = camera;
     out.lightCount = 0;
     out.lights = {};
-    out.shadow = {};
+    out.shadow = shadow_;
     out.items.clear();
     out.uploads.meshes.clear();
     out.uploads.textures.clear();

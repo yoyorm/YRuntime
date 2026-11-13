@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <charconv>
 #include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -464,13 +465,32 @@ namespace {
   }
 
   // 1 方向光 + 2 点光；位置按场景 AABB 半径缩放。
-  void addDemoLights(yr::scene::Node& root, const yr::math::Vec3& center, float radius) {
+  void addDemoLights(yr::scene::Node& root, const yr::math::Vec3& center, float radius,
+                     const yr::math::Vec3& sunDirection) {
     addLight(root, yr::scene::LightType::kDirectional, yr::math::Vec3{1.0F, 0.95F, 0.85F}, 2.0F, 0.0F, center,
-             yr::math::Vec3{0.4F, -0.8F, -0.5F});
+             sunDirection);
     addLight(root, yr::scene::LightType::kPoint, yr::math::Vec3{1.0F, 0.55F, 0.25F}, 8.0F, radius * 4.0F,
              center + yr::math::Vec3{1.2F * radius, 0.8F * radius, 0.6F * radius}, yr::math::Vec3{0.0F, 0.0F, -1.0F});
     addLight(root, yr::scene::LightType::kPoint, yr::math::Vec3{0.3F, 0.5F, 1.0F}, 6.0F, radius * 4.0F,
              center + yr::math::Vec3{-1.2F * radius, 0.6F * radius, -0.8F * radius}, yr::math::Vec3{0.0F, 0.0F, -1.0F});
+  }
+
+  // 围绕 AABB 拟合方向光正交阴影：eye 沿光线反向退开 2r，深度范围覆盖 4r。
+  [[nodiscard]] yr::render::ShadowPod computeShadow(const yr::math::Vec3& center, float radius,
+                                                    const yr::math::Vec3& lightDirection) {
+    const yr::math::Vec3 direction = lightDirection.normalized();
+    const yr::math::Vec3 up =
+        std::abs(direction.y) > 0.99F ? yr::math::Vec3{0.0F, 0.0F, 1.0F} : yr::math::Vec3{0.0F, 1.0F, 0.0F};
+    const yr::math::Vec3 eye = center - direction * (radius * 2.0F);
+    const yr::math::Mat4 view = yr::math::Mat4::lookAt(eye, center, up);
+    const float extent = radius * 1.2F;
+    const yr::math::Mat4 proj = yr::math::Mat4::orthographic(-extent, extent, -extent, extent, 0.01F, radius * 4.0F);
+    yr::render::ShadowPod shadow;
+    shadow.viewProj = toTransform(proj * view);
+    shadow.bias = 0.002F;
+    shadow.texelSize = 1.0F / 2048.0F;
+    shadow.enabled = 1;
+    return shadow;
   }
 
 } // namespace
@@ -574,8 +594,9 @@ int main(int argc, char** argv) {
   }
   const yr::math::Vec3 center = (minimum + maximum) * 0.5F;
   const float radius = std::max((maximum - minimum).length() * 0.5F, 0.001F);
-  // 灯光只用于 extract，不参与 bounds；位置基于场景 AABB。
-  addDemoLights(*tree.root(), center, radius);
+  // 灯光只用于 extract，不参与 bounds；位置基于场景 AABB。阴影与方向光共享同一太阳方向。
+  const yr::math::Vec3 sunDirection = yr::math::Vec3{0.4F, -0.8F, -0.5F}.normalized();
+  addDemoLights(*tree.root(), center, radius, sunDirection);
   tree.refreshTransforms();
   const yr::math::Vec3 eye = center + yr::math::Vec3{1.2F * radius, 0.8F * radius, 1.8F * radius};
 
@@ -594,6 +615,7 @@ int main(int argc, char** argv) {
   loop.setBackend(&backend);      // 阶段 11 调 present
   loop.setAssetDatabase(&assets); // 阶段 12 调 collectGarbage
   loop.setCamera(camera);
+  loop.setShadow(computeShadow(center, radius, sunDirection));
   yr::engine::Clock clock;
 
   // soak 时不刷周期报告，退出时统一打一帧摘要；窗口仍是默认的最近 4096 帧。

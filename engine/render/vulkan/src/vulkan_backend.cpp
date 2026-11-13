@@ -29,6 +29,7 @@
 #include "vk_frame_sync.h"
 #include "vk_instance.h"
 #include "vk_mesh_pipeline.h"
+#include "vk_shadow_pipeline.h"
 #include "vk_surface.h"
 #include "vk_swapchain.h"
 
@@ -39,6 +40,7 @@ namespace yr::render {
     constexpr std::array<float, 4> kClearColor{0.10F, 0.18F, 0.30F, 1.0F};
     constexpr std::uint32_t kFramesInFlight = 2;
     constexpr ::vk::Format kDepthFormat = ::vk::Format::eD32Sfloat;
+    constexpr std::uint32_t kShadowSize = 2048;
 
     struct LightUniform {
       std::array<float, 4> positionType;   // xyz position, w type
@@ -47,14 +49,21 @@ namespace yr::render {
     };
     static_assert(sizeof(LightUniform) == 48);
 
+    struct ShadowUniform {
+      std::array<float, 16> viewProj;
+      std::array<float, 4> params; // bias, texelSize, enabled, pad
+    };
+    static_assert(sizeof(ShadowUniform) == 80);
+
     struct FrameUniforms {
       std::array<float, 16> view;
       std::array<float, 16> proj;
       std::array<float, 4> eye;
       std::array<float, 4> lightCount; // x = count
       std::array<LightUniform, 8> lights;
+      ShadowUniform shadow;
     };
-    static_assert(sizeof(FrameUniforms) == 544);
+    static_assert(sizeof(FrameUniforms) == 624);
     static_assert(sizeof(TransformPod) == sizeof(math::Mat4));
 
     [[nodiscard]] math::Mat4 toMat4(const TransformPod& transform) noexcept {
@@ -115,6 +124,10 @@ namespace yr::render {
     std::optional<vk::Swapchain> swapchain;
     std::vector<vk::DepthBuffer> depthBuffers;
     std::optional<vk::MeshPipeline> meshPipeline;
+    std::optional<vk::ShadowPipeline> shadowPipeline;
+    // 固定 2048^2 的方向光阴影 map；只随 device 生命周期重建。
+    std::optional<vk::DepthBuffer> shadowMap;
+    std::optional<::vk::raii::Sampler> shadowSampler;
     std::optional<vk::CommandPool> commandPool;
     std::optional<vk::FrameSync> frameSync;
     std::optional<vk::CommandPool> uploadCommandPool;
@@ -184,14 +197,51 @@ namespace yr::render {
 
       for (std::uint32_t slot = 0; slot < kFramesInFlight; ++slot) {
         const ::vk::DescriptorBufferInfo bufferInfo{*frameBuffers[slot].buffer, 0, sizeof(FrameUniforms)};
-        ::vk::WriteDescriptorSet write{};
-        write.setDstSet(*descriptorSets[slot])
+        ::vk::WriteDescriptorSet frameWrite{};
+        frameWrite.setDstSet(*descriptorSets[slot])
             .setDstBinding(0)
             .setDescriptorType(::vk::DescriptorType::eUniformBuffer)
             .setBufferInfo(bufferInfo);
-        const std::array<::vk::WriteDescriptorSet, 1> writes{write};
+        const ::vk::DescriptorImageInfo shadowInfo{**shadowSampler, shadowMap->imageView(),
+                                                   ::vk::ImageLayout::eShaderReadOnlyOptimal};
+        ::vk::WriteDescriptorSet shadowWrite{};
+        shadowWrite.setDstSet(*descriptorSets[slot])
+            .setDstBinding(1)
+            .setDescriptorType(::vk::DescriptorType::eCombinedImageSampler)
+            .setImageInfo(shadowInfo);
+        const std::array<::vk::WriteDescriptorSet, 2> writes{frameWrite, shadowWrite};
         raiiDevice.updateDescriptorSets(writes, {});
       }
+    }
+
+    // 一次性把 shadow map 从 UNDEFINED 转到 shaderRead；之后只在 shadow pass 与 shaderRead 之间往返。
+    void transitionShadowToShaderRead() {
+      const ::vk::CommandBuffer cmd = commandPool->commandBuffer(0);
+      cmd.reset();
+      ::vk::CommandBufferBeginInfo beginInfo{};
+      beginInfo.setFlags(::vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
+      cmd.begin(beginInfo);
+      ::vk::ImageMemoryBarrier2 barrier{};
+      barrier.setSrcStageMask(::vk::PipelineStageFlagBits2::eNone)
+          .setSrcAccessMask(::vk::AccessFlagBits2::eNone)
+          .setDstStageMask(::vk::PipelineStageFlagBits2::eFragmentShader)
+          .setDstAccessMask(::vk::AccessFlagBits2::eShaderSampledRead)
+          .setOldLayout(::vk::ImageLayout::eUndefined)
+          .setNewLayout(::vk::ImageLayout::eShaderReadOnlyOptimal)
+          .setSrcQueueFamilyIndex(::vk::QueueFamilyIgnored)
+          .setDstQueueFamilyIndex(::vk::QueueFamilyIgnored)
+          .setImage(shadowMap->image())
+          .setSubresourceRange(::vk::ImageSubresourceRange{::vk::ImageAspectFlagBits::eDepth, 0, 1, 0, 1});
+      ::vk::DependencyInfo dependency{};
+      dependency.setImageMemoryBarriers(barrier);
+      cmd.pipelineBarrier2(dependency);
+      cmd.end();
+      ::vk::CommandBufferSubmitInfo commandBufferInfo{};
+      commandBufferInfo.setCommandBuffer(cmd);
+      ::vk::SubmitInfo2 submitInfo{};
+      submitInfo.setCommandBufferInfos(commandBufferInfo);
+      device->graphicsQueue().submit2(submitInfo, nullptr);
+      device->graphicsQueue().waitIdle();
     }
 
     [[nodiscard]] bool validTextureData(const TextureUpload& upload) const {
@@ -403,6 +453,9 @@ namespace yr::render {
         target.directionRange = {source.direction[0], source.direction[1], source.direction[2], source.range};
         target.colorIntensity = {source.color[0], source.color[1], source.color[2], source.intensity};
       }
+      uniforms.shadow.viewProj = toMat4(snapshot.shadow.viewProj).m_;
+      uniforms.shadow.params = {snapshot.shadow.bias, snapshot.shadow.texelSize,
+                                snapshot.shadow.enabled != 0 ? 1.0F : 0.0F, 0.0F};
       std::memcpy(frameBuffers[slot].mapped, &uniforms, sizeof(uniforms));
     }
 
@@ -555,6 +608,8 @@ namespace yr::render {
       descriptorSets.clear();
       descriptorPool.reset();
       sampler.reset();
+      shadowSampler.reset();
+      shadowMap.reset();
       uploadCommandPool.reset();
       for (FrameBuffer& frame : frameBuffers) {
         if (frame.mapped != nullptr && device.has_value()) {
@@ -564,6 +619,7 @@ namespace yr::render {
       }
       frameSync.reset();
       commandPool.reset();
+      shadowPipeline.reset();
       meshPipeline.reset();
       depthBuffers.clear();
       swapchain.reset();
@@ -650,6 +706,81 @@ namespace yr::render {
       const ::vk::CommandBuffer cmd = commandPool->commandBuffer(slot);
       cmd.reset();
       cmd.begin(::vk::CommandBufferBeginInfo{});
+
+      // 阴影 pass 先于主 pass：只写 shadow map，不参与 BackendStats。
+      // 限制：depth-only，不做材质采样/alpha mask（当前 Sponza/ToyCar 无 MASK 材质），只支持方向光。
+      if (snapshot.shadow.enabled != 0 && shadowMap.has_value() && shadowPipeline.has_value()) {
+        const ::vk::ImageSubresourceRange shadowRange{::vk::ImageAspectFlagBits::eDepth, 0, 1, 0, 1};
+        ::vk::ImageMemoryBarrier2 toShadowDepth{};
+        toShadowDepth.setSrcStageMask(::vk::PipelineStageFlagBits2::eFragmentShader)
+            .setSrcAccessMask(::vk::AccessFlagBits2::eShaderSampledRead)
+            .setDstStageMask(::vk::PipelineStageFlagBits2::eEarlyFragmentTests |
+                             ::vk::PipelineStageFlagBits2::eLateFragmentTests)
+            .setDstAccessMask(::vk::AccessFlagBits2::eDepthStencilAttachmentRead |
+                              ::vk::AccessFlagBits2::eDepthStencilAttachmentWrite)
+            .setOldLayout(::vk::ImageLayout::eShaderReadOnlyOptimal)
+            .setNewLayout(::vk::ImageLayout::eDepthAttachmentOptimal)
+            .setSrcQueueFamilyIndex(::vk::QueueFamilyIgnored)
+            .setDstQueueFamilyIndex(::vk::QueueFamilyIgnored)
+            .setImage(shadowMap->image())
+            .setSubresourceRange(shadowRange);
+        ::vk::DependencyInfo shadowDependency{};
+        shadowDependency.setImageMemoryBarriers(toShadowDepth);
+        cmd.pipelineBarrier2(shadowDependency);
+
+        ::vk::RenderingAttachmentInfo shadowDepthAttachment{};
+        shadowDepthAttachment.setImageView(shadowMap->imageView())
+            .setImageLayout(::vk::ImageLayout::eDepthAttachmentOptimal)
+            .setLoadOp(::vk::AttachmentLoadOp::eClear)
+            .setStoreOp(::vk::AttachmentStoreOp::eStore)
+            .setClearValue(::vk::ClearValue{::vk::ClearDepthStencilValue{1.0F, 0}});
+        ::vk::RenderingInfo shadowRenderingInfo{};
+        shadowRenderingInfo.setRenderArea(::vk::Rect2D{{0, 0}, {kShadowSize, kShadowSize}})
+            .setLayerCount(1)
+            .setColorAttachmentCount(0)
+            .setPDepthAttachment(&shadowDepthAttachment);
+        cmd.beginRendering(shadowRenderingInfo);
+        cmd.bindPipeline(::vk::PipelineBindPoint::eGraphics, shadowPipeline->handle());
+        // 正高度视口：与 shader 里 ndc.xy * 0.5 + 0.5 的 uv 约定一致。
+        cmd.setViewport(0, ::vk::Viewport{0.0F, 0.0F, static_cast<float>(kShadowSize), static_cast<float>(kShadowSize),
+                                          0.0F, 1.0F});
+        cmd.setScissor(0, ::vk::Rect2D{{0, 0}, {kShadowSize, kShadowSize}});
+        for (const DrawItem& item : snapshot.items) {
+          const auto meshIt = meshes.find(item.mesh.value);
+          if (meshIt == meshes.end()) {
+            continue;
+          }
+          const GpuMesh& mesh = meshIt->second;
+          const std::array<::vk::Buffer, 1> vertexBuffers{*mesh.buffer};
+          const std::array<::vk::DeviceSize, 1> offsets{0};
+          cmd.bindVertexBuffers(0, vertexBuffers, offsets);
+          cmd.bindIndexBuffer(*mesh.buffer, mesh.vertexBytes, ::vk::IndexType::eUint32);
+          vk::ShadowPushConstants push{};
+          push.model = toMat4(item.world).m_;
+          push.lightViewProj = toMat4(snapshot.shadow.viewProj).m_;
+          cmd.pushConstants<vk::ShadowPushConstants>(shadowPipeline->layout(), ::vk::ShaderStageFlagBits::eVertex, 0,
+                                                     push);
+          cmd.drawIndexed(mesh.indexCount, 1, 0, 0, 0);
+        }
+        cmd.endRendering();
+
+        ::vk::ImageMemoryBarrier2 toShaderRead{};
+        toShaderRead
+            .setSrcStageMask(::vk::PipelineStageFlagBits2::eEarlyFragmentTests |
+                             ::vk::PipelineStageFlagBits2::eLateFragmentTests)
+            .setSrcAccessMask(::vk::AccessFlagBits2::eDepthStencilAttachmentRead |
+                              ::vk::AccessFlagBits2::eDepthStencilAttachmentWrite)
+            .setDstStageMask(::vk::PipelineStageFlagBits2::eFragmentShader)
+            .setDstAccessMask(::vk::AccessFlagBits2::eShaderSampledRead)
+            .setOldLayout(::vk::ImageLayout::eDepthAttachmentOptimal)
+            .setNewLayout(::vk::ImageLayout::eShaderReadOnlyOptimal)
+            .setSrcQueueFamilyIndex(::vk::QueueFamilyIgnored)
+            .setDstQueueFamilyIndex(::vk::QueueFamilyIgnored)
+            .setImage(shadowMap->image())
+            .setSubresourceRange(shadowRange);
+        shadowDependency.setImageMemoryBarriers(toShaderRead);
+        cmd.pipelineBarrier2(shadowDependency);
+      }
 
       const ::vk::ImageSubresourceRange colorRange{::vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
       ::vk::ImageMemoryBarrier2 toColorAttachment{};
@@ -808,6 +939,18 @@ namespace yr::render {
       impl_->swapchain.emplace(*impl_->device, *impl_->surface, *impl_->window);
       impl_->createDepthBuffers();
       impl_->meshPipeline.emplace(*impl_->device, impl_->swapchain->format(), kDepthFormat);
+      impl_->shadowPipeline.emplace(*impl_->device, kDepthFormat);
+      impl_->shadowMap.emplace(*impl_->device, ::vk::Extent2D{kShadowSize, kShadowSize}, kDepthFormat);
+      ::vk::SamplerCreateInfo shadowSamplerInfo{};
+      shadowSamplerInfo.setMagFilter(::vk::Filter::eNearest)
+          .setMinFilter(::vk::Filter::eNearest)
+          .setMipmapMode(::vk::SamplerMipmapMode::eNearest)
+          .setAddressModeU(::vk::SamplerAddressMode::eClampToEdge)
+          .setAddressModeV(::vk::SamplerAddressMode::eClampToEdge)
+          .setAddressModeW(::vk::SamplerAddressMode::eClampToEdge)
+          .setMinLod(0.0F)
+          .setMaxLod(0.0F);
+      impl_->shadowSampler.emplace(impl_->device->raiiDevice(), shadowSamplerInfo);
       impl_->commandPool.emplace(*impl_->device, kFramesInFlight);
       impl_->frameSync.emplace(*impl_->device, kFramesInFlight, impl_->swapchain->imageCount());
       ::vk::SamplerCreateInfo samplerInfo{};
@@ -823,6 +966,7 @@ namespace yr::render {
       impl_->uploadCommandPool.emplace(*impl_->device, 1);
       impl_->createFrameResources();
       impl_->createDefaultTextures();
+      impl_->transitionShadowToShaderRead();
     } catch (const std::exception& error) {
       YR_LOG_ERROR("render.vk.backend", std::string("初始化失败：") + error.what());
       impl_->lastValidationErrors = 0;
