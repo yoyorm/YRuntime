@@ -89,6 +89,17 @@ namespace {
     return std::string(buffer);
   }
 
+  // 相机 / bounds 日志固定三位小数，便于调 Sponza 相机时读数。
+  [[nodiscard]] std::string formatFloat(float value) {
+    char buffer[32] = {};
+    std::snprintf(buffer, sizeof(buffer), "%.3f", static_cast<double>(value));
+    return std::string(buffer);
+  }
+
+  [[nodiscard]] std::string formatVec3(const yr::math::Vec3& value) {
+    return formatFloat(value.x) + ", " + formatFloat(value.y) + ", " + formatFloat(value.z);
+  }
+
   // Linux 下 VmRSS 单位为 kB；其他平台或读取失败返回 0。
   [[nodiscard]] std::uint64_t readRssKb() {
 #if defined(__linux__)
@@ -213,8 +224,38 @@ namespace {
     bool asyncTextures = false;
     bool streamAssets = false;
     bool skipTextures = false;
+    bool hasCamera = false;
+    bool hasTarget = false;
+    yr::math::Vec3 cameraEye{};
+    yr::math::Vec3 cameraTarget{};
+    bool noShadow = false;
     bool help = false;
   };
+
+  // 只接受 "x,y,z"：空段和多余字符都算失败，错误统一走 usage。
+  [[nodiscard]] bool parseVec3(std::string_view text, yr::math::Vec3& out) {
+    float values[3] = {};
+    const char* cursor = text.data();
+    const char* const end = text.data() + text.size();
+    for (int index = 0; index < 3; ++index) {
+      if (index != 0) {
+        if (cursor == end || *cursor != ',') {
+          return false;
+        }
+        ++cursor;
+      }
+      const auto result = std::from_chars(cursor, end, values[index]);
+      if (result.ec != std::errc{} || result.ptr == cursor) {
+        return false;
+      }
+      cursor = result.ptr;
+    }
+    if (cursor != end) {
+      return false;
+    }
+    out = yr::math::Vec3{values[0], values[1], values[2]};
+    return true;
+  }
 
   [[nodiscard]] yr::render::TransformPod toTransform(const yr::math::Mat4& matrix) noexcept {
     yr::render::TransformPod pod;
@@ -228,12 +269,15 @@ namespace {
     std::fprintf(stream,
                  "usage: %s [--frames N] [--drop-at N] [--dump-snapshot PATH] [--replay-snapshot PATH]\n"
                  "          [--gltf RES_PATH] [--asset-root PATH] [--stream-assets] [--skip-textures]\n"
-                 "          [--async-textures] [--trace PATH]\n"
+                 "          [--async-textures] [--trace PATH] [--camera X,Y,Z] [--target X,Y,Z] [--no-shadow]\n"
                  "  --gltf RES_PATH          glTF scene to load (default res://models/ToyCar/ToyCar.gltf)\n"
                  "  --asset-root PATH        filesystem root for res:// (default YR_ASSET_ROOT)\n"
                  "  --stream-assets          defer both meshes and textures\n"
                  "  --skip-textures          create no textures (geometry stress test)\n"
                  "  --async-textures         stream glTF textures through AssetDatabase/LoaderWorker\n"
+                 "  --camera X,Y,Z           explicit camera eye, overrides the scene AABB camera\n"
+                 "  --target X,Y,Z           explicit look-at target (default scene AABB center)\n"
+                 "  --no-shadow              disable the directional shadow map (Sponza perf runs)\n"
                  "  --trace PATH             write a per-frame CSV trace\n"
                  "  --dump-snapshot PATH     dump the first presented RenderSnapshot\n"
                  "  --drop-at N              queue the first MeshInstanceNode for deletion after tick N\n"
@@ -293,12 +337,24 @@ namespace {
           return false;
         }
         options.tracePath = argv[++i];
+      } else if (arg == "--camera") {
+        if (i + 1 >= argc || !parseVec3(argv[++i], options.cameraEye)) {
+          return false;
+        }
+        options.hasCamera = true;
+      } else if (arg == "--target") {
+        if (i + 1 >= argc || !parseVec3(argv[++i], options.cameraTarget)) {
+          return false;
+        }
+        options.hasTarget = true;
       } else if (arg == "--stream-assets") {
         options.streamAssets = true; // 幂等：重复出现不改变结果
       } else if (arg == "--skip-textures") {
         options.skipTextures = true; // 幂等：重复出现不改变结果
       } else if (arg == "--async-textures") {
         options.asyncTextures = true; // 幂等：重复出现不改变结果
+      } else if (arg == "--no-shadow") {
+        options.noShadow = true; // 幂等：重复出现不改变结果
       } else if (arg == "--help" || arg == "-h") {
         options.help = true;
       } else {
@@ -594,11 +650,23 @@ int main(int argc, char** argv) {
   }
   const yr::math::Vec3 center = (minimum + maximum) * 0.5F;
   const float radius = std::max((maximum - minimum).length() * 0.5F, 0.001F);
+  YR_LOG_INFO("render_demo", "scene_bounds center=(" + formatVec3(center) + ") radius=" + formatFloat(radius));
   // 灯光只用于 extract，不参与 bounds；位置基于场景 AABB。阴影与方向光共享同一太阳方向。
   const yr::math::Vec3 sunDirection = yr::math::Vec3{0.4F, -0.8F, -0.5F}.normalized();
   addDemoLights(*tree.root(), center, radius, sunDirection);
   tree.refreshTransforms();
-  const yr::math::Vec3 eye = center + yr::math::Vec3{1.2F * radius, 0.8F * radius, 1.8F * radius};
+  const yr::math::Vec3 autoEye = center + yr::math::Vec3{1.2F * radius, 0.8F * radius, 1.8F * radius};
+  const yr::math::Vec3 eye = options.hasCamera ? options.cameraEye : autoEye;
+  yr::math::Vec3 target = options.hasTarget ? options.cameraTarget : center;
+  // lookAt 依赖非零方向；显式参数重合时退回中心，仍重合再给一个固定朝向。
+  if ((target - eye).length() < 1e-6F) {
+    YR_LOG_ERROR("render_demo", "camera eye 与 target 重合，target 回退到场景中心");
+    target = center;
+    if ((target - eye).length() < 1e-6F) {
+      target = eye + yr::math::Vec3{0.0F, 0.0F, -1.0F};
+    }
+  }
+  YR_LOG_INFO("render_demo", "camera eye=(" + formatVec3(eye) + ") target=(" + formatVec3(target) + ")");
 
   // 相机由场景世界空间 AABB 定位，MainLoop 只转交。
   constexpr float kFovYRadians = 60.0F * std::numbers::pi_v<float> / 180.0F;
@@ -608,14 +676,17 @@ int main(int argc, char** argv) {
   camera.eye[2] = eye.z;
   camera.proj = toTransform(
       yr::math::Mat4::perspective(kFovYRadians, 1280.0F / 720.0F, std::max(0.001F, radius * 0.01F), radius * 100.0F));
-  camera.view = toTransform(yr::math::Mat4::lookAt(eye, center, yr::math::Vec3{0.0F, 1.0F, 0.0F}));
+  camera.view = toTransform(yr::math::Mat4::lookAt(eye, target, yr::math::Vec3{0.0F, 1.0F, 0.0F}));
 
   yr::evt::EventBus events;
   DemoLoop loop(tree, events, backend, *movable, options.dumpSnapshot);
   loop.setBackend(&backend);      // 阶段 11 调 present
   loop.setAssetDatabase(&assets); // 阶段 12 调 collectGarbage
   loop.setCamera(camera);
-  loop.setShadow(computeShadow(center, radius, sunDirection));
+  // 不传 shadow 时 MainLoop 默认 disabled；--no-shadow 让 Sponza 性能测试跳过阴影。
+  if (!options.noShadow) {
+    loop.setShadow(computeShadow(center, radius, sunDirection));
+  }
   yr::engine::Clock clock;
 
   // soak 时不刷周期报告，退出时统一打一帧摘要；窗口仍是默认的最近 4096 帧。
