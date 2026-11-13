@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -10,6 +12,8 @@
 #include <yr/object/ref.h>
 
 namespace yr::asset {
+
+  struct GltfSourceData;
 
   struct GltfPrimitive {
     obj::Ref<Mesh> mesh;
@@ -34,8 +38,19 @@ namespace yr::asset {
     std::string resPath;
   };
 
+  // 延迟构建的 mesh 任务。source 显式持有解析结果，保证 model 活到构建时。
+  struct GltfDeferredMesh {
+    AssetUID uid{};
+    std::uint32_t vertexCount = 0;
+    std::shared_ptr<const GltfSourceData> source;
+    std::uint32_t meshIndex = 0;
+    std::uint32_t primitiveIndex = 0;
+  };
+
   struct GltfLoadOptions {
     bool deferTextures = false;
+    bool deferMeshes = false;
+    bool skipTextures = false;
   };
 
   struct GltfLoadResult {
@@ -44,6 +59,7 @@ namespace yr::asset {
     std::vector<std::string> warnings;
     GltfScene scene;
     std::vector<GltfTextureRequest> pendingTextures;
+    std::vector<GltfDeferredMesh> pendingMeshes;
 
     explicit operator bool() const noexcept { return ok; }
   };

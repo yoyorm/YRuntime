@@ -19,6 +19,12 @@
 
 namespace yr::asset {
 
+  // 仅在本 TU 定义；公共头只暴露前置声明与 shared_ptr，避免泄漏 tinygltf 类型。
+  struct GltfSourceData {
+    tinygltf3::Model model;
+    std::string resPath;
+  };
+
   namespace {
 
     std::string_view viewOf(const tg3_str& text) noexcept {
@@ -158,6 +164,18 @@ namespace yr::asset {
       return value;
     }
 
+    struct MeshPlan {
+      std::uint32_t vertexCount = 0;
+      std::uint32_t indexCount = 0;
+      AccessorView positions;
+      AccessorView normals;
+      AccessorView uvs;
+      AccessorView indices;
+      bool hasBounds = false;
+      math::Vec3 boundsMin{};
+      math::Vec3 boundsMax{};
+    };
+
     [[nodiscard]] std::int32_t findAttribute(const tg3_primitive& primitive, std::string_view name) {
       for (std::uint32_t index = 0; index < primitive.attributes_count; ++index) {
         const tg3_str_int_pair& attribute = primitive.attributes[index];
@@ -166,6 +184,162 @@ namespace yr::asset {
         }
       }
       return -1;
+    }
+
+    [[nodiscard]] bool resolveMeshPlan(const tg3_model& model, std::int32_t meshIndex, std::uint32_t primitiveIndex,
+                                       MeshPlan& plan, std::string& error) {
+      if (meshIndex < 0 || static_cast<std::uint32_t>(meshIndex) >= model.meshes_count) {
+        error = "mesh 索引越界";
+        return false;
+      }
+      const tg3_mesh& mesh = model.meshes[meshIndex];
+      if (primitiveIndex >= mesh.primitives_count) {
+        error = "primitive 索引越界";
+        return false;
+      }
+
+      const tg3_primitive& primitive = mesh.primitives[primitiveIndex];
+      if (primitive.mode != -1 && primitive.mode != TG3_MODE_TRIANGLES) {
+        error = "不支持的 primitive.mode " + std::to_string(primitive.mode);
+        return false;
+      }
+
+      const std::int32_t positionIndex = findAttribute(primitive, "POSITION");
+      if (positionIndex < 0) {
+        error = "缺少 POSITION";
+        return false;
+      }
+
+      std::string accessorError;
+      if (!resolveAccessor(model, positionIndex, plan.positions, accessorError)) {
+        error = "POSITION: " + accessorError;
+        return false;
+      }
+      if (plan.positions.componentType != TG3_COMPONENT_TYPE_FLOAT || plan.positions.componentCount != 3) {
+        error = "POSITION 必须是 FLOAT VEC3";
+        return false;
+      }
+      if (plan.positions.count == 0) {
+        error = "POSITION 为空";
+        return false;
+      }
+      if (plan.positions.count > std::numeric_limits<std::uint32_t>::max()) {
+        error = "POSITION 顶点数超过 u32";
+        return false;
+      }
+
+      if (const std::int32_t normalIndex = findAttribute(primitive, "NORMAL"); normalIndex >= 0) {
+        if (!resolveAccessor(model, normalIndex, plan.normals, accessorError)) {
+          error = "NORMAL: " + accessorError;
+          return false;
+        }
+        if (plan.normals.componentType != TG3_COMPONENT_TYPE_FLOAT || plan.normals.componentCount != 3 ||
+            plan.normals.count != plan.positions.count) {
+          error = "NORMAL 必须是同顶点数的 FLOAT VEC3";
+          return false;
+        }
+      }
+
+      if (const std::int32_t uvIndex = findAttribute(primitive, "TEXCOORD_0"); uvIndex >= 0) {
+        if (!resolveAccessor(model, uvIndex, plan.uvs, accessorError)) {
+          error = "TEXCOORD_0: " + accessorError;
+          return false;
+        }
+        if (plan.uvs.componentType != TG3_COMPONENT_TYPE_FLOAT || plan.uvs.componentCount != 2 ||
+            plan.uvs.count != plan.positions.count) {
+          error = "TEXCOORD_0 必须是同顶点数的 FLOAT VEC2";
+          return false;
+        }
+      }
+
+      if (primitive.indices >= 0) {
+        if (!resolveAccessor(model, primitive.indices, plan.indices, accessorError)) {
+          error = "indices: " + accessorError;
+          return false;
+        }
+        if (plan.indices.componentCount != 1 || (plan.indices.componentType != TG3_COMPONENT_TYPE_UNSIGNED_BYTE &&
+                                                 plan.indices.componentType != TG3_COMPONENT_TYPE_UNSIGNED_SHORT &&
+                                                 plan.indices.componentType != TG3_COMPONENT_TYPE_UNSIGNED_INT)) {
+          error = "indices 必须是 u8/u16/u32 SCALAR";
+          return false;
+        }
+      }
+
+      if (plan.indices.valid() && plan.indices.count > std::numeric_limits<std::uint32_t>::max()) {
+        error = "indices 数量超过 u32";
+        return false;
+      }
+
+      plan.vertexCount = static_cast<std::uint32_t>(plan.positions.count);
+      plan.indexCount = plan.indices.valid() ? static_cast<std::uint32_t>(plan.indices.count) : plan.vertexCount;
+
+      const tg3_accessor& positionAccessor = model.accessors[positionIndex];
+      if (positionAccessor.min_values != nullptr && positionAccessor.max_values != nullptr &&
+          positionAccessor.min_values_count >= 3 && positionAccessor.max_values_count >= 3) {
+        plan.boundsMin = math::Vec3{static_cast<float>(positionAccessor.min_values[0]),
+                                    static_cast<float>(positionAccessor.min_values[1]),
+                                    static_cast<float>(positionAccessor.min_values[2])};
+        plan.boundsMax = math::Vec3{static_cast<float>(positionAccessor.max_values[0]),
+                                    static_cast<float>(positionAccessor.max_values[1]),
+                                    static_cast<float>(positionAccessor.max_values[2])};
+      } else {
+        float minComponents[3] = {readFloat(plan.positions, 0, 0), readFloat(plan.positions, 0, 1),
+                                  readFloat(plan.positions, 0, 2)};
+        float maxComponents[3] = {minComponents[0], minComponents[1], minComponents[2]};
+        for (std::uint64_t index = 1; index < plan.positions.count; ++index) {
+          for (std::uint32_t component = 0; component < 3; ++component) {
+            const float value = readFloat(plan.positions, index, component);
+            minComponents[component] = std::min(minComponents[component], value);
+            maxComponents[component] = std::max(maxComponents[component], value);
+          }
+        }
+        plan.boundsMin = math::Vec3{minComponents[0], minComponents[1], minComponents[2]};
+        plan.boundsMax = math::Vec3{maxComponents[0], maxComponents[1], maxComponents[2]};
+      }
+      plan.hasBounds = true;
+      return true;
+    }
+
+    [[nodiscard]] bool fillMeshPayload(const MeshPlan& plan, Mesh& out, std::string& error) {
+      if (!plan.positions.valid() || plan.vertexCount != plan.positions.count) {
+        error = "mesh plan 顶点数据无效";
+        return false;
+      }
+
+      out.vertices.clear();
+      out.vertices.resize(static_cast<std::size_t>(plan.vertexCount));
+      for (std::size_t index = 0; index < out.vertices.size(); ++index) {
+        MeshVertex vertex;
+        vertex.position = math::Vec3{readFloat(plan.positions, index, 0), readFloat(plan.positions, index, 1),
+                                     readFloat(plan.positions, index, 2)};
+        if (plan.normals.valid()) {
+          vertex.normal = math::Vec3{readFloat(plan.normals, index, 0), readFloat(plan.normals, index, 1),
+                                     readFloat(plan.normals, index, 2)};
+        }
+        if (plan.uvs.valid()) {
+          vertex.u = readFloat(plan.uvs, index, 0);
+          vertex.v = readFloat(plan.uvs, index, 1);
+        }
+        out.vertices[index] = vertex;
+      }
+
+      out.indices.clear();
+      if (plan.indices.valid()) {
+        out.indices.resize(static_cast<std::size_t>(plan.indexCount));
+        for (std::size_t index = 0; index < out.indices.size(); ++index) {
+          out.indices[index] = readIndex(plan.indices, index);
+        }
+      } else {
+        out.indices.resize(static_cast<std::size_t>(plan.vertexCount));
+        for (std::size_t index = 0; index < out.indices.size(); ++index) {
+          out.indices[index] = static_cast<std::uint32_t>(index);
+        }
+      }
+
+      out.boundsMin = plan.boundsMin;
+      out.boundsMax = plan.boundsMax;
+      out.hasBounds = plan.hasBounds;
+      return true;
     }
 
     [[nodiscard]] std::string formatErrors(const tinygltf3::ErrorStack& errors) {
@@ -240,7 +414,11 @@ namespace yr::asset {
       std::vector<std::string>& warnings;
       const GltfResourceHooks* hooks = nullptr;
       bool deferTextures = false;
+      bool deferMeshes = false;
+      bool skipTextures = false;
+      std::shared_ptr<const GltfSourceData> source;
       std::vector<GltfTextureRequest>* pendingTextures = nullptr;
+      std::vector<GltfDeferredMesh>* pendingMeshes = nullptr;
       bool storeFailed = false;
       std::unordered_map<std::int32_t, obj::Ref<Material>> materialCache;
       std::unordered_map<std::int32_t, obj::Ref<Texture>> textureCache;
@@ -275,6 +453,9 @@ namespace yr::asset {
 
     [[nodiscard]] obj::Ref<Texture> loadTexture(LoadContext& context, std::int32_t textureIndex) {
       if (textureIndex < 0 || static_cast<std::uint32_t>(textureIndex) >= context.model.textures_count) {
+        return {};
+      }
+      if (context.skipTextures) {
         return {};
       }
       const tg3_texture& texture = context.model.textures[textureIndex];
@@ -502,97 +683,41 @@ namespace yr::asset {
         return cachedResource;
       }
 
-      const tg3_primitive& primitive = mesh.primitives[primitiveIndex];
-      if (primitive.mode != -1 && primitive.mode != TG3_MODE_TRIANGLES) {
-        return fail("不支持的 primitive.mode " + std::to_string(primitive.mode));
-      }
-
-      const std::int32_t positionIndex = findAttribute(primitive, "POSITION");
-      if (positionIndex < 0) {
-        return fail("缺少 POSITION");
-      }
-
-      AccessorView positions;
-      std::string accessorError;
-      if (!resolveAccessor(context.model, positionIndex, positions, accessorError)) {
-        return fail("POSITION: " + accessorError);
-      }
-      if (positions.componentType != TG3_COMPONENT_TYPE_FLOAT || positions.componentCount != 3) {
-        return fail("POSITION 必须是 FLOAT VEC3");
-      }
-      if (positions.count == 0) {
-        return fail("POSITION 为空");
-      }
-      if (positions.count > std::numeric_limits<std::uint32_t>::max()) {
-        return fail("POSITION 顶点数超过 u32");
-      }
-
-      AccessorView normals;
-      if (const std::int32_t normalIndex = findAttribute(primitive, "NORMAL"); normalIndex >= 0) {
-        if (!resolveAccessor(context.model, normalIndex, normals, accessorError)) {
-          return fail("NORMAL: " + accessorError);
-        }
-        if (normals.componentType != TG3_COMPONENT_TYPE_FLOAT || normals.componentCount != 3 ||
-            normals.count != positions.count) {
-          return fail("NORMAL 必须是同顶点数的 FLOAT VEC3");
-        }
-      }
-
-      AccessorView uvs;
-      if (const std::int32_t uvIndex = findAttribute(primitive, "TEXCOORD_0"); uvIndex >= 0) {
-        if (!resolveAccessor(context.model, uvIndex, uvs, accessorError)) {
-          return fail("TEXCOORD_0: " + accessorError);
-        }
-        if (uvs.componentType != TG3_COMPONENT_TYPE_FLOAT || uvs.componentCount != 2 || uvs.count != positions.count) {
-          return fail("TEXCOORD_0 必须是同顶点数的 FLOAT VEC2");
-        }
-      }
-
-      AccessorView indexView;
-      if (primitive.indices >= 0) {
-        if (!resolveAccessor(context.model, primitive.indices, indexView, accessorError)) {
-          return fail("indices: " + accessorError);
-        }
-        if (indexView.componentCount != 1 || (indexView.componentType != TG3_COMPONENT_TYPE_UNSIGNED_BYTE &&
-                                              indexView.componentType != TG3_COMPONENT_TYPE_UNSIGNED_SHORT &&
-                                              indexView.componentType != TG3_COMPONENT_TYPE_UNSIGNED_INT)) {
-          return fail("indices 必须是 u8/u16/u32 SCALAR");
-        }
+      MeshPlan plan;
+      std::string error;
+      if (!resolveMeshPlan(context.model, meshIndex, primitiveIndex, plan, error)) {
+        return fail(std::move(error));
       }
 
       obj::Ref<Mesh> resource = obj::make_ref<Mesh>();
       (void)resource->markLoading();
       resource->setUid(uid);
       resource->setSourcePath(context.resPath);
+      resource->hasBounds = plan.hasBounds;
+      resource->boundsMin = plan.boundsMin;
+      resource->boundsMax = plan.boundsMax;
 
-      resource->vertices.resize(static_cast<std::size_t>(positions.count));
-      for (std::size_t index = 0; index < resource->vertices.size(); ++index) {
-        MeshVertex vertex;
-        vertex.position =
-            math::Vec3{readFloat(positions, index, 0), readFloat(positions, index, 1), readFloat(positions, index, 2)};
-        if (normals.valid()) {
-          vertex.normal =
-              math::Vec3{readFloat(normals, index, 0), readFloat(normals, index, 1), readFloat(normals, index, 2)};
+      if (context.deferMeshes) {
+        if (context.source == nullptr || context.pendingMeshes == nullptr) {
+          return fail("deferMeshes 缺少 source/pendingMeshes");
         }
-        if (uvs.valid()) {
-          vertex.u = readFloat(uvs, index, 0);
-          vertex.v = readFloat(uvs, index, 1);
+        if (!storeResource(context, resource)) {
+          return {};
         }
-        resource->vertices[index] = vertex;
+        context.meshCache.emplace(cacheKey, resource);
+        context.pendingMeshes->push_back(GltfDeferredMesh{
+            .uid = uid,
+            .vertexCount = plan.vertexCount,
+            .source = context.source,
+            .meshIndex = static_cast<std::uint32_t>(meshIndex),
+            .primitiveIndex = primitiveIndex,
+        });
+        return resource;
       }
 
-      if (indexView.valid()) {
-        resource->indices.reserve(static_cast<std::size_t>(indexView.count));
-        for (std::size_t index = 0; index < static_cast<std::size_t>(indexView.count); ++index) {
-          resource->indices.push_back(readIndex(indexView, index));
-        }
-      } else {
-        resource->indices.reserve(resource->vertices.size());
-        for (std::size_t index = 0; index < resource->vertices.size(); ++index) {
-          resource->indices.push_back(static_cast<std::uint32_t>(index));
-        }
+      if (!fillMeshPayload(plan, *resource, error)) {
+        return fail(std::move(error));
       }
-
       (void)resource->markReady();
       if (!storeResource(context, resource)) {
         return {};
@@ -728,6 +853,19 @@ namespace yr::asset {
 
   } // namespace
 
+  [[nodiscard]] bool buildGltfMesh(const GltfDeferredMesh& job, Mesh& out, std::string& error) {
+    if (!job.source) {
+      error = "缺少 GltfSourceData";
+      return false;
+    }
+    MeshPlan plan;
+    if (!resolveMeshPlan(*job.source->model.get(), static_cast<std::int32_t>(job.meshIndex), job.primitiveIndex, plan,
+                         error)) {
+      return false;
+    }
+    return fillMeshPayload(plan, out, error);
+  }
+
   GltfLoadResult loadGltfScene(std::string_view resPath, std::string_view assetRoot, const GltfResourceHooks* hooks,
                                const GltfLoadOptions* options) {
     GltfLoadResult result;
@@ -754,7 +892,10 @@ namespace yr::asset {
       return result;
     }
 
-    const tg3_model& source = *model.get();
+    auto parsed = std::make_shared<GltfSourceData>();
+    parsed->model = std::move(model);
+    parsed->resPath = resPathString;
+    const tg3_model& source = *parsed->model.get();
     for (std::uint32_t index = 0; index < source.extensions_required_count; ++index) {
       const std::string name = stringOf(source.extensions_required[index]);
       result.error = "required extension 不受支持：" + name;
@@ -777,7 +918,11 @@ namespace yr::asset {
     LoadContext context{source, resPathString, std::filesystem::path(std::string(assetRoot)), result.warnings};
     context.hooks = hooks;
     context.deferTextures = (options != nullptr && options->deferTextures);
+    context.deferMeshes = (options != nullptr && options->deferMeshes);
+    context.skipTextures = (options != nullptr && options->skipTextures);
+    context.source = parsed;
     context.pendingTextures = &result.pendingTextures;
+    context.pendingMeshes = &result.pendingMeshes;
 
     result.scene.name = stringOf(scene.name);
     if (result.scene.name.empty()) {

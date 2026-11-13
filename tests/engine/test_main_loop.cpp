@@ -869,6 +869,27 @@ TEST_CASE("main_loop: phase 4 pumps async texture installs from AssetDatabase", 
   CHECK(database->findAs<yr::asset::Texture>(uid).get() == placeholder.get());
 }
 
+TEST_CASE("main_loop: phase 4 pumps deferred mesh installs from AssetDatabase", "[engine][main_loop][asset][mesh]") {
+  yr::asset::AssetDatabase database(YR_TEST_ASSET_ROOT);
+  yr::asset::GltfLoadOptions options;
+  options.deferMeshes = true;
+  const auto loaded = database.loadGltfScene("res://models/ToyCar/ToyCar.gltf", options);
+  CAPTURE(loaded.error);
+  REQUIRE(loaded.ok);
+
+  yr::scene::SceneTree tree;
+  yr::evt::EventBus bus;
+  MainLoop loop(tree, bus);
+  loop.setAssetDatabase(&database);
+
+  CHECK(database.stats().pending_meshes == 3);
+  loop.tick(1.0 / 60.0);
+  CHECK(database.stats().pending_meshes == 2);
+  loop.tick(1.0 / 60.0);
+  loop.tick(1.0 / 60.0);
+  CHECK(database.stats().pending_meshes == 0);
+}
+
 TEST_CASE("main_loop: changing backend resets extracted resource residency", "[engine][main_loop][render]") {
   yr::scene::SceneTree tree;
   yr::evt::EventBus bus;

@@ -2,10 +2,12 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <memory>
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 
 #include <yr/asset/file_access.h>
 #include <yr/asset/gltf_loader.h>
@@ -26,6 +28,8 @@ namespace yr::asset {
     std::uint64_t cache_hits = 0;
     std::uint64_t cache_misses = 0;
     std::uint64_t failed_loads = 0;
+    // 只统计尚未安装的 deferred mesh job，不含 job 持有的 model source 内存。
+    std::size_t pending_meshes = 0;
   };
 
   struct GcStats {
@@ -63,8 +67,10 @@ namespace yr::asset {
     [[nodiscard]] std::string pathFor(AssetUID uid) const;
 
     // 解析 glTF 结构并通过 hooks 复用/注册资源；失败时回滚本次新增的资源。
-    // deferTextures 时 Texture 只注册占位，并通过 AsyncLoader 排队异步加载。
-    [[nodiscard]] GltfLoadResult loadGltfScene(std::string_view resPath, bool deferTextures = false);
+    // deferTextures：Texture 只注册 kLoading 占位，并通过 AsyncLoader 排队异步加载。
+    // deferMeshes：Mesh 只注册 kLoading 占位，job 由本类接管，后续 pumpMeshes 安装。
+    // skipTextures：不创建 Texture，也不产生 pendingTextures。
+    [[nodiscard]] GltfLoadResult loadGltfScene(std::string_view resPath, const GltfLoadOptions& options = {});
 
     // 异步加载：worker 读取原始文件字节，pump 在主线程解码并安装到 cache_。
     // cache 中已 ready 时直接返回，不再重复 submit。
@@ -73,8 +79,9 @@ namespace yr::asset {
     [[nodiscard]] LoadState state(AssetUID uid) const;
     [[nodiscard]] std::string error(AssetUID uid) const;
 
-    // 每次最多安装 maxCompleted 个完成项，避免一帧内解码多个纹理。
-    void pump(std::size_t maxCompleted = 1);
+    // maxTextureCompletions：本帧最多安装的纹理 completion 数；0 表示本帧完全不工作。
+    // maxMeshVertices：本帧 mesh 顶点预算；0 表示本帧不安装 mesh。至少安装 1 个避免饥饿。
+    void pump(std::size_t maxTextureCompletions = 1, std::size_t maxMeshVertices = 65536);
 
     // 只有 refcount()==1（只剩 DB）时才允许；被场景/材质使用时返回 false。
     [[nodiscard]] bool evict(AssetUID uid);
@@ -94,12 +101,18 @@ namespace yr::asset {
       obj::Ref<Resource> resource;
     };
 
+    void pumpMeshes(std::size_t maxMeshVertices);
+    void cancelPendingMesh(AssetUID uid);
+
     std::string assetRoot_;
     // 声明顺序即析构顺序的逆序：async → worker（join）→ access。
     std::unique_ptr<IFileAccess> fileAccess_;
     std::unique_ptr<LoaderWorker> loaderWorker_;
     std::unique_ptr<AsyncLoader> asyncLoader_;
     std::unordered_map<AssetUID, Entry> cache_;
+    // job 只持有 uid + source，不持有 obj::Ref<Mesh>，避免阻止 evict/GC。
+    std::deque<GltfDeferredMesh> pendingMeshes_;
+    std::unordered_set<AssetUID> pendingMeshUids_;
     AssetStats counters_{}; // 只使用 registered/evicted/loads/hits/misses/failed
   };
 

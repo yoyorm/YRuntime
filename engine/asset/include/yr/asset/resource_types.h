@@ -27,6 +27,8 @@ namespace yr::asset {
     math::Vec3 normal{0.0F, 0.0F, 1.0F};
     float u = 0.0F;
     float v = 0.0F;
+
+    friend constexpr bool operator==(const MeshVertex&, const MeshVertex&) noexcept = default;
   };
 
   class Mesh final : public Resource {
@@ -35,6 +37,10 @@ namespace yr::asset {
 
     std::vector<MeshVertex> vertices;
     std::vector<std::uint32_t> indices;
+    // 本地 AABB；defer mesh 时由 POSITION accessor min/max 填充，供相机/后续剔除使用。
+    math::Vec3 boundsMin{};
+    math::Vec3 boundsMax{};
+    bool hasBounds = false;
 
     [[nodiscard]] std::uint64_t cpuBytes() const noexcept override {
       return static_cast<std::uint64_t>(vertices.size() * sizeof(MeshVertex) + indices.size() * sizeof(std::uint32_t));

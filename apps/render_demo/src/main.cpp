@@ -1,11 +1,13 @@
-// render_demo 正式运行入口：M7b 由 MainLoop 驱动、M7c 键盘移动 Node、M7d 快照 dump / replay。
-// Vulkan 后端按快照中的 DrawItem 逐个绘制。
+// render_demo 正式运行入口：MainLoop 驱动、键盘移动 Node、快照 dump / replay，
+// M9.2b 增加外部 glTF、mesh/texture 流式加载与逐帧 trace。
 
 #include <algorithm>
 #include <charconv>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <memory>
@@ -70,6 +72,44 @@ namespace {
     return std::string(buffer);
   }
 
+  [[nodiscard]] double durationMs(yr::core::Duration duration) {
+    return std::chrono::duration<double, std::milli>(duration).count();
+  }
+
+  [[nodiscard]] double elapsedMs(yr::core::TimePoint start, yr::core::TimePoint end) {
+    return std::chrono::duration<double, std::milli>(end - start).count();
+  }
+
+  // summary / 日志统一两位小数，避免 to_string 输出长尾。
+  [[nodiscard]] std::string formatMs(double value) {
+    char buffer[32] = {};
+    std::snprintf(buffer, sizeof(buffer), "%.2f", value);
+    return std::string(buffer);
+  }
+
+  // Linux 下 VmRSS 单位为 kB；其他平台或读取失败返回 0。
+  [[nodiscard]] std::uint64_t readRssKb() {
+#if defined(__linux__)
+    std::ifstream status("/proc/self/status");
+    std::string line;
+    while (std::getline(status, line)) {
+      constexpr std::string_view kPrefix = "VmRSS:";
+      if (line.rfind(kPrefix.data(), 0) != 0) {
+        continue;
+      }
+      std::string_view digits(line);
+      digits.remove_prefix(kPrefix.size());
+      while (!digits.empty() && (digits.front() == ' ' || digits.front() == '\t')) {
+        digits.remove_prefix(1);
+      }
+      std::uint64_t value = 0;
+      const auto result = std::from_chars(digits.data(), digits.data() + digits.size(), value);
+      return result.ec == std::errc{} ? value : 0;
+    }
+#endif
+    return 0;
+  }
+
   // host 驱动 MainLoop：阶段 1 泵窗口事件，WASD 小幅平移场景根；关闭窗口转成 requestQuit。
   class DemoLoop final : public yr::engine::MainLoop {
   public:
@@ -79,7 +119,24 @@ namespace {
 
     [[nodiscard]] bool dumpFailed() const noexcept { return dumpFailed_; }
 
+    [[nodiscard]] yr::core::Duration lastPump() const noexcept { return lastPump_; }
+    [[nodiscard]] yr::core::Duration lastExtract() const noexcept { return lastExtract_; }
+    [[nodiscard]] yr::core::Duration lastPresent() const noexcept { return lastPresent_; }
+    [[nodiscard]] yr::core::Duration lastGc() const noexcept { return lastGc_; }
+
   protected:
+    void pumpAssets() override {
+      yr::core::ScopeTimer timer;
+      MainLoop::pumpAssets();
+      lastPump_ = timer.elapsed();
+    }
+
+    void extractRender() override {
+      yr::core::ScopeTimer timer;
+      MainLoop::extractRender();
+      lastExtract_ = timer.elapsed();
+    }
+
     void pollInput() override {
       backend_.pollEvents();
       if (backend_.shouldClose()) {
@@ -119,7 +176,15 @@ namespace {
           YR_LOG_ERROR("render_demo", "dump_snapshot 写入失败：" + dumpPath_);
         }
       }
+      yr::core::ScopeTimer timer;
       MainLoop::present();
+      lastPresent_ = timer.elapsed();
+    }
+
+    void collectGarbage() override {
+      yr::core::ScopeTimer timer;
+      MainLoop::collectGarbage();
+      lastGc_ = timer.elapsed();
     }
 
   private:
@@ -129,6 +194,10 @@ namespace {
     std::string dumpPath_;
     bool dumped_ = false;
     bool dumpFailed_ = false;
+    yr::core::Duration lastPump_{};
+    yr::core::Duration lastExtract_{};
+    yr::core::Duration lastPresent_{};
+    yr::core::Duration lastGc_{};
   };
 
   struct Options {
@@ -136,7 +205,12 @@ namespace {
     std::uint64_t dropAt = 0;
     std::string dumpSnapshot;
     std::string replaySnapshot;
+    std::string gltfPath = "res://models/ToyCar/ToyCar.gltf";
+    std::string assetRoot = YR_ASSET_ROOT;
+    std::string tracePath;
     bool asyncTextures = false;
+    bool streamAssets = false;
+    bool skipTextures = false;
     bool help = false;
   };
 
@@ -150,16 +224,22 @@ namespace {
 
   void printUsage(std::FILE* stream, const char* program) {
     std::fprintf(stream,
-                 "usage: %s [--frames N] [--drop-at N] [--dump-snapshot PATH] [--replay-snapshot PATH] "
-                 "[--async-textures]\n"
+                 "usage: %s [--frames N] [--drop-at N] [--dump-snapshot PATH] [--replay-snapshot PATH]\n"
+                 "          [--gltf RES_PATH] [--asset-root PATH] [--stream-assets] [--skip-textures]\n"
+                 "          [--async-textures] [--trace PATH]\n"
+                 "  --gltf RES_PATH          glTF scene to load (default res://models/ToyCar/ToyCar.gltf)\n"
+                 "  --asset-root PATH        filesystem root for res:// (default YR_ASSET_ROOT)\n"
+                 "  --stream-assets          defer both meshes and textures\n"
+                 "  --skip-textures          create no textures (geometry stress test)\n"
                  "  --async-textures         stream glTF textures through AssetDatabase/LoaderWorker\n"
+                 "  --trace PATH             write a per-frame CSV trace\n"
                  "  --dump-snapshot PATH     dump the first presented RenderSnapshot\n"
                  "  --drop-at N              queue the first MeshInstanceNode for deletion after tick N\n"
                  "  --replay-snapshot PATH   replay a dumped snapshot without a SceneTree\n",
                  program);
   }
 
-  // 手写参数解析：只支持帧数、dump/replay 与 help，不引入 CLI 库。
+  // 手写参数解析：只支持少量运行开关，不引入 CLI 库。
   [[nodiscard]] bool parseArgs(int argc, char** argv, Options& options) {
     for (int i = 1; i < argc; ++i) {
       const std::string_view arg = argv[i];
@@ -196,6 +276,25 @@ namespace {
           return false;
         }
         options.replaySnapshot = argv[++i];
+      } else if (arg == "--gltf") {
+        if (i + 1 >= argc) {
+          return false;
+        }
+        options.gltfPath = argv[++i];
+      } else if (arg == "--asset-root") {
+        if (i + 1 >= argc) {
+          return false;
+        }
+        options.assetRoot = argv[++i];
+      } else if (arg == "--trace") {
+        if (i + 1 >= argc) {
+          return false;
+        }
+        options.tracePath = argv[++i];
+      } else if (arg == "--stream-assets") {
+        options.streamAssets = true; // 幂等：重复出现不改变结果
+      } else if (arg == "--skip-textures") {
+        options.skipTextures = true; // 幂等：重复出现不改变结果
       } else if (arg == "--async-textures") {
         options.asyncTextures = true; // 幂等：重复出现不改变结果
       } else if (arg == "--help" || arg == "-h") {
@@ -279,21 +378,52 @@ namespace {
     return node;
   }
 
+  [[nodiscard]] std::size_t countGltfNodes(const yr::asset::GltfNode& node) {
+    std::size_t count = 1;
+    for (const yr::asset::GltfNode& child : node.children) {
+      count += countGltfNodes(child);
+    }
+    return count;
+  }
+
+  [[nodiscard]] std::size_t countGltfPrimitives(const yr::asset::GltfNode& node) {
+    std::size_t count = node.primitives.size();
+    for (const yr::asset::GltfNode& child : node.children) {
+      count += countGltfPrimitives(child);
+    }
+    return count;
+  }
+
+  void expandBounds(const yr::math::Vec3& point, yr::math::Vec3& minimum, yr::math::Vec3& maximum, bool& hasVertex) {
+    if (!hasVertex) {
+      minimum = point;
+      maximum = point;
+      hasVertex = true;
+      return;
+    }
+    minimum.x = std::min(minimum.x, point.x);
+    minimum.y = std::min(minimum.y, point.y);
+    minimum.z = std::min(minimum.z, point.z);
+    maximum.x = std::max(maximum.x, point.x);
+    maximum.y = std::max(maximum.y, point.y);
+    maximum.z = std::max(maximum.z, point.z);
+  }
+
   void calculateBounds(yr::scene::Node& node, yr::math::Vec3& minimum, yr::math::Vec3& maximum, bool& hasVertex) {
     if (auto* meshNode = dynamic_cast<yr::scene::MeshInstanceNode*>(&node); meshNode != nullptr && meshNode->mesh()) {
-      for (const yr::asset::MeshVertex& vertex : meshNode->mesh()->vertices) {
-        const yr::math::Vec3 point = meshNode->globalTransform().transformPoint(vertex.position);
-        if (!hasVertex) {
-          minimum = point;
-          maximum = point;
-          hasVertex = true;
-        } else {
-          minimum.x = std::min(minimum.x, point.x);
-          minimum.y = std::min(minimum.y, point.y);
-          minimum.z = std::min(minimum.z, point.z);
-          maximum.x = std::max(maximum.x, point.x);
-          maximum.y = std::max(maximum.y, point.y);
-          maximum.z = std::max(maximum.z, point.z);
+      const yr::asset::Mesh& mesh = *meshNode->mesh();
+      if (mesh.hasBounds) {
+        // deferMeshes 时顶点为空，只能把本地 AABB 的 8 个角点变换到 world。
+        const yr::math::Mat4 world = meshNode->globalTransform();
+        for (int corner = 0; corner < 8; ++corner) {
+          const yr::math::Vec3 local{(corner & 1) != 0 ? mesh.boundsMax.x : mesh.boundsMin.x,
+                                     (corner & 2) != 0 ? mesh.boundsMax.y : mesh.boundsMin.y,
+                                     (corner & 4) != 0 ? mesh.boundsMax.z : mesh.boundsMin.z};
+          expandBounds(world.transformPoint(local), minimum, maximum, hasVertex);
+        }
+      } else {
+        for (const yr::asset::MeshVertex& vertex : mesh.vertices) {
+          expandBounds(meshNode->globalTransform().transformPoint(vertex.position), minimum, maximum, hasVertex);
         }
       }
     }
@@ -343,23 +473,56 @@ int main(int argc, char** argv) {
   }
 
   // 声明顺序保证析构顺序：loop → tree → assets → backend。
-  yr::asset::AssetDatabase assets(YR_ASSET_ROOT);
+  std::error_code rootError;
+  if (!std::filesystem::is_directory(options.assetRoot, rootError)) {
+    YR_LOG_ERROR("render_demo", "asset root 不是目录：" + options.assetRoot);
+    printUsage(stderr, argv[0]);
+    backend.shutdown();
+    return 1;
+  }
 
+  yr::asset::AssetDatabase assets(options.assetRoot);
+
+  const yr::core::TimePoint loadStart = std::chrono::steady_clock::now();
   std::unique_ptr<yr::scene::Node> root;
+  std::vector<yr::asset::AssetUID> pendingTextureUids;
+  double sceneLoadMs = 0.0;
   {
+    yr::asset::GltfLoadOptions loadOptions;
+    loadOptions.deferTextures = options.asyncTextures || options.streamAssets;
+    loadOptions.deferMeshes = options.streamAssets;
+    loadOptions.skipTextures = options.skipTextures;
+
     // GltfScene 仅用于构建节点树；资源缓存由 AssetDatabase 持有，节点持自己的 Ref。
-    yr::asset::GltfLoadResult loaded = assets.loadGltfScene("res://models/ToyCar/ToyCar.gltf", options.asyncTextures);
+    yr::asset::GltfLoadResult loaded = assets.loadGltfScene(options.gltfPath, loadOptions);
+    sceneLoadMs = elapsedMs(loadStart, std::chrono::steady_clock::now());
     if (!loaded) {
-      YR_LOG_ERROR("render_demo", "ToyCar 加载失败：" + loaded.error);
+      YR_LOG_ERROR("render_demo", options.gltfPath + " 加载失败：" + loaded.error);
       backend.shutdown();
       return 1;
     }
+
+    pendingTextureUids.reserve(loaded.pendingTextures.size());
+    for (const yr::asset::GltfTextureRequest& request : loaded.pendingTextures) {
+      pendingTextureUids.push_back(request.uid);
+    }
+
+    std::size_t nodeCount = 0;
+    std::size_t primitiveCount = 0;
+    for (const yr::asset::GltfNode& gltfRoot : loaded.scene.roots) {
+      nodeCount += countGltfNodes(gltfRoot);
+      primitiveCount += countGltfPrimitives(gltfRoot);
+    }
+    YR_LOG_INFO("render_demo", "scene_loaded path=" + options.gltfPath + " load_ms=" + formatMs(sceneLoadMs) +
+                                   " nodes=" + std::to_string(nodeCount) +
+                                   " primitives=" + std::to_string(primitiveCount));
+
     root = std::make_unique<yr::scene::Node>();
-    root->setName("ToyCarScene");
+    root->setName("GltfScene");
     for (const yr::asset::GltfNode& gltfRoot : loaded.scene.roots) {
       auto child = buildGltfNode(gltfRoot);
       if (!child || !root->addChild(std::move(child))) {
-        YR_LOG_ERROR("render_demo", "ToyCar 节点构建失败");
+        YR_LOG_ERROR("render_demo", options.gltfPath + " 节点构建失败");
         backend.shutdown();
         return 1;
       }
@@ -380,7 +543,7 @@ int main(int argc, char** argv) {
   bool hasVertex = false;
   calculateBounds(*tree.root(), minimum, maximum, hasVertex);
   if (!hasVertex) {
-    YR_LOG_ERROR("render_demo", "ToyCar 没有可用顶点");
+    YR_LOG_ERROR("render_demo", "场景没有可用顶点或 bounds");
     backend.shutdown();
     return 1;
   }
@@ -388,7 +551,7 @@ int main(int argc, char** argv) {
   const float radius = std::max((maximum - minimum).length() * 0.5F, 0.001F);
   const yr::math::Vec3 eye = center + yr::math::Vec3{1.2F * radius, 0.8F * radius, 1.8F * radius};
 
-  // 相机由 ToyCar 的世界空间 AABB 定位，MainLoop 只转交。
+  // 相机由场景世界空间 AABB 定位，MainLoop 只转交。
   constexpr float kFovYRadians = 60.0F * std::numbers::pi_v<float> / 180.0F;
   yr::render::CameraPod camera;
   camera.eye[0] = eye.x;
@@ -408,13 +571,61 @@ int main(int argc, char** argv) {
   // soak 时不刷周期报告，退出时统一打一帧摘要；窗口仍是默认的最近 4096 帧。
   loop.stats().setReportInterval(0);
 
+  std::ofstream trace;
+  if (!options.tracePath.empty()) {
+    trace.open(options.tracePath, std::ios::trunc);
+    if (!trace) {
+      YR_LOG_ERROR("render_demo", "trace 打开失败：" + options.tracePath);
+      backend.shutdown();
+      return 1;
+    }
+    trace << "frame,wall_ms,tick_ms,pump_ms,extract_ms,present_ms,gc_ms,items,uploads,upload_bytes,missing,"
+             "mesh_pending,texture_pending,resident,cpu_bytes,rss_kb\n";
+  }
+
   std::uint64_t ticks = 0;
   std::uint64_t releasedAssets = 0;
   bool dropQueued = false;
+  std::uint64_t firstItemFrame = 0;
+  double firstItemMs = 0.0;
+  std::uint64_t readyFrame = 0;
+  double readyMs = 0.0;
   while (!loop.shouldQuit()) {
+    yr::core::ScopeTimer tickTimer;
     loop.tick(clock.nextDelta());
-    releasedAssets += backend.last_frame_stats().released_assets;
+    const yr::core::Duration tickDuration = tickTimer.elapsed();
     ++ticks;
+
+    const yr::render::BackendStats frameStats = backend.last_frame_stats();
+    releasedAssets += frameStats.released_assets;
+    const yr::asset::AssetStats assetStats = assets.stats();
+    std::size_t texturePending = 0;
+    for (const yr::asset::AssetUID uid : pendingTextureUids) {
+      if (assets.state(uid) == yr::asset::LoadState::kLoading) {
+        ++texturePending;
+      }
+    }
+    const double wallMs = elapsedMs(loadStart, std::chrono::steady_clock::now());
+
+    if (firstItemFrame == 0 && frameStats.items > 0) {
+      firstItemFrame = loop.frameCount();
+      firstItemMs = wallMs;
+    }
+    // kFailed 的纹理不再等：ready 只要求没有 kLoading、没有待建 mesh。
+    if (readyFrame == 0 && assetStats.pending_meshes == 0 && texturePending == 0) {
+      readyFrame = loop.frameCount();
+      readyMs = wallMs;
+    }
+
+    if (trace) {
+      trace << loop.frameCount() << ',' << wallMs << ',' << durationMs(tickDuration) << ','
+            << durationMs(loop.lastPump()) << ',' << durationMs(loop.lastExtract()) << ','
+            << durationMs(loop.lastPresent()) << ',' << durationMs(loop.lastGc()) << ',' << frameStats.items << ','
+            << frameStats.uploaded_assets << ',' << frameStats.upload_bytes << ',' << frameStats.missing_assets << ','
+            << assetStats.pending_meshes << ',' << texturePending << ',' << assetStats.resident_count << ','
+            << assetStats.cpu_bytes << ',' << readRssKb() << '\n';
+    }
+
     if (!dropQueued && options.dropAt != 0 && ticks == options.dropAt) {
       if (yr::scene::MeshInstanceNode* meshNode = findFirstMeshInstance(*tree.root()); meshNode != nullptr) {
         meshNode->queueFree();
@@ -425,6 +636,9 @@ int main(int argc, char** argv) {
     if (options.frames != 0 && ticks >= options.frames) {
       break;
     }
+  }
+  if (trace) {
+    trace.flush();
   }
 
   // last_frame_stats / validation 都必须在 shutdown 前/后按各自契约取：前者会被 shutdown 清零。
@@ -443,13 +657,22 @@ int main(int argc, char** argv) {
 
   const std::uint32_t errors = backend.validationErrorCount();
   std::string summary = "frames=" + std::to_string(loop.frameCount());
+  summary += " scene_load_ms=" + formatMs(sceneLoadMs);
+  summary += " first_item_frame=" + std::to_string(firstItemFrame) + " first_item_ms=" + formatMs(firstItemMs);
+  summary += " ready_frame=" + std::to_string(readyFrame) + " ready_ms=" + formatMs(readyMs);
+  summary += " pending_meshes=" + std::to_string(finalAssets.pending_meshes) +
+             " failed_loads=" + std::to_string(finalAssets.failed_loads);
   summary += " | stats_window=last " + std::to_string(stats.windowCount()) + "/" + std::to_string(stats.windowSize()) +
              " frames";
   summary += " total p50=" + formatDuration(stats.totalP50()) + " p95=" + formatDuration(stats.totalP95());
+  summary += " pump p50=" + formatDuration(stats.phaseP50(yr::engine::Phase::kPumpAssets)) +
+             " p95=" + formatDuration(stats.phaseP95(yr::engine::Phase::kPumpAssets)) +
+             " max=" + formatDuration(stats.phaseMax(yr::engine::Phase::kPumpAssets));
   summary += " extract_render p50=" + formatDuration(stats.phaseP50(yr::engine::Phase::kExtractRender)) +
              " p95=" + formatDuration(stats.phaseP95(yr::engine::Phase::kExtractRender));
   summary += " present p50=" + formatDuration(stats.phaseP50(yr::engine::Phase::kPresent)) +
              " p95=" + formatDuration(stats.phaseP95(yr::engine::Phase::kPresent));
+  summary += " gc p50=" + formatDuration(stats.phaseP50(yr::engine::Phase::kCollectGarbage));
   summary += " | items=" + std::to_string(backendStats.items) +
              " draw_calls=" + std::to_string(backendStats.draw_calls) +
              " triangles=" + std::to_string(backendStats.triangles) +

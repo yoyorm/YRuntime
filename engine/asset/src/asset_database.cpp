@@ -1,5 +1,6 @@
 #include <yr/asset/asset_database.h>
 
+#include <exception>
 #include <limits>
 #include <utility>
 #include <vector>
@@ -11,6 +12,7 @@
 #include <yr/core/assert.h>
 #include <yr/core/log.h>
 
+#include "gltf_mesh_builder.h"
 #include "loader_worker.h"
 
 namespace yr::asset {
@@ -74,7 +76,7 @@ namespace yr::asset {
     return it != cache_.end() ? it->second.sourcePath : std::string{};
   }
 
-  GltfLoadResult AssetDatabase::loadGltfScene(std::string_view resPath, bool deferTextures) {
+  GltfLoadResult AssetDatabase::loadGltfScene(std::string_view resPath, const GltfLoadOptions& options) {
     ++counters_.loads;
 
     std::vector<AssetUID> newUids;
@@ -102,7 +104,6 @@ namespace yr::asset {
             },
     };
 
-    const GltfLoadOptions options{.deferTextures = deferTextures};
     GltfLoadResult result = ::yr::asset::loadGltfScene(resPath, assetRoot_, &hooks, &options);
     if (!result.ok) {
       ++counters_.failed_loads;
@@ -118,13 +119,26 @@ namespace yr::asset {
       return result;
     }
 
-    if (deferTextures && asyncLoader_ != nullptr) {
+    if (options.deferTextures && asyncLoader_ != nullptr) {
       // 直接委托 AsyncLoader，避免 AssetDatabase::requestLoad 重复计入 loads。
       for (const GltfTextureRequest& request : result.pendingTextures) {
         const AssetUID uid = asyncLoader_->requestLoad(request.resPath, ResourceKind::kTexture);
         YR_ASSERT_MSG(uid == request.uid, "glTF pending texture 的 UID 不一致");
         (void)uid;
       }
+    }
+
+    if (options.deferMeshes) {
+      for (GltfDeferredMesh& job : result.pendingMeshes) {
+        if (!job.uid.valid() || job.source == nullptr) {
+          continue;
+        }
+        if (!pendingMeshUids_.insert(job.uid).second) {
+          continue;
+        }
+        pendingMeshes_.push_back(std::move(job));
+      }
+      result.pendingMeshes.clear(); // DB 接管
     }
     return result;
   }
@@ -181,123 +195,182 @@ namespace yr::asset {
     return asyncLoader_ != nullptr ? asyncLoader_->error(uid) : std::string{};
   }
 
-  void AssetDatabase::pump(std::size_t maxCompleted) {
-    if (maxCompleted == 0 || asyncLoader_ == nullptr) {
+  void AssetDatabase::pump(std::size_t maxTextureCompletions, std::size_t maxMeshVertices) {
+    if (maxTextureCompletions == 0) {
       return;
     }
 
-    for (LoadCompletion& completion : asyncLoader_->pump(maxCompleted)) {
-      const AssetUID uid = completion.uid;
+    if (asyncLoader_ != nullptr) {
+      for (LoadCompletion& completion : asyncLoader_->pump(maxTextureCompletions)) {
+        const AssetUID uid = completion.uid;
 
-      if (!completion.error.empty()) {
-        // AsyncLoader 已置 kFailed；cache 中尚未安装的 placeholder 需要同步。
-        const auto it = cache_.find(uid);
-        if (it != cache_.end() && it->second.resource->state() == LoadState::kLoading) {
-          (void)it->second.resource->markFailed(completion.error);
+        if (!completion.error.empty()) {
+          // AsyncLoader 已置 kFailed；cache 中尚未安装的 placeholder 需要同步。
+          const auto it = cache_.find(uid);
+          if (it != cache_.end() && it->second.resource->state() == LoadState::kLoading) {
+            (void)it->second.resource->markFailed(completion.error);
+          }
+          continue;
         }
-        continue;
-      }
 
-      if (completion.kind != ResourceKind::kTexture) {
-        const std::string text = "AssetDatabase::pump: 仅支持 Texture 异步加载";
-        const auto it = cache_.find(uid);
-        if (it != cache_.end() && it->second.resource->state() == LoadState::kLoading) {
-          (void)it->second.resource->markFailed(text);
-        }
-        ++counters_.failed_loads;
-        asyncLoader_->markFailed(uid, text);
-        continue;
-      }
-
-      // 复用 glTF defer 放进 cache_ 的 placeholder；只有缺失时才新建。
-      obj::Ref<Texture> texture;
-      bool created = false;
-      const auto existing = cache_.find(uid);
-      if (existing != cache_.end()) {
-        texture = obj::Ref<Texture>(dynamic_cast<Texture*>(existing->second.resource.get()));
-        if (!texture.valid()) {
-          const std::string text = "AssetDatabase::pump: UID 已被非 Texture 资源占用";
-          if (existing->second.resource->state() == LoadState::kLoading) {
-            (void)existing->second.resource->markFailed(text);
+        if (completion.kind != ResourceKind::kTexture) {
+          const std::string text = "AssetDatabase::pump: 仅支持 Texture 异步加载";
+          const auto it = cache_.find(uid);
+          if (it != cache_.end() && it->second.resource->state() == LoadState::kLoading) {
+            (void)it->second.resource->markFailed(text);
           }
           ++counters_.failed_loads;
           asyncLoader_->markFailed(uid, text);
           continue;
         }
-        if (texture->state() == LoadState::kUnloaded || texture->state() == LoadState::kFailed) {
+
+        // 复用 glTF defer 放进 cache_ 的 placeholder；只有缺失时才新建。
+        obj::Ref<Texture> texture;
+        bool created = false;
+        const auto existing = cache_.find(uid);
+        if (existing != cache_.end()) {
+          texture = obj::Ref<Texture>(dynamic_cast<Texture*>(existing->second.resource.get()));
+          if (!texture.valid()) {
+            const std::string text = "AssetDatabase::pump: UID 已被非 Texture 资源占用";
+            if (existing->second.resource->state() == LoadState::kLoading) {
+              (void)existing->second.resource->markFailed(text);
+            }
+            ++counters_.failed_loads;
+            asyncLoader_->markFailed(uid, text);
+            continue;
+          }
+          if (texture->state() == LoadState::kUnloaded || texture->state() == LoadState::kFailed) {
+            (void)texture->markLoading();
+          }
+          if (texture->state() != LoadState::kLoading) {
+            continue; // 同步路径已加载完成，保留现有内容。
+          }
+        } else {
+          texture = obj::make_ref<Texture>();
+          texture->setUid(uid);
+          texture->setSourcePath(completion.resPath);
           (void)texture->markLoading();
+          created = true;
         }
-        if (texture->state() != LoadState::kLoading) {
-          continue; // 同步路径已加载完成，保留现有内容。
-        }
-      } else {
-        texture = obj::make_ref<Texture>();
-        texture->setUid(uid);
-        texture->setSourcePath(completion.resPath);
-        (void)texture->markLoading();
-        created = true;
-      }
 
-      if (completion.payload.size() > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
-        const std::string text = "纹理解码失败：文件过大";
-        (void)texture->markFailed(text);
-        ++counters_.failed_loads;
-        asyncLoader_->markFailed(uid, text);
-        continue;
-      }
-
-      int width = 0;
-      int height = 0;
-      int channels = 0;
-      stbi_uc* const pixels = stbi_load_from_memory(
-          completion.payload.data(), static_cast<int>(completion.payload.size()), &width, &height, &channels, 4);
-      if (pixels == nullptr) {
-        const std::string text = textureDecodeError("stbi_load_from_memory 失败");
-        (void)texture->markFailed(text);
-        ++counters_.failed_loads;
-        asyncLoader_->markFailed(uid, text);
-        continue;
-      }
-
-      if (width <= 0 || height <= 0) {
-        stbi_image_free(pixels);
-        const std::string text = "纹理解码失败：图片尺寸无效";
-        (void)texture->markFailed(text);
-        ++counters_.failed_loads;
-        asyncLoader_->markFailed(uid, text);
-        continue;
-      }
-
-      const std::uint64_t pixelBytes = static_cast<std::uint64_t>(width) * static_cast<std::uint64_t>(height) * 4ULL;
-      if (pixelBytes > std::numeric_limits<std::size_t>::max()) {
-        stbi_image_free(pixels);
-        const std::string text = "纹理解码失败：图片过大";
-        (void)texture->markFailed(text);
-        ++counters_.failed_loads;
-        asyncLoader_->markFailed(uid, text);
-        continue;
-      }
-
-      texture->width = static_cast<std::uint32_t>(width);
-      texture->height = static_cast<std::uint32_t>(height);
-      texture->rgba8.assign(pixels, pixels + static_cast<std::size_t>(pixelBytes));
-      stbi_image_free(pixels);
-
-      if (!texture->markReady()) {
-        const std::string text = "AssetDatabase::pump: Texture 状态转换失败";
-        if (texture->state() == LoadState::kLoading) {
+        if (completion.payload.size() > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+          const std::string text = "纹理解码失败：文件过大";
           (void)texture->markFailed(text);
+          ++counters_.failed_loads;
+          asyncLoader_->markFailed(uid, text);
+          continue;
         }
-        ++counters_.failed_loads;
-        asyncLoader_->markFailed(uid, text);
-        continue;
-      }
 
-      if (created && !store(texture)) {
-        ++counters_.failed_loads;
-        asyncLoader_->markFailed(uid, "AssetDatabase::pump: 注册 Texture 失败");
+        int width = 0;
+        int height = 0;
+        int channels = 0;
+        stbi_uc* const pixels = stbi_load_from_memory(
+            completion.payload.data(), static_cast<int>(completion.payload.size()), &width, &height, &channels, 4);
+        if (pixels == nullptr) {
+          const std::string text = textureDecodeError("stbi_load_from_memory 失败");
+          (void)texture->markFailed(text);
+          ++counters_.failed_loads;
+          asyncLoader_->markFailed(uid, text);
+          continue;
+        }
+
+        if (width <= 0 || height <= 0) {
+          stbi_image_free(pixels);
+          const std::string text = "纹理解码失败：图片尺寸无效";
+          (void)texture->markFailed(text);
+          ++counters_.failed_loads;
+          asyncLoader_->markFailed(uid, text);
+          continue;
+        }
+
+        const std::uint64_t pixelBytes = static_cast<std::uint64_t>(width) * static_cast<std::uint64_t>(height) * 4ULL;
+        if (pixelBytes > std::numeric_limits<std::size_t>::max()) {
+          stbi_image_free(pixels);
+          const std::string text = "纹理解码失败：图片过大";
+          (void)texture->markFailed(text);
+          ++counters_.failed_loads;
+          asyncLoader_->markFailed(uid, text);
+          continue;
+        }
+
+        texture->width = static_cast<std::uint32_t>(width);
+        texture->height = static_cast<std::uint32_t>(height);
+        texture->rgba8.assign(pixels, pixels + static_cast<std::size_t>(pixelBytes));
+        stbi_image_free(pixels);
+
+        if (!texture->markReady()) {
+          const std::string text = "AssetDatabase::pump: Texture 状态转换失败";
+          if (texture->state() == LoadState::kLoading) {
+            (void)texture->markFailed(text);
+          }
+          ++counters_.failed_loads;
+          asyncLoader_->markFailed(uid, text);
+          continue;
+        }
+
+        if (created && !store(texture)) {
+          ++counters_.failed_loads;
+          asyncLoader_->markFailed(uid, "AssetDatabase::pump: 注册 Texture 失败");
+        }
       }
     }
+
+    if (maxMeshVertices > 0) {
+      pumpMeshes(maxMeshVertices);
+    }
+  }
+
+  void AssetDatabase::pumpMeshes(std::size_t maxMeshVertices) {
+    std::size_t builtVertices = 0;
+    std::size_t builtJobs = 0;
+
+    while (!pendingMeshes_.empty()) {
+      const GltfDeferredMesh& front = pendingMeshes_.front();
+      if (builtJobs > 0 && builtVertices + front.vertexCount > maxMeshVertices) {
+        break;
+      }
+
+      GltfDeferredMesh job = std::move(pendingMeshes_.front());
+      pendingMeshes_.pop_front();
+      pendingMeshUids_.erase(job.uid);
+
+      ++builtJobs;
+      builtVertices += job.vertexCount;
+
+      const auto it = cache_.find(job.uid);
+      if (it == cache_.end()) {
+        continue; // evict/GC 后不要复活
+      }
+
+      auto* mesh = dynamic_cast<Mesh*>(it->second.resource.get());
+      if (mesh == nullptr || mesh->state() != LoadState::kLoading) {
+        continue;
+      }
+
+      std::string error;
+      bool ok = false;
+      try {
+        ok = buildGltfMesh(job, *mesh, error);
+      } catch (const std::exception& exception) {
+        error = exception.what();
+      } catch (...) {
+        error = "mesh 构建时发生未知异常";
+      }
+
+      if (!ok || !mesh->markReady()) {
+        if (mesh->state() == LoadState::kLoading) {
+          (void)mesh->markFailed(error.empty() ? "mesh 构建失败" : error);
+        }
+        ++counters_.failed_loads;
+      }
+    }
+  }
+
+  void AssetDatabase::cancelPendingMesh(AssetUID uid) {
+    if (pendingMeshUids_.erase(uid) == 0) {
+      return;
+    }
+    std::erase_if(pendingMeshes_, [uid](const GltfDeferredMesh& job) { return job.uid == uid; });
   }
 
   bool AssetDatabase::evict(AssetUID uid) {
@@ -308,6 +381,7 @@ namespace yr::asset {
 
     cache_.erase(it);
     ++counters_.evicted;
+    cancelPendingMesh(uid);
     if (asyncLoader_ != nullptr) {
       asyncLoader_->forget(uid);
     }
@@ -336,6 +410,14 @@ namespace yr::asset {
           asyncLoader_->forget(uid);
         }
       }
+
+      // 场景释放后立即丢弃 job，尽快释放 job 持有的 GltfSourceData。
+      std::unordered_set<AssetUID> removed(victims.begin(), victims.end());
+      std::erase_if(pendingMeshes_, [&removed](const GltfDeferredMesh& job) { return removed.contains(job.uid); });
+      for (AssetUID uid : removed) {
+        pendingMeshUids_.erase(uid);
+      }
+
       ++gc.passes;
       gc.evicted += victims.size();
     }
@@ -346,6 +428,7 @@ namespace yr::asset {
   AssetStats AssetDatabase::stats() const {
     AssetStats result = counters_;
     result.resident_count = cache_.size();
+    result.pending_meshes = pendingMeshes_.size();
     result.cpu_bytes = 0;
     for (const auto& [uid, entry] : cache_) {
       result.cpu_bytes += entry.resource->cpuBytes();
@@ -354,6 +437,8 @@ namespace yr::asset {
   }
 
   void AssetDatabase::clear() {
+    pendingMeshes_.clear();
+    pendingMeshUids_.clear();
     cache_.clear();
     if (asyncLoader_ != nullptr) {
       asyncLoader_->reset(); // 避免状态表与 cache_ 分叉；迟到的 completion 会被丢弃。

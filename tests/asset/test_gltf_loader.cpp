@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -15,12 +16,17 @@
 #include <yr/math/vec3.h>
 #include <yr/object/ref.h>
 
+#include "gltf_mesh_builder.h"
+
 namespace {
 
   using yr::asset::AlphaMode;
   using yr::asset::AssetUID;
+  using yr::asset::GltfDeferredMesh;
+  using yr::asset::GltfLoadOptions;
   using yr::asset::GltfLoadResult;
   using yr::asset::GltfNode;
+  using yr::asset::GltfPrimitive;
   using yr::asset::GltfResourceHooks;
   using yr::asset::LoadState;
   using yr::asset::Material;
@@ -34,6 +40,23 @@ namespace {
       count += countPrimitives(child);
     }
     return count;
+  }
+
+  void collectPrimitives(const GltfNode& node, std::vector<const GltfPrimitive*>& out) {
+    for (const GltfPrimitive& primitive : node.primitives) {
+      out.push_back(&primitive);
+    }
+    for (const GltfNode& child : node.children) {
+      collectPrimitives(child, out);
+    }
+  }
+
+  [[nodiscard]] std::vector<const GltfPrimitive*> collectPrimitives(const GltfLoadResult& result) {
+    std::vector<const GltfPrimitive*> out;
+    for (const GltfNode& root : result.scene.roots) {
+      collectPrimitives(root, out);
+    }
+    return out;
   }
 
   void checkNodeResources(const GltfNode& node) {
@@ -310,4 +333,132 @@ TEST_CASE("gltf loader: resource hooks reuse cached objects", "[asset][gltf][hoo
   REQUIRE_FALSE(second.scene.roots[0].primitives.empty());
   CHECK(second.scene.roots[0].primitives[0].mesh.get() == firstMesh);
   CHECK(second.scene.roots[0].primitives[0].material.get() == firstMaterial);
+}
+
+TEST_CASE("gltf loader: deferMeshes creates kLoading placeholders and pending jobs", "[asset][gltf][toycar][defer]") {
+  const GltfLoadOptions options{.deferMeshes = true};
+  const GltfLoadResult result =
+      yr::asset::loadGltfScene("res://models/ToyCar/ToyCar.gltf", YR_TEST_ASSET_ROOT, nullptr, &options);
+  CAPTURE(result.error);
+  REQUIRE(result.ok);
+
+  REQUIRE(result.pendingMeshes.size() == 3);
+  for (const GltfDeferredMesh& job : result.pendingMeshes) {
+    CHECK(job.uid.valid());
+    CHECK(job.source != nullptr);
+    CHECK(job.vertexCount > 0);
+  }
+
+  const std::vector<const GltfPrimitive*> primitives = collectPrimitives(result);
+  REQUIRE(primitives.size() == 3);
+  for (const GltfPrimitive* primitive : primitives) {
+    REQUIRE(primitive->mesh.valid());
+    CHECK(primitive->mesh->state() == LoadState::kLoading);
+    CHECK(primitive->mesh->vertices.empty());
+    CHECK(primitive->mesh->indices.empty());
+    CHECK(primitive->mesh->hasBounds);
+  }
+}
+
+TEST_CASE("gltf loader: deferred mesh payload matches synchronous build", "[asset][gltf][toycar][defer]") {
+  const GltfLoadResult sync = yr::asset::loadGltfScene("res://models/ToyCar/ToyCar.gltf", YR_TEST_ASSET_ROOT);
+  CAPTURE(sync.error);
+  REQUIRE(sync.ok);
+
+  std::unordered_map<AssetUID, const Mesh*> syncMeshes;
+  for (const GltfPrimitive* primitive : collectPrimitives(sync)) {
+    REQUIRE(primitive->mesh.valid());
+    syncMeshes.emplace(primitive->mesh->uid(), primitive->mesh.get());
+  }
+  REQUIRE(syncMeshes.size() == 3);
+
+  const GltfLoadOptions options{.deferMeshes = true};
+  const GltfLoadResult deferred =
+      yr::asset::loadGltfScene("res://models/ToyCar/ToyCar.gltf", YR_TEST_ASSET_ROOT, nullptr, &options);
+  CAPTURE(deferred.error);
+  REQUIRE(deferred.ok);
+  REQUIRE(deferred.pendingMeshes.size() == 3);
+
+  for (const GltfDeferredMesh& job : deferred.pendingMeshes) {
+    Mesh built;
+    std::string error;
+    REQUIRE(yr::asset::buildGltfMesh(job, built, error));
+    CHECK(error.empty());
+
+    const auto expected = syncMeshes.find(job.uid);
+    REQUIRE(expected != syncMeshes.end());
+    const Mesh& syncMesh = *expected->second;
+
+    REQUIRE(built.vertices.size() == syncMesh.vertices.size());
+    CHECK(built.vertices == syncMesh.vertices);
+    CHECK(built.indices == syncMesh.indices);
+
+    CHECK(built.hasBounds == syncMesh.hasBounds);
+    CHECK(built.boundsMin == syncMesh.boundsMin);
+    CHECK(built.boundsMax == syncMesh.boundsMax);
+  }
+}
+
+TEST_CASE("gltf loader: deferred job keeps source alive after result destruction", "[asset][gltf][toycar][defer]") {
+  const GltfLoadOptions options{.deferMeshes = true};
+  std::shared_ptr<const yr::asset::GltfSourceData> kept;
+  std::uint32_t meshIndex = 0;
+  std::uint32_t primitiveIndex = 0;
+  {
+    const GltfLoadResult deferred =
+        yr::asset::loadGltfScene("res://models/ToyCar/ToyCar.gltf", YR_TEST_ASSET_ROOT, nullptr, &options);
+    REQUIRE(deferred.ok);
+    REQUIRE_FALSE(deferred.pendingMeshes.empty());
+    kept = deferred.pendingMeshes.front().source;
+    meshIndex = deferred.pendingMeshes.front().meshIndex;
+    primitiveIndex = deferred.pendingMeshes.front().primitiveIndex;
+  }
+
+  Mesh built;
+  std::string error;
+  REQUIRE(yr::asset::buildGltfMesh(GltfDeferredMesh{.uid = AssetUID{1},
+                                                    .vertexCount = 0,
+                                                    .source = kept,
+                                                    .meshIndex = meshIndex,
+                                                    .primitiveIndex = primitiveIndex},
+                                   built, error));
+  CHECK(error.empty());
+  CHECK(!built.vertices.empty());
+}
+
+TEST_CASE("gltf loader: skipTextures leaves materials ready without textures", "[asset][gltf][toycar]") {
+  const GltfLoadOptions options{.skipTextures = true};
+  const GltfLoadResult result =
+      yr::asset::loadGltfScene("res://models/ToyCar/ToyCar.gltf", YR_TEST_ASSET_ROOT, nullptr, &options);
+  CAPTURE(result.error);
+  REQUIRE(result.ok);
+  CHECK(result.pendingTextures.empty());
+
+  const std::vector<const GltfPrimitive*> primitives = collectPrimitives(result);
+  REQUIRE(primitives.size() == 3);
+  for (const GltfPrimitive* primitive : primitives) {
+    REQUIRE(primitive->material.valid());
+    const Material& material = *primitive->material;
+    CHECK(material.state() == LoadState::kReady);
+    CHECK_FALSE(material.baseColorTexture.valid());
+    CHECK_FALSE(material.normalTexture.valid());
+    CHECK_FALSE(material.metallicRoughnessTexture.valid());
+    CHECK_FALSE(material.emissiveTexture.valid());
+  }
+}
+
+TEST_CASE("gltf loader: default options build meshes synchronously", "[asset][gltf][toycar]") {
+  const GltfLoadResult result = yr::asset::loadGltfScene("res://models/ToyCar/ToyCar.gltf", YR_TEST_ASSET_ROOT);
+  CAPTURE(result.error);
+  REQUIRE(result.ok);
+  CHECK(result.pendingMeshes.empty());
+
+  const std::vector<const GltfPrimitive*> primitives = collectPrimitives(result);
+  REQUIRE(primitives.size() == 3);
+  for (const GltfPrimitive* primitive : primitives) {
+    REQUIRE(primitive->mesh.valid());
+    CHECK(primitive->mesh->state() == LoadState::kReady);
+    CHECK_FALSE(primitive->mesh->vertices.empty());
+    CHECK(primitive->mesh->hasBounds);
+  }
 }

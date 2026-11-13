@@ -22,6 +22,7 @@ namespace {
   using yr::asset::AssetStats;
   using yr::asset::AssetUID;
   using yr::asset::GcStats;
+  using yr::asset::GltfLoadOptions;
   using yr::asset::GltfLoadResult;
   using yr::asset::LoadState;
   using yr::asset::Material;
@@ -54,6 +55,33 @@ namespace {
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     return allReady();
+  }
+
+  void collectMeshRefs(const yr::asset::GltfNode& node, std::vector<yr::obj::Ref<Mesh>>& out) {
+    for (const yr::asset::GltfPrimitive& primitive : node.primitives) {
+      if (primitive.mesh.valid()) {
+        out.push_back(primitive.mesh);
+      }
+    }
+    for (const yr::asset::GltfNode& child : node.children) {
+      collectMeshRefs(child, out);
+    }
+  }
+
+  void collectMeshUids(const yr::asset::GltfNode& node, std::vector<AssetUID>& out) {
+    for (const yr::asset::GltfPrimitive& primitive : node.primitives) {
+      if (primitive.mesh.valid()) {
+        out.push_back(primitive.mesh->uid());
+      }
+    }
+    for (const yr::asset::GltfNode& child : node.children) {
+      collectMeshUids(child, out);
+    }
+  }
+
+  std::size_t countReady(const AssetDatabase& database, const std::vector<AssetUID>& uids) {
+    return static_cast<std::size_t>(std::count_if(
+        uids.begin(), uids.end(), [&database](AssetUID uid) { return database.state(uid) == LoadState::kReady; }));
   }
 
 } // namespace
@@ -281,7 +309,7 @@ TEST_CASE("asset db: loadGltfScene reuses resources and tracks stats", "[asset][
 
   AssetDatabase database(YR_TEST_ASSET_ROOT);
   {
-    const GltfLoadResult first = database.loadGltfScene("res://models/ToyCar/ToyCar.gltf");
+    const GltfLoadResult first = database.loadGltfScene("res://models/ToyCar/ToyCar.gltf", GltfLoadOptions{});
     CAPTURE(first.error);
     REQUIRE(first.ok);
 
@@ -301,7 +329,7 @@ TEST_CASE("asset db: loadGltfScene reuses resources and tracks stats", "[asset][
     CHECK(database.findAs<Mesh>(meshUid).get() == mesh.get());
     CHECK_FALSE(database.pathFor(meshUid).empty());
 
-    const GltfLoadResult second = database.loadGltfScene("res://models/ToyCar/ToyCar.gltf");
+    const GltfLoadResult second = database.loadGltfScene("res://models/ToyCar/ToyCar.gltf", GltfLoadOptions{});
     CAPTURE(second.error);
     REQUIRE(second.ok);
     REQUIRE_FALSE(second.scene.roots.empty());
@@ -327,7 +355,7 @@ TEST_CASE("asset db: loadGltfScene reuses resources and tracks stats", "[asset][
 TEST_CASE("asset db: synchronous gltf resources report cache state", "[asset][asset_db][gltf]") {
   AssetDatabase database(YR_TEST_ASSET_ROOT);
 
-  const GltfLoadResult loaded = database.loadGltfScene("res://models/ToyCar/ToyCar.gltf");
+  const GltfLoadResult loaded = database.loadGltfScene("res://models/ToyCar/ToyCar.gltf", GltfLoadOptions{});
   CAPTURE(loaded.error);
   REQUIRE(loaded.ok);
   REQUIRE_FALSE(loaded.scene.roots.empty());
@@ -346,7 +374,7 @@ TEST_CASE("asset db: loadGltfScene failure leaves cache untouched", "[asset][ass
   AssetDatabase database(YR_TEST_ASSET_ROOT);
   const std::size_t before = database.stats().resident_count;
 
-  const GltfLoadResult result = database.loadGltfScene("res://models/NoSuchFile.gltf");
+  const GltfLoadResult result = database.loadGltfScene("res://models/NoSuchFile.gltf", GltfLoadOptions{});
   CHECK_FALSE(result.ok);
   CHECK_FALSE(result.error.empty());
 
@@ -362,7 +390,8 @@ TEST_CASE("asset db: loadGltfScene defers textures and pump fills placeholders",
 
   AssetDatabase database(YR_TEST_ASSET_ROOT);
   {
-    const GltfLoadResult loaded = database.loadGltfScene("res://models/ToyCar/ToyCar.gltf", true);
+    const GltfLoadResult loaded =
+        database.loadGltfScene("res://models/ToyCar/ToyCar.gltf", GltfLoadOptions{.deferTextures = true});
     CAPTURE(loaded.error);
     REQUIRE(loaded.ok);
     REQUIRE_FALSE(loaded.pendingTextures.empty());
@@ -406,4 +435,170 @@ TEST_CASE("asset db: loadGltfScene defers textures and pump fills placeholders",
   CHECK(database.stats().resident_count == 0);
   CHECK(database.stats().cpu_bytes == 0);
   CHECK(objectDatabase.aliveCount() == baseline);
+}
+
+TEST_CASE("asset db: deferred meshes install one per pump", "[asset][asset_db][gltf][mesh]") {
+  AssetDatabase database(YR_TEST_ASSET_ROOT);
+  GltfLoadOptions options;
+  options.deferMeshes = true;
+
+  const GltfLoadResult loaded = database.loadGltfScene("res://models/ToyCar/ToyCar.gltf", options);
+  CAPTURE(loaded.error);
+  REQUIRE(loaded.ok);
+  CHECK(loaded.pendingMeshes.empty());
+  CHECK(database.stats().pending_meshes == 3);
+
+  std::vector<AssetUID> uids;
+  for (const yr::asset::GltfNode& root : loaded.scene.roots) {
+    collectMeshUids(root, uids);
+  }
+  REQUIRE(uids.size() == 3);
+
+  for (const AssetUID uid : uids) {
+    CHECK(database.state(uid) == LoadState::kLoading);
+    const yr::obj::Ref<Mesh> mesh = database.findAs<Mesh>(uid);
+    REQUIRE(mesh.valid());
+    CHECK(mesh->vertices.empty());
+    CHECK(mesh->hasBounds);
+  }
+
+  database.pump(1);
+  CHECK(database.stats().pending_meshes == 2);
+  CHECK(countReady(database, uids) == 1);
+
+  // maxTextureCompletions 非 0、maxMeshVertices 为 0：本帧只允许纹理，不安装 mesh。
+  database.pump(1, 0);
+  CHECK(database.stats().pending_meshes == 2);
+
+  database.pump(1);
+  database.pump(1);
+  CHECK(database.stats().pending_meshes == 0);
+  CHECK(countReady(database, uids) == 3);
+  CHECK(database.stats().cpu_bytes > 0);
+
+  for (const AssetUID uid : uids) {
+    CHECK(database.error(uid).empty());
+  }
+}
+
+TEST_CASE("asset db: pump(0) is a full no-op for deferred meshes", "[asset][asset_db][gltf][mesh]") {
+  AssetDatabase database(YR_TEST_ASSET_ROOT);
+  GltfLoadOptions options;
+  options.deferMeshes = true;
+
+  const GltfLoadResult loaded = database.loadGltfScene("res://models/ToyCar/ToyCar.gltf", options);
+  CAPTURE(loaded.error);
+  REQUIRE(loaded.ok);
+  REQUIRE(database.stats().pending_meshes == 3);
+
+  database.pump(0);
+  CHECK(database.stats().pending_meshes == 3);
+}
+
+TEST_CASE("asset db: duplicate deferred load dedupes mesh jobs", "[asset][asset_db][gltf][mesh]") {
+  AssetDatabase database(YR_TEST_ASSET_ROOT);
+  GltfLoadOptions options;
+  options.deferMeshes = true;
+
+  const GltfLoadResult first = database.loadGltfScene("res://models/ToyCar/ToyCar.gltf", options);
+  const GltfLoadResult second = database.loadGltfScene("res://models/ToyCar/ToyCar.gltf", options);
+  CAPTURE(first.error);
+  CAPTURE(second.error);
+  REQUIRE(first.ok);
+  REQUIRE(second.ok);
+  CHECK(database.stats().pending_meshes == 3);
+
+  std::vector<yr::obj::Ref<Mesh>> firstMeshes;
+  std::vector<yr::obj::Ref<Mesh>> secondMeshes;
+  for (const yr::asset::GltfNode& root : first.scene.roots) {
+    collectMeshRefs(root, firstMeshes);
+  }
+  for (const yr::asset::GltfNode& root : second.scene.roots) {
+    collectMeshRefs(root, secondMeshes);
+  }
+  REQUIRE(firstMeshes.size() == 3);
+  REQUIRE(secondMeshes.size() == 3);
+  for (std::size_t index = 0; index < firstMeshes.size(); ++index) {
+    CHECK(firstMeshes[index].get() == secondMeshes[index].get());
+  }
+}
+
+TEST_CASE("asset db: collectGarbage cancels pending mesh jobs", "[asset][asset_db][gltf][mesh][gc]") {
+  AssetDatabase database(YR_TEST_ASSET_ROOT);
+  GltfLoadOptions options;
+  options.deferMeshes = true;
+
+  {
+    const GltfLoadResult loaded = database.loadGltfScene("res://models/ToyCar/ToyCar.gltf", options);
+    CAPTURE(loaded.error);
+    REQUIRE(loaded.ok);
+    CHECK(database.stats().pending_meshes == 3);
+  }
+
+  (void)database.collectGarbage();
+  CHECK(database.stats().resident_count == 0);
+  CHECK(database.stats().pending_meshes == 0);
+
+  database.pump(1);
+  CHECK(database.stats().pending_meshes == 0);
+}
+
+TEST_CASE("asset db: evict cancels one pending mesh job", "[asset][asset_db][gltf][mesh][gc]") {
+  AssetDatabase database(YR_TEST_ASSET_ROOT);
+  GltfLoadOptions options;
+  options.deferMeshes = true;
+
+  AssetUID firstUid;
+  {
+    const GltfLoadResult loaded = database.loadGltfScene("res://models/ToyCar/ToyCar.gltf", options);
+    CAPTURE(loaded.error);
+    REQUIRE(loaded.ok);
+    std::vector<AssetUID> uids;
+    for (const yr::asset::GltfNode& root : loaded.scene.roots) {
+      collectMeshUids(root, uids);
+    }
+    REQUIRE(uids.size() == 3);
+    firstUid = uids.front();
+  }
+
+  CHECK(database.evict(firstUid));
+  CHECK(database.stats().pending_meshes == 2);
+  CHECK(database.state(firstUid) == LoadState::kUnloaded);
+}
+
+TEST_CASE("asset db: clear drops pending mesh jobs", "[asset][asset_db][gltf][mesh]") {
+  AssetDatabase database(YR_TEST_ASSET_ROOT);
+  GltfLoadOptions options;
+  options.deferMeshes = true;
+
+  const GltfLoadResult loaded = database.loadGltfScene("res://models/ToyCar/ToyCar.gltf", options);
+  CAPTURE(loaded.error);
+  REQUIRE(loaded.ok);
+  CHECK(database.stats().pending_meshes == 3);
+
+  database.clear();
+  CHECK(database.stats().pending_meshes == 0);
+  CHECK(database.stats().resident_count == 0);
+
+  database.pump(1);
+  CHECK(database.stats().pending_meshes == 0);
+}
+
+TEST_CASE("asset db: default options load synchronously", "[asset][asset_db][gltf]") {
+  AssetDatabase database(YR_TEST_ASSET_ROOT);
+
+  const GltfLoadResult loaded = database.loadGltfScene("res://models/ToyCar/ToyCar.gltf", GltfLoadOptions{});
+  CAPTURE(loaded.error);
+  REQUIRE(loaded.ok);
+  CHECK(database.stats().loads == 1);
+  CHECK(loaded.pendingMeshes.empty());
+
+  std::vector<AssetUID> uids;
+  for (const yr::asset::GltfNode& root : loaded.scene.roots) {
+    collectMeshUids(root, uids);
+  }
+  REQUIRE(uids.size() == 3);
+  for (const AssetUID uid : uids) {
+    CHECK(database.state(uid) == LoadState::kReady);
+  }
 }
