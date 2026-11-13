@@ -424,6 +424,17 @@ TEST_CASE("asset db: loadGltfScene defers textures and pump fills placeholders",
     CHECK(baseColorTexture->height > 0);
     CHECK(database.findAs<Texture>(baseColorTexture->uid()).get() == baseColorTexture.get());
 
+    // 色彩空间来自 glTF 语义并经 AsyncLoader completion 回填。
+    CHECK(baseColorTexture->colorSpace == yr::asset::TextureColorSpace::kSrgb);
+    const yr::obj::Ref<Material>& material = loaded.scene.roots[0].primitives[0].material;
+    REQUIRE(material.valid());
+    REQUIRE(material->normalTexture.valid());
+    CHECK(material->normalTexture->colorSpace == yr::asset::TextureColorSpace::kLinear);
+    REQUIRE(material->metallicRoughnessTexture.valid());
+    CHECK(material->metallicRoughnessTexture->colorSpace == yr::asset::TextureColorSpace::kLinear);
+    REQUIRE(material->emissiveTexture.valid());
+    CHECK(material->emissiveTexture->colorSpace == yr::asset::TextureColorSpace::kSrgb);
+
     const AssetStats stats = database.stats();
     CHECK(stats.loads == 1);
     CHECK(stats.failed_loads == 0);

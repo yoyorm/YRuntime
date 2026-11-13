@@ -16,6 +16,8 @@ namespace yr::asset {
     AssetUID uid;
     std::string resPath;
     ResourceKind kind = ResourceKind::kUnknown;
+    TextureColorSpace colorSpace = TextureColorSpace::kSrgb;
+    std::uint32_t maxDimension = 0;
   };
 
   struct LoadCompletion {
@@ -24,6 +26,8 @@ namespace yr::asset {
     ResourceKind kind = ResourceKind::kUnknown;
     std::vector<std::uint8_t> payload;
     std::string error;
+    TextureColorSpace colorSpace = TextureColorSpace::kSrgb;
+    std::uint32_t maxDimension = 0;
   };
 
   class ILoadBackend {
@@ -37,7 +41,10 @@ namespace yr::asset {
   public:
     explicit AsyncLoader(ILoadBackend& backend);
 
-    [[nodiscard]] AssetUID requestLoad(std::string_view resPath, ResourceKind kind = ResourceKind::kUnknown);
+    // colorSpace/maxDimension 只在真正提交时写入 Entry；kLoading/kReady 的重复请求沿用首次设置。
+    [[nodiscard]] AssetUID requestLoad(std::string_view resPath, ResourceKind kind = ResourceKind::kUnknown,
+                                       TextureColorSpace colorSpace = TextureColorSpace::kSrgb,
+                                       std::uint32_t maxDimension = 0);
 
     [[nodiscard]] LoadState state(AssetUID uid) const;
     [[nodiscard]] std::string error(AssetUID uid) const;
@@ -57,6 +64,8 @@ namespace yr::asset {
     struct Entry {
       std::string resPath;
       ResourceKind kind = ResourceKind::kUnknown;
+      TextureColorSpace colorSpace = TextureColorSpace::kSrgb;
+      std::uint32_t maxDimension = 0;
       LoadState state = LoadState::kLoading;
       std::string error;
     };

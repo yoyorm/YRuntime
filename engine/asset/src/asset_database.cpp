@@ -1,14 +1,12 @@
 #include <yr/asset/asset_database.h>
 
 #include <exception>
-#include <limits>
 #include <utility>
 #include <vector>
 
-#include <stb_image.h>
-
 #include <yr/asset/async_loader.h>
 #include <yr/asset/disk_file_access.h>
+#include <yr/asset/texture_loader.h>
 #include <yr/core/assert.h>
 #include <yr/core/log.h>
 
@@ -16,15 +14,6 @@
 #include "loader_worker.h"
 
 namespace yr::asset {
-
-  namespace {
-
-    std::string textureDecodeError(const char* fallback) {
-      const char* const reason = stbi_failure_reason();
-      return std::string("纹理解码失败：") + (reason != nullptr ? reason : fallback);
-    }
-
-  } // namespace
 
   AssetDatabase::AssetDatabase(std::string assetRoot)
       : assetRoot_(std::move(assetRoot)), fileAccess_(std::make_unique<DiskFileAccess>(assetRoot_)),
@@ -122,7 +111,8 @@ namespace yr::asset {
     if (options.deferTextures && asyncLoader_ != nullptr) {
       // 直接委托 AsyncLoader，避免 AssetDatabase::requestLoad 重复计入 loads。
       for (const GltfTextureRequest& request : result.pendingTextures) {
-        const AssetUID uid = asyncLoader_->requestLoad(request.resPath, ResourceKind::kTexture);
+        const AssetUID uid = asyncLoader_->requestLoad(request.resPath, ResourceKind::kTexture, request.colorSpace,
+                                                       request.maxDimension);
         YR_ASSERT_MSG(uid == request.uid, "glTF pending texture 的 UID 不一致");
         (void)uid;
       }
@@ -143,7 +133,8 @@ namespace yr::asset {
     return result;
   }
 
-  AssetUID AssetDatabase::requestLoad(std::string_view resPath, ResourceKind kind) {
+  AssetUID AssetDatabase::requestLoad(std::string_view resPath, ResourceKind kind, TextureColorSpace colorSpace,
+                                      std::uint32_t maxDimension) {
     const AssetUID uid = AssetUID::fromPath(resPath);
     if (!uid.valid()) {
       return AssetUID{};
@@ -166,7 +157,7 @@ namespace yr::asset {
 
     // AsyncLoader 会合并重复请求；只有真正进入加载的请求才计入 loads。
     const LoadState previous = asyncLoader_->state(uid);
-    const AssetUID requested = asyncLoader_->requestLoad(resPath, kind);
+    const AssetUID requested = asyncLoader_->requestLoad(resPath, kind, colorSpace, maxDimension);
     if (requested.valid() && previous != LoadState::kLoading && previous != LoadState::kReady) {
       ++counters_.loads;
     }
@@ -253,50 +244,20 @@ namespace yr::asset {
           created = true;
         }
 
-        if (completion.payload.size() > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
-          const std::string text = "纹理解码失败：文件过大";
-          (void)texture->markFailed(text);
+        DecodedTexture decoded;
+        std::string error;
+        if (!decodeRgba8(completion.payload.data(), completion.payload.size(), completion.maxDimension, decoded,
+                         error)) {
+          (void)texture->markFailed(error);
           ++counters_.failed_loads;
-          asyncLoader_->markFailed(uid, text);
+          asyncLoader_->markFailed(uid, error);
           continue;
         }
 
-        int width = 0;
-        int height = 0;
-        int channels = 0;
-        stbi_uc* const pixels = stbi_load_from_memory(
-            completion.payload.data(), static_cast<int>(completion.payload.size()), &width, &height, &channels, 4);
-        if (pixels == nullptr) {
-          const std::string text = textureDecodeError("stbi_load_from_memory 失败");
-          (void)texture->markFailed(text);
-          ++counters_.failed_loads;
-          asyncLoader_->markFailed(uid, text);
-          continue;
-        }
-
-        if (width <= 0 || height <= 0) {
-          stbi_image_free(pixels);
-          const std::string text = "纹理解码失败：图片尺寸无效";
-          (void)texture->markFailed(text);
-          ++counters_.failed_loads;
-          asyncLoader_->markFailed(uid, text);
-          continue;
-        }
-
-        const std::uint64_t pixelBytes = static_cast<std::uint64_t>(width) * static_cast<std::uint64_t>(height) * 4ULL;
-        if (pixelBytes > std::numeric_limits<std::size_t>::max()) {
-          stbi_image_free(pixels);
-          const std::string text = "纹理解码失败：图片过大";
-          (void)texture->markFailed(text);
-          ++counters_.failed_loads;
-          asyncLoader_->markFailed(uid, text);
-          continue;
-        }
-
-        texture->width = static_cast<std::uint32_t>(width);
-        texture->height = static_cast<std::uint32_t>(height);
-        texture->rgba8.assign(pixels, pixels + static_cast<std::size_t>(pixelBytes));
-        stbi_image_free(pixels);
+        texture->width = decoded.width;
+        texture->height = decoded.height;
+        texture->rgba8 = std::move(decoded.rgba8);
+        texture->colorSpace = completion.colorSpace;
 
         if (!texture->markReady()) {
           const std::string text = "AssetDatabase::pump: Texture 状态转换失败";

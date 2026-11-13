@@ -16,6 +16,7 @@
 #include <tiny_gltf_v3.h>
 
 #include <yr/asset/asset_uid.h>
+#include <yr/asset/texture_loader.h>
 
 namespace yr::asset {
 
@@ -416,6 +417,7 @@ namespace yr::asset {
       bool deferTextures = false;
       bool deferMeshes = false;
       bool skipTextures = false;
+      std::uint32_t maxTextureDimension = 1024;
       std::shared_ptr<const GltfSourceData> source;
       std::vector<GltfTextureRequest>* pendingTextures = nullptr;
       std::vector<GltfDeferredMesh>* pendingMeshes = nullptr;
@@ -451,7 +453,8 @@ namespace yr::asset {
       return false;
     }
 
-    [[nodiscard]] obj::Ref<Texture> loadTexture(LoadContext& context, std::int32_t textureIndex) {
+    [[nodiscard]] obj::Ref<Texture> loadTexture(LoadContext& context, std::int32_t textureIndex,
+                                                TextureColorSpace colorSpace) {
       if (textureIndex < 0 || static_cast<std::uint32_t>(textureIndex) >= context.model.textures_count) {
         return {};
       }
@@ -467,6 +470,10 @@ namespace yr::asset {
 
       const auto cached = context.textureCache.find(imageIndex);
       if (cached != context.textureCache.end()) {
+        if (cached->second.valid() && cached->second->colorSpace != colorSpace) {
+          addWarning(context, "image " + std::to_string(imageIndex) + ": 纹理被多种色彩空间共用，保留首次的 " +
+                                  (cached->second->colorSpace == TextureColorSpace::kSrgb ? "sRGB" : "linear"));
+        }
         return cached->second;
       }
 
@@ -503,6 +510,7 @@ namespace yr::asset {
       (void)resource->markLoading();
       resource->setUid(uid);
       resource->setSourcePath(imageResPath);
+      resource->colorSpace = colorSpace;
 
       if (context.deferTextures) {
         if (!storeResource(context, resource)) {
@@ -510,7 +518,8 @@ namespace yr::asset {
         }
         context.textureCache.emplace(imageIndex, resource);
         if (context.pendingTextures != nullptr) {
-          context.pendingTextures->push_back(GltfTextureRequest{uid, imageResPath});
+          context.pendingTextures->push_back(
+              GltfTextureRequest{uid, imageResPath, colorSpace, context.maxTextureDimension});
         }
         return resource;
       }
@@ -538,15 +547,21 @@ namespace yr::asset {
         return fail("图片过大");
       }
 
-      resource->width = static_cast<std::uint32_t>(width);
-      resource->height = static_cast<std::uint32_t>(height);
-      resource->rgba8.assign(pixels, pixels + static_cast<std::size_t>(pixelBytes));
+      DecodedTexture decoded;
+      downscaleRgba8(pixels, static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height),
+                     context.maxTextureDimension, decoded);
       stbi_image_free(pixels);
 
-      if (resource->rgba8.size() != static_cast<std::size_t>(pixelBytes)) {
+      const std::uint64_t expectedBytes =
+          static_cast<std::uint64_t>(decoded.width) * static_cast<std::uint64_t>(decoded.height) * 4ULL;
+      if (decoded.width == 0 || decoded.height == 0 || decoded.rgba8.size() != expectedBytes) {
         (void)resource->markFailed("RGBA 数据大小不匹配");
         return fail("RGBA 数据大小不匹配");
       }
+
+      resource->width = decoded.width;
+      resource->height = decoded.height;
+      resource->rgba8 = std::move(decoded.rgba8);
       (void)resource->markReady();
       if (!storeResource(context, resource)) {
         return {};
@@ -598,6 +613,7 @@ namespace yr::asset {
       material->emissive =
           math::Vec3{static_cast<float>(source.emissive_factor[0]), static_cast<float>(source.emissive_factor[1]),
                      static_cast<float>(source.emissive_factor[2])};
+      material->normalScale = static_cast<float>(source.normal_texture.scale);
       material->doubleSided = source.double_sided != 0;
       material->alphaCutoff = static_cast<float>(source.alpha_cutoff);
 
@@ -614,10 +630,11 @@ namespace yr::asset {
                    "material " + std::to_string(materialIndex) + ": 未知 alphaMode '" + alphaMode + "'，按 OPAQUE");
       }
 
-      material->baseColorTexture = loadTexture(context, pbr.base_color_texture.index);
-      material->normalTexture = loadTexture(context, source.normal_texture.index);
-      material->metallicRoughnessTexture = loadTexture(context, pbr.metallic_roughness_texture.index);
-      material->emissiveTexture = loadTexture(context, source.emissive_texture.index);
+      material->baseColorTexture = loadTexture(context, pbr.base_color_texture.index, TextureColorSpace::kSrgb);
+      material->normalTexture = loadTexture(context, source.normal_texture.index, TextureColorSpace::kLinear);
+      material->metallicRoughnessTexture =
+          loadTexture(context, pbr.metallic_roughness_texture.index, TextureColorSpace::kLinear);
+      material->emissiveTexture = loadTexture(context, source.emissive_texture.index, TextureColorSpace::kSrgb);
 
       (void)material->markReady();
       if (!storeResource(context, material)) {
@@ -920,6 +937,8 @@ namespace yr::asset {
     context.deferTextures = (options != nullptr && options->deferTextures);
     context.deferMeshes = (options != nullptr && options->deferMeshes);
     context.skipTextures = (options != nullptr && options->skipTextures);
+    context.maxTextureDimension =
+        options != nullptr ? options->maxTextureDimension : GltfLoadOptions{}.maxTextureDimension;
     context.source = parsed;
     context.pendingTextures = &result.pendingTextures;
     context.pendingMeshes = &result.pendingMeshes;

@@ -21,6 +21,7 @@ namespace {
   using yr::asset::LoadRequest;
   using yr::asset::LoadState;
   using yr::asset::ResourceKind;
+  using yr::asset::TextureColorSpace;
 
   class FakeLoadBackend final : public ILoadBackend {
   public:
@@ -35,8 +36,10 @@ namespace {
       return out;
     }
 
-    void complete(AssetUID uid, std::vector<std::uint8_t> payload) {
-      completed.push_back(LoadCompletion{uid, {}, ResourceKind::kUnknown, std::move(payload), {}});
+    void complete(AssetUID uid, std::vector<std::uint8_t> payload,
+                  TextureColorSpace colorSpace = TextureColorSpace::kSrgb, std::uint32_t maxDimension = 0) {
+      completed.push_back(
+          LoadCompletion{uid, {}, ResourceKind::kUnknown, std::move(payload), {}, colorSpace, maxDimension});
     }
 
     void fail(AssetUID uid, std::string error) {
@@ -73,6 +76,33 @@ TEST_CASE("async loader: first request enters loading and submits once", "[asset
   CHECK(backend.submitted[0].uid == uid);
   CHECK(backend.submitted[0].resPath == path);
   CHECK(backend.submitted[0].kind == ResourceKind::kTexture);
+}
+
+TEST_CASE("async loader: request carries texture color space and dimension cap", "[asset][async_loader]") {
+  FakeLoadBackend backend;
+  AsyncLoader loader(backend);
+
+  const AssetUID uid =
+      loader.requestLoad("res://textures/linear.png", ResourceKind::kTexture, TextureColorSpace::kLinear, 512);
+
+  REQUIRE(uid.valid());
+  REQUIRE(backend.submitted.size() == 1);
+  CHECK(backend.submitted[0].colorSpace == TextureColorSpace::kLinear);
+  CHECK(backend.submitted[0].maxDimension == 512);
+}
+
+TEST_CASE("async loader: completion passes through color space and dimension cap", "[asset][async_loader]") {
+  FakeLoadBackend backend;
+  AsyncLoader loader(backend);
+
+  const AssetUID uid =
+      loader.requestLoad("res://textures/normal.png", ResourceKind::kTexture, TextureColorSpace::kLinear, 256);
+  backend.complete(uid, bytesOf("rgba"), TextureColorSpace::kLinear, 256);
+
+  const std::vector<LoadCompletion> completions = loader.pump();
+  REQUIRE(completions.size() == 1);
+  CHECK(completions[0].colorSpace == TextureColorSpace::kLinear);
+  CHECK(completions[0].maxDimension == 256);
 }
 
 TEST_CASE("async loader: repeated request for same path is merged", "[asset][async_loader]") {

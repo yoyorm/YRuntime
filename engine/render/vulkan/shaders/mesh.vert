@@ -1,17 +1,25 @@
 #version 450
 
+struct Light {
+  vec4 positionType;
+  vec4 directionRange;
+  vec4 colorIntensity;
+};
+
 layout(set = 0, binding = 0) uniform Frame {
   mat4 view;
   mat4 proj;
   vec4 eye;
-  vec4 lightDir;
-  vec4 lightColor;
+  vec4 lightCount;
+  Light lights[8];
 } frame;
 
 layout(push_constant) uniform Push {
   mat4 model;
   vec4 baseColorFactor;
+  vec4 emissiveNormalScale;
   vec4 materialParams;
+  vec4 reserved;
 } pc;
 
 layout(location = 0) in vec3 position;

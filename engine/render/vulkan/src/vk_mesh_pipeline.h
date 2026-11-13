@@ -11,9 +11,11 @@ namespace yr::render::vk {
   struct MeshPushConstants {
     std::array<float, 16> model;
     std::array<float, 4> baseColorFactor;
-    std::array<float, 4> materialParams;
+    std::array<float, 4> emissiveNormalScale; // xyz emissive, w normalScale
+    std::array<float, 4> materialParams;      // metallic, roughness, alphaCutoff, alphaMode
+    std::array<float, 4> reserved;            // 保持 128 字节布局
   };
-  static_assert(sizeof(MeshPushConstants) == 96);
+  static_assert(sizeof(MeshPushConstants) == 128);
 
   class MeshPipeline {
   public:

@@ -28,6 +28,7 @@ namespace {
   using yr::asset::LoadRequest;
   using yr::asset::MemoryFileAccess;
   using yr::asset::ResourceKind;
+  using yr::asset::TextureColorSpace;
   using yr::asset::ThrottledFileAccess;
 
   std::vector<std::uint8_t> bytesOf(std::string_view text) {
@@ -69,6 +70,23 @@ TEST_CASE("loader worker: reads file on worker thread", "[asset][loader_worker]"
   CHECK(completions[0].kind == ResourceKind::kTexture);
   CHECK(completions[0].payload == bytesOf("payload"));
   CHECK(completions[0].error.empty());
+}
+
+TEST_CASE("loader worker: request metadata is copied to completion", "[asset][loader_worker]") {
+  MemoryFileAccess memory;
+  memory.addFile("res://data/normal.png", bytesOf("png"));
+
+  LoaderWorker worker(memory);
+  worker.submit(
+      LoadRequest{AssetUID{7}, "res://data/normal.png", ResourceKind::kTexture, TextureColorSpace::kLinear, 128});
+
+  const std::vector<LoadCompletion> completions = collect(worker, 1);
+  REQUIRE(completions.size() == 1);
+  CHECK(completions[0].uid == AssetUID{7});
+  CHECK(completions[0].kind == ResourceKind::kTexture);
+  CHECK(completions[0].colorSpace == TextureColorSpace::kLinear);
+  CHECK(completions[0].maxDimension == 128);
+  CHECK(completions[0].payload == bytesOf("png"));
 }
 
 TEST_CASE("loader worker: missing file reports error", "[asset][loader_worker]") {

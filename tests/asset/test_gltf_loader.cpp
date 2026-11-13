@@ -33,6 +33,7 @@ namespace {
   using yr::asset::Mesh;
   using yr::asset::Resource;
   using yr::asset::Texture;
+  using yr::asset::TextureColorSpace;
 
   [[nodiscard]] std::size_t countPrimitives(const GltfNode& node) {
     std::size_t count = node.primitives.size();
@@ -55,6 +56,24 @@ namespace {
     std::vector<const GltfPrimitive*> out;
     for (const GltfNode& root : result.scene.roots) {
       collectPrimitives(root, out);
+    }
+    return out;
+  }
+
+  [[nodiscard]] std::vector<const Texture*> collectTextures(const GltfLoadResult& result) {
+    std::vector<const Texture*> out;
+    for (const GltfPrimitive* primitive : collectPrimitives(result)) {
+      if (!primitive->material.valid()) {
+        continue;
+      }
+      const Material& material = *primitive->material;
+      const yr::obj::Ref<Texture>* const slots[] = {&material.baseColorTexture, &material.normalTexture,
+                                                    &material.metallicRoughnessTexture, &material.emissiveTexture};
+      for (const yr::obj::Ref<Texture>* slot : slots) {
+        if (slot->valid()) {
+          out.push_back(slot->get());
+        }
+      }
     }
     return out;
   }
@@ -461,4 +480,101 @@ TEST_CASE("gltf loader: default options build meshes synchronously", "[asset][gl
     CHECK_FALSE(primitive->mesh->vertices.empty());
     CHECK(primitive->mesh->hasBounds);
   }
+}
+
+TEST_CASE("gltf loader: ToyCar texture color spaces and normalScale", "[asset][gltf][toycar]") {
+  const GltfLoadResult result = yr::asset::loadGltfScene("res://models/ToyCar/ToyCar.gltf", YR_TEST_ASSET_ROOT);
+  CAPTURE(result.error);
+  REQUIRE(result.ok);
+
+  bool sawBaseColor = false;
+  bool sawNormal = false;
+  bool sawMetallicRoughness = false;
+  bool sawEmissive = false;
+  for (const GltfPrimitive* primitive : collectPrimitives(result)) {
+    REQUIRE(primitive->material.valid());
+    const Material& material = *primitive->material;
+    CHECK(material.normalScale == Catch::Approx(1.0F));
+
+    if (material.baseColorTexture.valid()) {
+      sawBaseColor = true;
+      CHECK(material.baseColorTexture->colorSpace == TextureColorSpace::kSrgb);
+    }
+    if (material.normalTexture.valid()) {
+      sawNormal = true;
+      CHECK(material.normalTexture->colorSpace == TextureColorSpace::kLinear);
+    }
+    if (material.metallicRoughnessTexture.valid()) {
+      sawMetallicRoughness = true;
+      CHECK(material.metallicRoughnessTexture->colorSpace == TextureColorSpace::kLinear);
+    }
+    if (material.emissiveTexture.valid()) {
+      sawEmissive = true;
+      CHECK(material.emissiveTexture->colorSpace == TextureColorSpace::kSrgb);
+    }
+  }
+  CHECK(sawBaseColor);
+  CHECK(sawNormal);
+  CHECK(sawMetallicRoughness);
+  CHECK(sawEmissive);
+}
+
+TEST_CASE("gltf loader: maxTextureDimension downsamples all textures", "[asset][gltf][toycar]") {
+  const GltfLoadOptions options{.maxTextureDimension = 1};
+  const GltfLoadResult result =
+      yr::asset::loadGltfScene("res://models/ToyCar/ToyCar.gltf", YR_TEST_ASSET_ROOT, nullptr, &options);
+  CAPTURE(result.error);
+  REQUIRE(result.ok);
+
+  const std::vector<const Texture*> textures = collectTextures(result);
+  REQUIRE_FALSE(textures.empty());
+  for (const Texture* texture : textures) {
+    CHECK(texture->width == 1);
+    CHECK(texture->height == 1);
+    CHECK(texture->rgba8.size() == 4);
+  }
+
+  for (const GltfPrimitive* primitive : collectPrimitives(result)) {
+    REQUIRE(primitive->material.valid());
+    const Material& material = *primitive->material;
+    if (material.baseColorTexture.valid()) {
+      CHECK(material.baseColorTexture->colorSpace == TextureColorSpace::kSrgb);
+    }
+    if (material.normalTexture.valid()) {
+      CHECK(material.normalTexture->colorSpace == TextureColorSpace::kLinear);
+    }
+  }
+}
+
+TEST_CASE("gltf loader: maxTextureDimension 0 keeps original texture size", "[asset][gltf][toycar]") {
+  const GltfLoadResult baseline = yr::asset::loadGltfScene("res://models/ToyCar/ToyCar.gltf", YR_TEST_ASSET_ROOT);
+  CAPTURE(baseline.error);
+  REQUIRE(baseline.ok);
+
+  std::unordered_map<AssetUID, const Texture*> baselineTextures;
+  for (const Texture* texture : collectTextures(baseline)) {
+    baselineTextures.emplace(texture->uid(), texture);
+  }
+  REQUIRE_FALSE(baselineTextures.empty());
+
+  const GltfLoadOptions options{.maxTextureDimension = 0};
+  const GltfLoadResult unlimited =
+      yr::asset::loadGltfScene("res://models/ToyCar/ToyCar.gltf", YR_TEST_ASSET_ROOT, nullptr, &options);
+  CAPTURE(unlimited.error);
+  REQUIRE(unlimited.ok);
+
+  bool sawFullSize = false;
+  const std::vector<const Texture*> textures = collectTextures(unlimited);
+  REQUIRE_FALSE(textures.empty());
+  for (const Texture* texture : textures) {
+    const auto expected = baselineTextures.find(texture->uid());
+    REQUIRE(expected != baselineTextures.end());
+    CHECK(texture->width == expected->second->width);
+    CHECK(texture->height == expected->second->height);
+    CHECK(texture->rgba8.size() == static_cast<std::size_t>(texture->width) * texture->height * 4);
+    if (texture->width == 1024) {
+      sawFullSize = true;
+    }
+  }
+  CHECK(sawFullSize);
 }

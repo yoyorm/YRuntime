@@ -74,7 +74,10 @@ namespace yr::asset {
 
     // 异步加载：worker 读取原始文件字节，pump 在主线程解码并安装到 cache_。
     // cache 中已 ready 时直接返回，不再重复 submit。
-    [[nodiscard]] AssetUID requestLoad(std::string_view resPath, ResourceKind kind = ResourceKind::kTexture);
+    // colorSpace 写入 Texture；maxDimension 非 0 时在主线程解码后按比例下采样。
+    [[nodiscard]] AssetUID requestLoad(std::string_view resPath, ResourceKind kind = ResourceKind::kTexture,
+                                       TextureColorSpace colorSpace = TextureColorSpace::kSrgb,
+                                       std::uint32_t maxDimension = 1024);
     // 优先查询 cache_，异步结果尚未安装时才回退到 AsyncLoader。
     [[nodiscard]] LoadState state(AssetUID uid) const;
     [[nodiscard]] std::string error(AssetUID uid) const;

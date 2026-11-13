@@ -6,7 +6,8 @@ namespace yr::asset {
 
   AsyncLoader::AsyncLoader(ILoadBackend& backend) : backend_(&backend) {}
 
-  AssetUID AsyncLoader::requestLoad(std::string_view resPath, ResourceKind kind) {
+  AssetUID AsyncLoader::requestLoad(std::string_view resPath, ResourceKind kind, TextureColorSpace colorSpace,
+                                    std::uint32_t maxDimension) {
     const AssetUID uid = AssetUID::fromPath(resPath);
     if (!uid.valid()) {
       return AssetUID{};
@@ -20,14 +21,17 @@ namespace yr::asset {
       }
       entry.resPath = std::string(resPath);
       entry.kind = kind;
+      entry.colorSpace = colorSpace;
+      entry.maxDimension = maxDimension;
       entry.state = LoadState::kLoading;
       entry.error.clear();
-      backend_->submit(LoadRequest{uid, entry.resPath, kind});
+      backend_->submit(LoadRequest{uid, entry.resPath, kind, colorSpace, maxDimension});
       return uid;
     }
 
-    const auto inserted = entries_.emplace(uid, Entry{std::string(resPath), kind, LoadState::kLoading, {}});
-    backend_->submit(LoadRequest{uid, inserted.first->second.resPath, kind});
+    const auto inserted =
+        entries_.emplace(uid, Entry{std::string(resPath), kind, colorSpace, maxDimension, LoadState::kLoading, {}});
+    backend_->submit(LoadRequest{uid, inserted.first->second.resPath, kind, colorSpace, maxDimension});
     return uid;
   }
 

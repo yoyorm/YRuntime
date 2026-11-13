@@ -31,6 +31,7 @@
 #include <yr/render/snapshot.h>
 #include <yr/render/snapshot_io.h>
 #include <yr/render/vk/vulkan_backend.h>
+#include <yr/scene/light_node.h>
 #include <yr/scene/mesh_instance_node.h>
 #include <yr/scene/node.h>
 #include <yr/scene/scene_tree.h>
@@ -448,6 +449,30 @@ namespace {
     return nullptr;
   }
 
+  void addLight(yr::scene::Node& root, yr::scene::LightType type, const yr::math::Vec3& color, float intensity,
+                float range, const yr::math::Vec3& position, const yr::math::Vec3& direction) {
+    auto light = std::make_unique<yr::scene::LightNode>();
+    light->setType(type);
+    light->setColor(color);
+    light->setIntensity(intensity);
+    light->setRange(range);
+    light->setPosition(position);
+    light->setDirection(direction);
+    if (!root.addChild(std::move(light))) {
+      YR_LOG_ERROR("render_demo", "灯光添加失败");
+    }
+  }
+
+  // 1 方向光 + 2 点光；位置按场景 AABB 半径缩放。
+  void addDemoLights(yr::scene::Node& root, const yr::math::Vec3& center, float radius) {
+    addLight(root, yr::scene::LightType::kDirectional, yr::math::Vec3{1.0F, 0.95F, 0.85F}, 2.0F, 0.0F, center,
+             yr::math::Vec3{0.4F, -0.8F, -0.5F});
+    addLight(root, yr::scene::LightType::kPoint, yr::math::Vec3{1.0F, 0.55F, 0.25F}, 8.0F, radius * 4.0F,
+             center + yr::math::Vec3{1.2F * radius, 0.8F * radius, 0.6F * radius}, yr::math::Vec3{0.0F, 0.0F, -1.0F});
+    addLight(root, yr::scene::LightType::kPoint, yr::math::Vec3{0.3F, 0.5F, 1.0F}, 6.0F, radius * 4.0F,
+             center + yr::math::Vec3{-1.2F * radius, 0.6F * radius, -0.8F * radius}, yr::math::Vec3{0.0F, 0.0F, -1.0F});
+  }
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -549,6 +574,9 @@ int main(int argc, char** argv) {
   }
   const yr::math::Vec3 center = (minimum + maximum) * 0.5F;
   const float radius = std::max((maximum - minimum).length() * 0.5F, 0.001F);
+  // 灯光只用于 extract，不参与 bounds；位置基于场景 AABB。
+  addDemoLights(*tree.root(), center, radius);
+  tree.refreshTransforms();
   const yr::math::Vec3 eye = center + yr::math::Vec3{1.2F * radius, 0.8F * radius, 1.8F * radius};
 
   // 相机由场景世界空间 AABB 定位，MainLoop 只转交。

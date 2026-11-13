@@ -1,5 +1,6 @@
 #include <yr/render/snapshot_io.h>
 
+#include <algorithm>
 #include <bit>
 #include <cstring>
 #include <limits>
@@ -8,9 +9,13 @@
 namespace {
 
   constexpr std::uint8_t kMagic[6] = {'Y', 'R', 'S', 'N', 'A', 'P'};
-  constexpr std::uint32_t kVersion = 2;
+  constexpr std::uint32_t kVersion = 3;
   constexpr std::uint64_t kItemBytes = 8 + (16 * 4) + 8 + 8;
   constexpr std::uint64_t kMeshVertexBytes = 8 * 4;
+  constexpr std::uint64_t kLightBytes = 4 + (3 * 4) + (3 * 4) + (3 * 4) + 4 + 4;
+  constexpr std::uint64_t kShadowBytes = (16 * 4) + 4 + 4 + 4;
+  constexpr std::uint64_t kTextureHeaderBytes = 8 + 4 + 4 + 4 + 8;
+  constexpr std::uint64_t kMaterialBytes = (5 * 8) + (4 * 4) + (4 * 4) + (3 * 4) + 4;
 
   void writeU32(std::vector<std::uint8_t>& out, std::uint32_t value) {
     out.push_back(static_cast<std::uint8_t>(value));
@@ -33,6 +38,28 @@ namespace {
     for (float value : transform.m) {
       writeF32(out, value);
     }
+  }
+
+  void writeLight(std::vector<std::uint8_t>& out, const yr::render::LightPod& light) {
+    writeU32(out, static_cast<std::uint32_t>(light.type));
+    for (float value : light.position) {
+      writeF32(out, value);
+    }
+    for (float value : light.direction) {
+      writeF32(out, value);
+    }
+    for (float value : light.color) {
+      writeF32(out, value);
+    }
+    writeF32(out, light.intensity);
+    writeF32(out, light.range);
+  }
+
+  void writeShadow(std::vector<std::uint8_t>& out, const yr::render::ShadowPod& shadow) {
+    writeTransform(out, shadow.viewProj);
+    writeF32(out, shadow.bias);
+    writeF32(out, shadow.texelSize);
+    writeU32(out, shadow.enabled);
   }
 
   class Reader {
@@ -90,6 +117,42 @@ namespace {
       return true;
     }
 
+    [[nodiscard]] bool readLight(yr::render::LightPod& out) noexcept {
+      std::uint32_t type = 0;
+      if (!readU32(type) || type > 1) {
+        return false;
+      }
+      out.type = static_cast<yr::render::LightType>(type);
+      for (float& value : out.position) {
+        if (!readF32(value)) {
+          return false;
+        }
+      }
+      for (float& value : out.direction) {
+        if (!readF32(value)) {
+          return false;
+        }
+      }
+      for (float& value : out.color) {
+        if (!readF32(value)) {
+          return false;
+        }
+      }
+      return readF32(out.intensity) && readF32(out.range);
+    }
+
+    [[nodiscard]] bool readShadow(yr::render::ShadowPod& out) noexcept {
+      if (!readTransform(out.viewProj) || !readF32(out.bias) || !readF32(out.texelSize)) {
+        return false;
+      }
+      std::uint32_t enabled = 0;
+      if (!readU32(enabled) || enabled > 1) {
+        return false;
+      }
+      out.enabled = enabled;
+      return true;
+    }
+
     [[nodiscard]] std::size_t remaining() const noexcept { return size_ - offset_; }
 
   private:
@@ -122,7 +185,11 @@ namespace {
 namespace yr::render {
 
   std::uint64_t snapshotByteSize(const RenderSnapshot& snapshot) noexcept {
+    const std::uint64_t lightCount = std::min<std::uint64_t>(snapshot.lightCount, RenderSnapshot::kMaxLights);
     std::uint64_t size = 6 + 4 + 8 + 2 * 16 * 4 + 3 * 4 + 8;
+    size += lightCount * kLightBytes;
+    size += kShadowBytes;
+    size += 8;
     size += static_cast<std::uint64_t>(snapshot.items.size()) * kItemBytes;
     size += 8;
     for (const MeshUpload& mesh : snapshot.uploads.meshes) {
@@ -131,9 +198,9 @@ namespace yr::render {
     }
     size += 8;
     for (const TextureUpload& texture : snapshot.uploads.textures) {
-      size += 8 + 4 + 4 + 8 + static_cast<std::uint64_t>(texture.rgba8.size());
+      size += kTextureHeaderBytes + static_cast<std::uint64_t>(texture.rgba8.size());
     }
-    size += 8 + static_cast<std::uint64_t>(snapshot.uploads.materials.size()) * (8 + 8 + 4 * 4 + 4 + 4);
+    size += 8 + static_cast<std::uint64_t>(snapshot.uploads.materials.size()) * kMaterialBytes;
     size += 8 + static_cast<std::uint64_t>(snapshot.releases.meshes.size()) * 8;
     size += 8 + static_cast<std::uint64_t>(snapshot.releases.materials.size()) * 8;
     size += 8 + static_cast<std::uint64_t>(snapshot.releases.textures.size()) * 8;
@@ -152,6 +219,13 @@ namespace yr::render {
     for (float value : snapshot.camera.eye) {
       writeF32(out, value);
     }
+
+    const std::uint64_t lightCount = std::min<std::uint64_t>(snapshot.lightCount, RenderSnapshot::kMaxLights);
+    writeU64(out, lightCount);
+    for (std::size_t index = 0; index < lightCount; ++index) {
+      writeLight(out, snapshot.lights[index]);
+    }
+    writeShadow(out, snapshot.shadow);
 
     writeU64(out, snapshot.items.size());
     for (const DrawItem& item : snapshot.items) {
@@ -187,6 +261,7 @@ namespace yr::render {
       writeU64(out, texture.texture.value);
       writeU32(out, texture.width);
       writeU32(out, texture.height);
+      writeU32(out, static_cast<std::uint32_t>(texture.colorSpace));
       writeU64(out, texture.rgba8.size());
       out.insert(out.end(), texture.rgba8.begin(), texture.rgba8.end());
     }
@@ -195,11 +270,20 @@ namespace yr::render {
     for (const MaterialUpload& material : snapshot.uploads.materials) {
       writeU64(out, material.material.value);
       writeU64(out, material.baseColorTexture.value);
+      writeU64(out, material.normalTexture.value);
+      writeU64(out, material.metallicRoughnessTexture.value);
+      writeU64(out, material.emissiveTexture.value);
       for (float value : material.baseColorFactor) {
         writeF32(out, value);
       }
       writeF32(out, material.metallic);
       writeF32(out, material.roughness);
+      writeF32(out, material.normalScale);
+      writeF32(out, material.alphaCutoff);
+      for (float value : material.emissiveFactor) {
+        writeF32(out, value);
+      }
+      writeU32(out, static_cast<std::uint32_t>(material.alphaMode));
     }
 
     const auto writeReleases = [&out](const std::vector<AssetHandle>& handles) {
@@ -239,6 +323,20 @@ namespace yr::render {
       if (!reader.readF32(value)) {
         return false;
       }
+    }
+
+    std::uint64_t lightCount = 0;
+    if (!readCount(reader, lightCount, kLightBytes) || lightCount > RenderSnapshot::kMaxLights) {
+      return false;
+    }
+    snapshot.lightCount = static_cast<std::uint32_t>(lightCount);
+    for (std::size_t index = 0; index < snapshot.lightCount; ++index) {
+      if (!reader.readLight(snapshot.lights[index])) {
+        return false;
+      }
+    }
+    if (!reader.readShadow(snapshot.shadow)) {
+      return false;
     }
 
     std::uint64_t itemCount = 0;
@@ -294,16 +392,18 @@ namespace yr::render {
     }
 
     std::uint64_t textureCount = 0;
-    if (!readCount(reader, textureCount, 8 + 4 + 4 + 8)) {
+    if (!readCount(reader, textureCount, kTextureHeaderBytes)) {
       return false;
     }
     snapshot.uploads.textures.resize(static_cast<std::size_t>(textureCount));
     for (TextureUpload& texture : snapshot.uploads.textures) {
+      std::uint32_t colorSpace = 0;
       std::uint64_t byteCount = 0;
       if (!reader.readU64(texture.texture.value) || !reader.readU32(texture.width) || !reader.readU32(texture.height) ||
-          !reader.readU64(byteCount)) {
+          !reader.readU32(colorSpace) || colorSpace > 1 || !reader.readU64(byteCount)) {
         return false;
       }
+      texture.colorSpace = static_cast<TextureColorSpace>(colorSpace);
       const std::uint64_t pixels = static_cast<std::uint64_t>(texture.width) * texture.height;
       if (pixels > std::numeric_limits<std::uint64_t>::max() / 4) {
         return false;
@@ -321,13 +421,15 @@ namespace yr::render {
     }
 
     std::uint64_t materialCount = 0;
-    constexpr std::uint64_t kMaterialBytes = 8 + 8 + 4 * 4 + 4 + 4;
     if (!readCount(reader, materialCount, kMaterialBytes)) {
       return false;
     }
     snapshot.uploads.materials.resize(static_cast<std::size_t>(materialCount));
     for (MaterialUpload& material : snapshot.uploads.materials) {
-      if (!reader.readU64(material.material.value) || !reader.readU64(material.baseColorTexture.value)) {
+      std::uint32_t alphaMode = 0;
+      if (!reader.readU64(material.material.value) || !reader.readU64(material.baseColorTexture.value) ||
+          !reader.readU64(material.normalTexture.value) || !reader.readU64(material.metallicRoughnessTexture.value) ||
+          !reader.readU64(material.emissiveTexture.value)) {
         return false;
       }
       for (float& value : material.baseColorFactor) {
@@ -335,9 +437,19 @@ namespace yr::render {
           return false;
         }
       }
-      if (!reader.readF32(material.metallic) || !reader.readF32(material.roughness)) {
+      if (!reader.readF32(material.metallic) || !reader.readF32(material.roughness) ||
+          !reader.readF32(material.normalScale) || !reader.readF32(material.alphaCutoff)) {
         return false;
       }
+      for (float& value : material.emissiveFactor) {
+        if (!reader.readF32(value)) {
+          return false;
+        }
+      }
+      if (!reader.readU32(alphaMode) || alphaMode > 1) {
+        return false;
+      }
+      material.alphaMode = static_cast<MaterialAlphaMode>(alphaMode);
     }
 
     if (!readHandles(reader, snapshot.releases.meshes) || !readHandles(reader, snapshot.releases.materials) ||

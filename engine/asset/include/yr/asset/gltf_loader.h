@@ -36,6 +36,8 @@ namespace yr::asset {
   struct GltfTextureRequest {
     AssetUID uid;
     std::string resPath;
+    TextureColorSpace colorSpace = TextureColorSpace::kSrgb;
+    std::uint32_t maxDimension = 0;
   };
 
   // 延迟构建的 mesh 任务。source 显式持有解析结果，保证 model 活到构建时。
@@ -51,6 +53,7 @@ namespace yr::asset {
     bool deferTextures = false;
     bool deferMeshes = false;
     bool skipTextures = false;
+    std::uint32_t maxTextureDimension = 1024;
   };
 
   struct GltfLoadResult {

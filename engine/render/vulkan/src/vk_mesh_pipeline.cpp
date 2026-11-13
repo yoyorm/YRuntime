@@ -59,9 +59,13 @@ namespace yr::render::vk {
     descriptorLayoutInfo.setBindings(frameBinding);
     descriptorSetLayout_ = ::vk::raii::DescriptorSetLayout(raiiDevice, descriptorLayoutInfo);
 
-    const ::vk::DescriptorSetLayoutBinding textureBinding{0, ::vk::DescriptorType::eCombinedImageSampler, 1,
-                                                          ::vk::ShaderStageFlagBits::eFragment};
-    descriptorLayoutInfo.setBindings(textureBinding);
+    const std::array<::vk::DescriptorSetLayoutBinding, 4> textureBindings{{
+        {0, ::vk::DescriptorType::eCombinedImageSampler, 1, ::vk::ShaderStageFlagBits::eFragment},
+        {1, ::vk::DescriptorType::eCombinedImageSampler, 1, ::vk::ShaderStageFlagBits::eFragment},
+        {2, ::vk::DescriptorType::eCombinedImageSampler, 1, ::vk::ShaderStageFlagBits::eFragment},
+        {3, ::vk::DescriptorType::eCombinedImageSampler, 1, ::vk::ShaderStageFlagBits::eFragment},
+    }};
+    descriptorLayoutInfo.setBindings(textureBindings);
     textureDescriptorSetLayout_ = ::vk::raii::DescriptorSetLayout(raiiDevice, descriptorLayoutInfo);
 
     const ::vk::PushConstantRange pushConstantRange{::vk::ShaderStageFlagBits::eVertex |

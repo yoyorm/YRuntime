@@ -1,6 +1,7 @@
 #include <yr/engine/render_extract.h>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -8,6 +9,7 @@
 #include <vector>
 
 #include <yr/asset/resource_types.h>
+#include <yr/scene/light_node.h>
 #include <yr/scene/mesh_instance_node.h>
 #include <yr/scene/node.h>
 #include <yr/scene/scene_tree.h>
@@ -28,11 +30,13 @@ namespace yr::engine {
       return texture->rgba8.size() == expected;
     }
 
+    [[nodiscard]] bool textureReady(const obj::Ref<asset::Texture>& texture) noexcept {
+      return !texture.valid() || validTexture(texture.get());
+    }
+
     [[nodiscard]] bool materialTexturesReady(const asset::Material& material) noexcept {
-      if (material.baseColorTexture.valid() && material.baseColorTexture->state() != asset::LoadState::kReady) {
-        return false;
-      }
-      return true;
+      return textureReady(material.baseColorTexture) && textureReady(material.normalTexture) &&
+             textureReady(material.metallicRoughnessTexture) && textureReady(material.emissiveTexture);
     }
 
     void appendTexture(const asset::Texture& texture, render::RenderSnapshot& out) {
@@ -40,6 +44,8 @@ namespace yr::engine {
       upload.texture.value = texture.uid().value;
       upload.width = texture.width;
       upload.height = texture.height;
+      upload.colorSpace = texture.colorSpace == asset::TextureColorSpace::kLinear ? render::TextureColorSpace::kLinear
+                                                                                  : render::TextureColorSpace::kSrgb;
       upload.rgba8 = texture.rgba8;
       out.uploads.textures.push_back(std::move(upload));
     }
@@ -60,6 +66,25 @@ namespace yr::engine {
       }
     }
 
+    [[nodiscard]] render::LightPod toLightPod(const scene::LightNode& light, const math::Mat4& world) {
+      render::LightPod pod;
+      pod.type = light.type() == scene::LightType::kPoint ? render::LightType::kPoint : render::LightType::kDirectional;
+      pod.position[0] = world[12];
+      pod.position[1] = world[13];
+      pod.position[2] = world[14];
+      const math::Vec3 direction = light.direction();
+      pod.direction[0] = direction.x;
+      pod.direction[1] = direction.y;
+      pod.direction[2] = direction.z;
+      const math::Vec3 color = light.color();
+      pod.color[0] = color.x;
+      pod.color[1] = color.y;
+      pod.color[2] = color.z;
+      pod.intensity = light.intensity();
+      pod.range = light.range();
+      return pod;
+    }
+
     void collectPreorder(const scene::Node& node, render::RenderSnapshot& out,
                          const std::unordered_set<asset::AssetUID>& residentMeshes,
                          const std::unordered_set<asset::AssetUID>& residentMaterials,
@@ -67,6 +92,12 @@ namespace yr::engine {
                          std::unordered_set<asset::AssetUID>& currentMeshes,
                          std::unordered_set<asset::AssetUID>& currentMaterials,
                          std::unordered_set<asset::AssetUID>& currentTextures) {
+      if (const auto* light = dynamic_cast<const scene::LightNode*>(&node); light != nullptr) {
+        if (out.lightCount < render::RenderSnapshot::kMaxLights) {
+          out.lights[out.lightCount++] = toLightPod(*light, node.globalTransform());
+        }
+      }
+
       if (const auto* instance = dynamic_cast<const scene::MeshInstanceNode*>(&node); instance != nullptr) {
         const asset::Mesh* const mesh = instance->mesh().get();
         const asset::Material* const material = instance->material().get();
@@ -103,25 +134,49 @@ namespace yr::engine {
             out.uploads.meshes.push_back(std::move(upload));
           }
 
-          const asset::Texture* baseColorTexture = material->baseColorTexture.get();
-          const bool hasTexture = validTexture(baseColorTexture);
-          const asset::AssetUID textureUid = hasTexture ? baseColorTexture->uid() : asset::AssetUID{};
-          if (hasTexture && currentTextures.insert(textureUid).second && !residentTextures.contains(textureUid)) {
-            appendTexture(*baseColorTexture, out);
+          const std::array<const obj::Ref<asset::Texture>*, 4> textureSlots{
+              &material->baseColorTexture,
+              &material->normalTexture,
+              &material->metallicRoughnessTexture,
+              &material->emissiveTexture,
+          };
+          for (const auto* slot : textureSlots) {
+            const asset::Texture* texture = slot->get();
+            if (texture == nullptr) {
+              continue;
+            }
+            const asset::AssetUID textureUid = texture->uid();
+            if (!textureUid.valid() || texture->state() != asset::LoadState::kReady) {
+              continue;
+            }
+            if (currentTextures.insert(textureUid).second && !residentTextures.contains(textureUid)) {
+              appendTexture(*texture, out);
+            }
           }
 
           if (currentMaterials.insert(material->uid()).second && !residentMaterials.contains(material->uid())) {
             render::MaterialUpload upload;
             upload.material.value = material->uid().value;
-            if (hasTexture) {
-              upload.baseColorTexture.value = textureUid.value;
-            }
+            upload.baseColorTexture.value =
+                material->baseColorTexture.valid() ? material->baseColorTexture->uid().value : 0;
+            upload.normalTexture.value = material->normalTexture.valid() ? material->normalTexture->uid().value : 0;
+            upload.metallicRoughnessTexture.value =
+                material->metallicRoughnessTexture.valid() ? material->metallicRoughnessTexture->uid().value : 0;
+            upload.emissiveTexture.value =
+                material->emissiveTexture.valid() ? material->emissiveTexture->uid().value : 0;
             upload.baseColorFactor[0] = material->baseColorFactor.x;
             upload.baseColorFactor[1] = material->baseColorFactor.y;
             upload.baseColorFactor[2] = material->baseColorFactor.z;
             upload.baseColorFactor[3] = material->baseColorAlpha;
             upload.metallic = material->metallic;
             upload.roughness = material->roughness;
+            upload.normalScale = material->normalScale;
+            upload.emissiveFactor[0] = material->emissive.x;
+            upload.emissiveFactor[1] = material->emissive.y;
+            upload.emissiveFactor[2] = material->emissive.z;
+            upload.alphaCutoff = material->alphaCutoff;
+            upload.alphaMode = material->alphaMode == asset::AlphaMode::kMask ? render::MaterialAlphaMode::kMask
+                                                                              : render::MaterialAlphaMode::kOpaque;
             out.uploads.materials.push_back(upload);
           }
         }
@@ -139,6 +194,9 @@ namespace yr::engine {
   void RenderExtractSystem::extract(const scene::SceneTree& tree, const render::CameraPod& camera,
                                     render::RenderSnapshot& out) {
     out.camera = camera;
+    out.lightCount = 0;
+    out.lights = {};
+    out.shadow = {};
     out.items.clear();
     out.uploads.meshes.clear();
     out.uploads.textures.clear();

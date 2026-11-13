@@ -40,14 +40,21 @@ namespace yr::render {
     constexpr std::uint32_t kFramesInFlight = 2;
     constexpr ::vk::Format kDepthFormat = ::vk::Format::eD32Sfloat;
 
+    struct LightUniform {
+      std::array<float, 4> positionType;   // xyz position, w type
+      std::array<float, 4> directionRange; // xyz direction, w range
+      std::array<float, 4> colorIntensity; // xyz color, w intensity
+    };
+    static_assert(sizeof(LightUniform) == 48);
+
     struct FrameUniforms {
       std::array<float, 16> view;
       std::array<float, 16> proj;
       std::array<float, 4> eye;
-      std::array<float, 4> lightDir;
-      std::array<float, 4> lightColor;
+      std::array<float, 4> lightCount; // x = count
+      std::array<LightUniform, 8> lights;
     };
-    static_assert(sizeof(FrameUniforms) == 176);
+    static_assert(sizeof(FrameUniforms) == 544);
     static_assert(sizeof(TransformPod) == sizeof(math::Mat4));
 
     [[nodiscard]] math::Mat4 toMat4(const TransformPod& transform) noexcept {
@@ -80,14 +87,18 @@ namespace yr::render {
       std::array<float, 4> baseColorFactor{};
       float metallic = 0.0F;
       float roughness = 1.0F;
-      std::uint64_t baseColorTexture = 0;
+      float normalScale = 1.0F;
+      std::array<float, 3> emissive{};
+      float alphaCutoff = 0.5F;
+      MaterialAlphaMode alphaMode = MaterialAlphaMode::kOpaque;
+      std::array<std::uint64_t, 4> textureHandles{};
+      ::vk::raii::DescriptorSet descriptorSet{nullptr};
     };
 
     struct GpuTexture {
       ::vk::raii::DeviceMemory memory{nullptr};
       ::vk::raii::Image image{nullptr};
       ::vk::raii::ImageView view{nullptr};
-      ::vk::raii::DescriptorSet descriptorSet{nullptr};
     };
 
     struct FrameBuffer {
@@ -118,7 +129,8 @@ namespace yr::render {
     std::unordered_map<std::uint64_t, GpuTexture> textures;
     std::array<std::vector<GpuMesh>, kFramesInFlight> pendingMeshes;
     std::array<std::vector<GpuTexture>, kFramesInFlight> pendingTextures;
-    std::optional<GpuTexture> defaultTexture;
+    // 顺序：baseColor, normal, metallicRoughness, emissive。
+    std::vector<GpuTexture> defaultTextures;
     std::array<bool, kFramesInFlight> depthInitialized{};
 
     std::uint32_t frameSlot_ = 0;
@@ -155,8 +167,8 @@ namespace yr::render {
 
       const std::array<::vk::DescriptorPoolSize, 2> poolSizes{{
           {::vk::DescriptorType::eUniformBuffer, kFramesInFlight},
-          // M9.0c texture budget; increase for Sponza if needed.
-          {::vk::DescriptorType::eCombinedImageSampler, 256},
+          // per-material set 含 4 个 sampler；256 材质 × 4 留有余量。
+          {::vk::DescriptorType::eCombinedImageSampler, 1024},
       }};
       ::vk::DescriptorPoolCreateInfo poolInfo{};
       poolInfo.setFlags(::vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet)
@@ -234,9 +246,11 @@ namespace yr::render {
 
         gpuTextures.emplace_back();
         GpuTexture& texture = gpuTextures.back();
+        const ::vk::Format format = upload.colorSpace == TextureColorSpace::kLinear ? ::vk::Format::eR8G8B8A8Unorm
+                                                                                    : ::vk::Format::eR8G8B8A8Srgb;
         ::vk::ImageCreateInfo imageInfo{};
         imageInfo.setImageType(::vk::ImageType::e2D)
-            .setFormat(::vk::Format::eR8G8B8A8Srgb)
+            .setFormat(format)
             .setExtent(::vk::Extent3D{upload.width, upload.height, 1})
             .setMipLevels(1)
             .setArrayLayers(1)
@@ -257,7 +271,7 @@ namespace yr::render {
         ::vk::ImageViewCreateInfo viewInfo{};
         viewInfo.setImage(*texture.image)
             .setViewType(::vk::ImageViewType::e2D)
-            .setFormat(::vk::Format::eR8G8B8A8Srgb)
+            .setFormat(format)
             .setSubresourceRange(::vk::ImageSubresourceRange{::vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1});
         texture.view = ::vk::raii::ImageView(raiiDevice, viewInfo);
       }
@@ -317,21 +331,6 @@ namespace yr::render {
       device->graphicsQueue().submit2(submitInfo, nullptr);
       device->graphicsQueue().waitIdle();
 
-      for (GpuTexture& texture : gpuTextures) {
-        const ::vk::DescriptorSetLayout layout = meshPipeline->textureDescriptorSetLayout();
-        ::vk::DescriptorSetAllocateInfo allocateInfo{};
-        allocateInfo.setDescriptorPool(**descriptorPool).setSetLayouts(layout);
-        auto allocatedSets = raiiDevice.allocateDescriptorSets(allocateInfo);
-        texture.descriptorSet = std::move(allocatedSets.front());
-        const ::vk::DescriptorImageInfo imageInfo{**sampler, *texture.view, ::vk::ImageLayout::eShaderReadOnlyOptimal};
-        ::vk::WriteDescriptorSet write{};
-        write.setDstSet(*texture.descriptorSet)
-            .setDstBinding(0)
-            .setDescriptorType(::vk::DescriptorType::eCombinedImageSampler)
-            .setImageInfo(imageInfo);
-        const std::array<::vk::WriteDescriptorSet, 1> writes{write};
-        raiiDevice.updateDescriptorSets(writes, {});
-      }
       return gpuTextures;
     }
 
@@ -364,22 +363,46 @@ namespace yr::render {
       }
     }
 
-    void createDefaultTexture() {
-      TextureUpload white;
-      white.width = 1;
-      white.height = 1;
-      white.rgba8 = {255, 255, 255, 255};
-      std::vector<GpuTexture> uploaded = createGpuTextures({white});
-      defaultTexture.emplace(std::move(uploaded.front()));
+    void createDefaultTextures() {
+      defaultTextures.clear();
+      const auto makeUpload = [](TextureColorSpace colorSpace, std::array<std::uint8_t, 4> pixel) {
+        TextureUpload upload;
+        upload.width = 1;
+        upload.height = 1;
+        upload.colorSpace = colorSpace;
+        upload.rgba8.assign(pixel.begin(), pixel.end());
+        return upload;
+      };
+      const std::array<TextureUpload, 4> uploads{
+          makeUpload(TextureColorSpace::kSrgb, {255, 255, 255, 255}),
+          makeUpload(TextureColorSpace::kLinear, {128, 128, 255, 255}),
+          makeUpload(TextureColorSpace::kLinear, {255, 255, 255, 255}),
+          makeUpload(TextureColorSpace::kSrgb, {255, 255, 255, 255}),
+      };
+      std::vector<GpuTexture> uploaded = createGpuTextures(std::vector<TextureUpload>(uploads.begin(), uploads.end()));
+      if (uploaded.size() != uploads.size()) {
+        throw std::runtime_error("默认纹理创建失败");
+      }
+      defaultTextures = std::move(uploaded);
     }
 
-    void updateFrameUniforms(std::uint32_t slot, const CameraPod& camera) {
-      const math::Vec3 light = math::Vec3{0.4F, 0.8F, 0.5F}.normalized();
-      const FrameUniforms uniforms{toMat4(camera.view).m_,
-                                   toMat4(camera.proj).m_,
-                                   {camera.eye[0], camera.eye[1], camera.eye[2], 1.0F},
-                                   {light.x, light.y, light.z, 0.0F},
-                                   {1.0F, 1.0F, 1.0F, 1.0F}};
+    void updateFrameUniforms(std::uint32_t slot, const RenderSnapshot& snapshot) {
+      FrameUniforms uniforms{};
+      const CameraPod& camera = snapshot.camera;
+      uniforms.view = toMat4(camera.view).m_;
+      uniforms.proj = toMat4(camera.proj).m_;
+      uniforms.eye = {camera.eye[0], camera.eye[1], camera.eye[2], 1.0F};
+
+      const std::uint32_t count = std::min<std::uint32_t>(snapshot.lightCount, RenderSnapshot::kMaxLights);
+      uniforms.lightCount = {static_cast<float>(count), 0.0F, 0.0F, 0.0F};
+      for (std::uint32_t index = 0; index < count; ++index) {
+        const LightPod& source = snapshot.lights[index];
+        LightUniform& target = uniforms.lights[index];
+        target.positionType = {source.position[0], source.position[1], source.position[2],
+                               source.type == LightType::kPoint ? 1.0F : 0.0F};
+        target.directionRange = {source.direction[0], source.direction[1], source.direction[2], source.range};
+        target.colorIntensity = {source.color[0], source.color[1], source.color[2], source.intensity};
+      }
       std::memcpy(frameBuffers[slot].mapped, &uniforms, sizeof(uniforms));
     }
 
@@ -427,6 +450,16 @@ namespace yr::render {
       stats.upload_bytes += totalBytes;
     }
 
+    [[nodiscard]] const GpuTexture& resolveTexture(std::uint64_t handle, std::size_t slot) const {
+      if (handle != 0) {
+        const auto it = textures.find(handle);
+        if (it != textures.end()) {
+          return it->second;
+        }
+      }
+      return defaultTextures[slot];
+    }
+
     void uploadMaterial(const MaterialUpload& upload) {
       if (!upload.material.isValid() || materials.contains(upload.material.value)) {
         return;
@@ -435,8 +468,35 @@ namespace yr::render {
       std::copy(std::begin(upload.baseColorFactor), std::end(upload.baseColorFactor), material.baseColorFactor.begin());
       material.metallic = upload.metallic;
       material.roughness = upload.roughness;
-      material.baseColorTexture = upload.baseColorTexture.value;
-      materials.emplace(upload.material.value, material);
+      material.normalScale = upload.normalScale;
+      material.emissive = {upload.emissiveFactor[0], upload.emissiveFactor[1], upload.emissiveFactor[2]};
+      material.alphaCutoff = upload.alphaCutoff;
+      material.alphaMode = upload.alphaMode;
+      material.textureHandles = {upload.baseColorTexture.value, upload.normalTexture.value,
+                                 upload.metallicRoughnessTexture.value, upload.emissiveTexture.value};
+
+      const ::vk::raii::Device& raiiDevice = device->raiiDevice();
+      const ::vk::DescriptorSetLayout layout = meshPipeline->textureDescriptorSetLayout();
+      ::vk::DescriptorSetAllocateInfo allocateInfo{};
+      allocateInfo.setDescriptorPool(**descriptorPool).setSetLayouts(layout);
+      auto allocatedSets = raiiDevice.allocateDescriptorSets(allocateInfo);
+      // 材质 descriptor set 不随材质释放单独 free；材质单次加载，pool 在 shutdown 统一销毁。
+      material.descriptorSet = std::move(allocatedSets.front());
+
+      std::array<::vk::DescriptorImageInfo, 4> imageInfos{};
+      std::array<::vk::WriteDescriptorSet, 4> writes{};
+      for (std::size_t slot = 0; slot < imageInfos.size(); ++slot) {
+        imageInfos[slot] =
+            ::vk::DescriptorImageInfo{**sampler, *resolveTexture(material.textureHandles[slot], slot).view,
+                                      ::vk::ImageLayout::eShaderReadOnlyOptimal};
+        writes[slot]
+            .setDstSet(*material.descriptorSet)
+            .setDstBinding(static_cast<std::uint32_t>(slot))
+            .setDescriptorType(::vk::DescriptorType::eCombinedImageSampler)
+            .setImageInfo(imageInfos[slot]);
+      }
+      raiiDevice.updateDescriptorSets(writes, {});
+      materials.emplace(upload.material.value, std::move(material));
       ++stats.uploaded_assets;
     }
 
@@ -491,7 +551,7 @@ namespace yr::render {
       for (auto& pending : pendingTextures) {
         pending.clear();
       }
-      defaultTexture.reset();
+      defaultTextures.clear();
       descriptorSets.clear();
       descriptorPool.reset();
       sampler.reset();
@@ -569,7 +629,7 @@ namespace yr::render {
       // This slot's fence has completed, so resources deferred to it are no longer in use.
       pendingMeshes[slot].clear();
       pendingTextures[slot].clear();
-      updateFrameUniforms(slot, snapshot.camera);
+      updateFrameUniforms(slot, snapshot);
 
       const ::vk::ResultValue<std::uint32_t> acquired = swapchain->raiiHandle().acquireNextImage(
           std::numeric_limits<std::uint64_t>::max(), frameSync->imageAvailable(slot), nullptr);
@@ -659,11 +719,12 @@ namespace yr::render {
         }
         const GpuMesh& mesh = meshIt->second;
         const GpuMaterial& material = materialIt->second;
-        const auto textureIt = textures.find(material.baseColorTexture);
-        const ::vk::DescriptorSet textureSet =
-            textureIt == textures.end() ? *defaultTexture->descriptorSet : *textureIt->second.descriptorSet;
-        const std::array<::vk::DescriptorSet, 1> textureSets{textureSet};
-        cmd.bindDescriptorSets(::vk::PipelineBindPoint::eGraphics, meshPipeline->layout(), 1, textureSets, {});
+        if (!*material.descriptorSet) {
+          ++stats.missing_assets;
+          continue;
+        }
+        const std::array<::vk::DescriptorSet, 1> materialSets{*material.descriptorSet};
+        cmd.bindDescriptorSets(::vk::PipelineBindPoint::eGraphics, meshPipeline->layout(), 1, materialSets, {});
         const std::array<::vk::Buffer, 1> vertexBuffers{*mesh.buffer};
         const std::array<::vk::DeviceSize, 1> offsets{0};
         cmd.bindVertexBuffers(0, vertexBuffers, offsets);
@@ -672,7 +733,10 @@ namespace yr::render {
         vk::MeshPushConstants push{};
         push.model = toMat4(item.world).m_;
         push.baseColorFactor = material.baseColorFactor;
-        push.materialParams = {material.metallic, material.roughness, 0.0F, 0.0F};
+        push.emissiveNormalScale = {material.emissive[0], material.emissive[1], material.emissive[2],
+                                    material.normalScale};
+        push.materialParams = {material.metallic, material.roughness, material.alphaCutoff,
+                               material.alphaMode == MaterialAlphaMode::kMask ? 1.0F : 0.0F};
         cmd.pushConstants<vk::MeshPushConstants>(
             meshPipeline->layout(), ::vk::ShaderStageFlagBits::eVertex | ::vk::ShaderStageFlagBits::eFragment, 0, push);
         cmd.drawIndexed(mesh.indexCount, 1, 0, 0, 0);
@@ -758,7 +822,7 @@ namespace yr::render {
       impl_->sampler.emplace(impl_->device->raiiDevice(), samplerInfo);
       impl_->uploadCommandPool.emplace(*impl_->device, 1);
       impl_->createFrameResources();
-      impl_->createDefaultTexture();
+      impl_->createDefaultTextures();
     } catch (const std::exception& error) {
       YR_LOG_ERROR("render.vk.backend", std::string("初始化失败：") + error.what());
       impl_->lastValidationErrors = 0;

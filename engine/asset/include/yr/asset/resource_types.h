@@ -18,6 +18,7 @@ namespace yr::asset {
     std::uint32_t width = 0;
     std::uint32_t height = 0;
     std::vector<std::uint8_t> rgba8; // width * height * 4
+    TextureColorSpace colorSpace = TextureColorSpace::kSrgb;
 
     [[nodiscard]] std::uint64_t cpuBytes() const noexcept override { return static_cast<std::uint64_t>(rgba8.size()); }
   };
@@ -61,6 +62,7 @@ namespace yr::asset {
     float metallic = 0.0F; // 类默认保持 M9.0a 的非金属默认
     float roughness = 1.0F;
     math::Vec3 emissive{0.0F, 0.0F, 0.0F};
+    float normalScale = 1.0F;
     bool doubleSided = false;
     AlphaMode alphaMode = AlphaMode::kOpaque;
     float alphaCutoff = 0.5F;

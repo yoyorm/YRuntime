@@ -64,6 +64,8 @@ namespace yr::asset {
       completion.uid = request.uid;
       completion.resPath = request.resPath;
       completion.kind = request.kind;
+      completion.colorSpace = request.colorSpace;
+      completion.maxDimension = request.maxDimension;
       try {
         if (access_ == nullptr) {
           completion.error = "LoaderWorker 未绑定 IFileAccess";

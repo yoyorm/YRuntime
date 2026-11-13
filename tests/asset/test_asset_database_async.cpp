@@ -93,6 +93,22 @@ TEST_CASE("asset db async: requestLoad installs a texture on the main thread", "
   CHECK(database->stats().resident_count == 0);
 }
 
+TEST_CASE("asset db async: requestLoad carries color space and dimension cap", "[asset][asset_db][async]") {
+  const std::unique_ptr<AssetDatabase> database = makeDatabase();
+
+  const AssetUID uid = database->requestLoad("res://pixel.png", yr::asset::ResourceKind::kTexture,
+                                             yr::asset::TextureColorSpace::kLinear, 1);
+  REQUIRE(uid.valid());
+  REQUIRE(pumpUntil(*database, uid, LoadState::kReady));
+
+  const yr::obj::Ref<Texture> texture = database->findAs<Texture>(uid);
+  REQUIRE(texture.valid());
+  CHECK(texture->colorSpace == yr::asset::TextureColorSpace::kLinear);
+  CHECK(texture->width == 1);
+  CHECK(texture->height == 1);
+  REQUIRE(texture->rgba8.size() == 4);
+}
+
 TEST_CASE("asset db async: duplicate request merges into one load", "[asset][asset_db][async]") {
   const std::unique_ptr<AssetDatabase> database = makeDatabase();
 

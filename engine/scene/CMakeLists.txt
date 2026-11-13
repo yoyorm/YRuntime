@@ -1,6 +1,7 @@
 add_library(yr_scene
     src/node.cpp
     src/mesh_instance_node.cpp
+    src/light_node.cpp
     src/scene_tree.cpp
     src/scene_classes.cpp
     src/packed_scene.cpp

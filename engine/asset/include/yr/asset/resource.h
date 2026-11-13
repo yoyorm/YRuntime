@@ -10,6 +10,8 @@ namespace yr::asset {
 
   enum class LoadState : std::uint8_t { kUnloaded, kLoading, kReady, kFailed };
   enum class ResourceKind : std::uint8_t { kUnknown, kMesh, kMaterial, kTexture };
+  // kSrgb：baseColor/emissive 等色彩贴图；kLinear：normal/MR 等数据贴图。
+  enum class TextureColorSpace : std::uint8_t { kSrgb, kLinear };
 
   // M9.0a：资源数据基类。状态机：
   //   kUnloaded --markLoading--> kLoading --markReady--> kReady
