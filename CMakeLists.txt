@@ -28,6 +28,7 @@ target_compile_options(yr_build_flags INTERFACE
 # 子目录（按依赖方向排列：core → math → object ...）
 add_subdirectory(engine/core)
 add_subdirectory(engine/math)
+add_subdirectory(engine/job)
 add_subdirectory(engine/object)
 add_subdirectory(engine/asset)
 add_subdirectory(engine/event)
