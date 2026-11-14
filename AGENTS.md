@@ -11,13 +11,14 @@ YRuntime 是一个 C++20 游戏运行时：Object/SceneTree/EventBus/MainLoop + 
 ## 2. 当前任务
 
 ```text
-M10-a：手写 MtQueue<T>
-任务卡：doc/tasks/m10-a-mtqueue.md
-用户负责：engine/job/include/yr/job/mt_queue.h
+M10-a：手写 JobSystem（MtQueue 已完成）
+任务卡：doc/tasks/m10-a-job-system.md
+用户负责：engine/job/include/yr/job/job_system.h、engine/job/src/job_system.cpp
 AI 负责：tests/job/**、CMake、doc/**、机械式调用点迁移
 ```
 
-当前任务的第一原则：**AI 不写 MtQueue 的实现**。AI 只写测试、CMake、文档，运行并报告失败。
+MtQueue 已完成并通过 ASan/TSan；当前第一原则：**AI 不写 JobSystem 的实现**。
+AI 只写测试、CMake、文档，运行并报告失败。
 
 ## 3. 架构不变量
 
@@ -54,7 +55,8 @@ DISPLAY=:99 ./build/debug-vk/bin/yr_render_demo --frames 60
 
 **用户手写，AI 不得改实现：**
 
-- `engine/job/include/yr/job/mt_queue.h`
+- `engine/job/include/yr/job/job_system.h`
+- `engine/job/src/job_system.cpp`
 
 **AI 负责：**
 
