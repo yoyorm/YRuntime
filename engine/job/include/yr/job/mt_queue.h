@@ -1,22 +1,21 @@
 #pragma once
 
+#include <atomic>
+#include <condition_variable>
 #include <cstddef>
+#include <deque>
+#include <mutex>
+#include <stdexcept>
 #include <utility>
 
 namespace yr::job {
 
-  // M10-a 手写契约：线程安全 FIFO 队列。
-  //
-  // 所有权：队列拥有入队元素；调用方通过 T& out 取回。
-  // 线程：所有公开方法可并发调用。
-  // 停止：close() 幂等；close 后 push 抛 std::logic_error；
-  //       wait_pop 在队列 drain 完后返回 false。
-  //
-  // TODO(user): 实现本类。当前只是让测试可编译的占位桩；
-  //             需要什么同步原语（mutex / condition_variable / deque）由你决定。
+  // 线程安全队列 written by yoyorm
   template <typename T> class MtQueue {
   public:
     MtQueue() = default;
+
+    // 析构前需要 close() 队列并且保证所有work线程都已经退出
     ~MtQueue() = default;
 
     MtQueue(const MtQueue&) = delete;
@@ -24,33 +23,62 @@ namespace yr::job {
     MtQueue(MtQueue&&) = delete;
     MtQueue& operator=(MtQueue&&) = delete;
 
-    void push(T /*value*/) {
-      // TODO(user): 入队并 notify_one；若已 close 抛 std::logic_error。
+    void push(T value) {
+      {
+        std::lock_guard lock_{mutex_};
+        if (is_closed)
+          throw std::logic_error("MtQueue has been closed");
+        queue_.push_back(std::move(value));
+      }
+      has_one.notify_one();
     }
 
-    [[nodiscard]] bool try_pop(T& /*out*/) {
-      // TODO(user): 非阻塞弹出一个元素；空队列返回 false。
-      return false;
+    // 非阻塞弹出
+    [[nodiscard]] bool try_pop(T& out) {
+      std::unique_lock lock_{mutex_};
+      if (queue_.empty()) {
+        return false;
+      }
+      out = std::move(queue_.front());
+      queue_.pop_front();
+      return true;
     }
 
-    [[nodiscard]] bool wait_pop(T& /*out*/) {
-      // TODO(user): 阻塞直到有元素或 close 且为空；不要 busy wait。
-      return false;
+    [[nodiscard]] bool wait_pop(T& out) {
+      std::unique_lock lock_{mutex_};
+      has_one.wait(lock_, [&]() { return is_closed || !queue_.empty(); });
+      // 当没有关闭且队列空的时候必须等待,直到关闭或者有元素可以取出
+
+      if (queue_.empty()) { // 关闭且队列空
+        return false;
+      }
+
+      out = std::move(queue_.front());
+      queue_.pop_front();
+      return true;
     }
 
     void close() {
-      // TODO(user): 幂等关闭，notify_all。
+      {
+        std::lock_guard lock_{mutex_};
+        is_closed = true;
+      }
+      has_one.notify_all();
+      // 通知所有的等待的waitpop结束等待
     }
 
-    [[nodiscard]] bool closed() const noexcept {
-      // TODO(user): 返回关闭状态。
-      return false;
-    }
+    [[nodiscard]] bool closed() const noexcept { return is_closed; }
 
     [[nodiscard]] std::size_t size() const {
-      // TODO(user): 返回当前元素数量。
-      return 0;
+      std::lock_guard lock{mutex_};
+      return queue_.size();
     }
+
+  private:
+    std::deque<T> queue_;
+    mutable std::mutex mutex_;
+    std::condition_variable has_one;
+    std::atomic<bool> is_closed = false; // 防止修改竞争
   };
 
 } // namespace yr::job
