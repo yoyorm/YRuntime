@@ -1,7 +1,7 @@
 # M10-a：手写 MtQueue
 
-> 状态：进行中（AI 已准备失败测试与 CMake 骨架，等待用户实现）
-> 最近更新：2026-11-14
+> 状态：**已完成**（2026-11-15：10/10 用例通过，ASan 与 TSan 干净，`check_format` / `check_deps` 通过）
+> 最近更新：2026-11-15
 
 ## 1. 目标
 
@@ -133,4 +133,6 @@ ctest --test-dir build/debug-vk -R mt_queue
 - 2026-11-14：新增用例 9“close 后 push move-only 值也抛”。目的不是测异常类型，而是确认 `push(T)` 的拒绝路径不要求 `T` 可拷贝、被拒元素不入队。
 - 2026-11-14：`wait_pop` 的“确实阻塞”判据保持弱证明（`entered` 置位 + 10ms + `returned == false`），不做严格阻塞点证明。理由：严格证明需要注入 hook 或探测线程状态，成本大于收益，且易 flaky（R5）。
 - 2026-11-14：并发 `size()` / `closed()`、多线程同时 `close()` 的幂等压力暂不测（R3）。前者只有 TSan 能抓到，当前 preset 未提供；等引入 tsan preset 再补。
+- 2026-11-15：关闭标志定为 `std::atomic<bool>`。理由：`closed()` 是 `const noexcept` 的锁外查询，`std::mutex::lock()` 可能抛 `std::system_error`，在 `noexcept` 里抛会 `terminate`；给 `closed()` 加锁就必须同时放弃 `noexcept`。锁内访问（`push` / `wait_pop` 谓词）用 atomic 是冗余的，但无害，且避免两套读法。
+- 2026-11-15：析构契约保持"调用方负责"。`~MtQueue` 不唤醒、不等待任何线程；有线程阻塞在 `wait_pop` 时销毁对象是未定义行为（标准对 `condition_variable` 析构有同样的前置条件）。正确顺序固定为 `close()` → `join` → 析构。
 - 2026-11-14：TSan 验证通过：手工 `build/tsan`（`-fsanitize=thread`）+ `setarch $(uname -m) -R ./build/tsan/bin/YrTests_job`，51 assertions / 10 cases 全绿。当前容器直接跑 TSan 会报 `unexpected memory mapping`，需要 `setarch -R` 关闭 ASLR。

@@ -1,7 +1,7 @@
 # M10-a-2：手写 JobSystem
 
-> 状态：进行中（MtQueue 已完成；AI 已准备失败测试与骨架）
-> 最近更新：2026-11-14
+> 状态：**已完成**（2026-11-15：7/7 用例通过；debug 300 轮无失败；ASan 与 TSan 干净）
+> 最近更新：2026-11-15
 
 ## 1. 目标
 
@@ -119,3 +119,8 @@ ctest --preset asan -R job_system
 - 2026-11-14：`workerCount == 0` 定义为“调用线程内联执行”，用于保留单线程路径（M10 验收要求 `--jobs 0` 仍可工作）。
 - 2026-11-14：`waitAll` 只允许从非 worker 调用；主线程帮忙执行留到下一小步，避免第一次实现就引入复杂唤醒。
 - 2026-11-14：任务类型先用 `std::function<void()>`；move-only 任务/结果等到 TaskHandle 阶段再评估。
+- 2026-11-15：**`pendings_` 的减一与"是否归零"判断必须在 `waitAll` 用的同一把锁内**，`notify_all` 可以放在锁外。曾把 `fetch_sub` 放在锁外：7 条用例单次全绿，但 200 轮里挂 3 次（约 1.5%），TSan 下 7 条里挂 2 条——这是 lost wakeup（逻辑竞态），不是数据竞争，ASan/TSan 都不会报 race。
+- 2026-11-15：通知只在归零时发一次，而不是每个任务完成都 `notify_all`；`submit` 不通知这个 cv（worker 的唤醒由 `MtQueue::push` 负责），避免把 `waitAll` 的等待者提前叫醒。
+- 2026-11-15：验收标准定为"**单次全绿不算数**"：`[job_system]` 连跑 300 轮无失败 + TSan 连跑 20 轮无挂且无 race 报告。并发 bug 的概率会随任务数放大（2 / 16 / 200 三种规模就是为制造时序差异）。
+- 2026-11-15：锁顺序固定为 `JobSystem::mutex_` → `MtQueue` 内部锁（`submit` 持锁入队）。worker 侧是 `wait_pop` 返回后才拿 `mutex_`，两者不嵌套；不得反向。
+- 2026-11-15：TSan 需要 `setarch $(uname -m) -R` 绕开 ASLR 与 TSan 的映射冲突；且**每次都要用当前源码重编**——跑旧二进制会得到与代码无关的 hang。
