@@ -1,10 +1,33 @@
+#include <atomic>
+#include <condition_variable>
 #include <cstddef>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <utility>
 #include <yr/job/job_system.h>
 
 namespace yr::job {
+
+  struct TaskHandle::State {
+    std::atomic<bool> completed = false;
+    std::condition_variable cv;
+    std::mutex mutex;
+  };
+
+  bool TaskHandle::ready() const noexcept {
+    if (state_) {
+      return state_->completed.load();
+    }
+    return false;
+  }
+
+  void TaskHandle::wait() const {
+    if (state_) {
+      std::unique_lock lock{state_->mutex};
+      state_->cv.wait(lock, [&]() { return state_->completed.load(); });
+    }
+  }
 
   JobSystem::JobSystem(std::size_t workerCount) : workerCount_(workerCount) {
     workers_.reserve(workerCount);
@@ -35,16 +58,30 @@ namespace yr::job {
     queue_.close();
   }
 
-  void JobSystem::submit(std::function<void()> task) {
+  TaskHandle JobSystem::submit(std::function<void()> task) {
     // workerCount == 0 时直接执行。
     if (!workerCount_.load()) {
       task();
-      return;
+      auto state = std::make_shared<TaskHandle::State>();
+      state->completed = true;
+      return TaskHandle(state);
     }
 
+    auto state = std::make_shared<TaskHandle::State>();
+    auto task_with_state = [state, task = std::move(task)]() {
+      task();
+      {
+        std::lock_guard lock{state->mutex};
+        state->completed.store(true);
+      }
+      state->cv.notify_all();
+    };
+
     std::lock_guard lock{mutex_};
-    queue_.push(std::move(task));
+
+    queue_.push(std::move(task_with_state));
     pendings_++;
+    return TaskHandle(state);
   }
 
   void JobSystem::waitAll() {

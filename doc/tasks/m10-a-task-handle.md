@@ -1,6 +1,6 @@
 # M10-a-3：TaskHandle
 
-> 状态：进行中（AI 已准备 TaskHandle 契约、失败测试与 stub）
+> 状态：**已完成**（2026-11-15：6/6 TaskHandle 用例通过；全量 527/527；ASan/TSan 干净）
 > 最近更新：2026-11-15
 
 ## 1. 目标
@@ -109,3 +109,6 @@ ctest --preset asan -R task_handle
 - 2026-11-15：`workerCount == 0` 的 submit 必须在返回前把 handle 置 ready，否则调用方会误判。
 - 2026-11-15：`wait` 只保证主线程/非 worker 等待；主线程帮忙执行留到下一小步。
 - 2026-11-15：TaskHandle 的 stub 与失败测试**不提交**；等实现通过后与 `job_system.h/.cpp` 一起提交，避免 CI 红灯。
+- 2026-11-15：实现采用每任务 `State{atomic<bool> completed, mutex, cv}`。`ready()` 只读 atomic；`wait()` 在 state 锁下等 predicate；完成方同一锁内置位，锁外 `notify_all`，无 lost wakeup。
+- 2026-11-15：`submit` 把任务包成 `lambda`，执行完置 completed；`workerCount == 0` 路径在返回前直接置位，保证 handle 已 ready。
+- 2026-11-15：验证：`YrTests_job` 23/23、81 assertions；debug 100 轮 0 失败；ASan 527/527；TSan（setarch -R）20 轮 0 失败。

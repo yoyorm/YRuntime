@@ -18,7 +18,7 @@ TEST_CASE("job_system: zero workers execute inline", "[job][job_system]") {
   CHECK(jobs.workerCount() == 0);
 
   std::atomic<int> count{0};
-  jobs.submit([&] { count.fetch_add(1, std::memory_order_relaxed); });
+  (void)jobs.submit([&] { count.fetch_add(1, std::memory_order_relaxed); });
 
   CHECK(count.load(std::memory_order_relaxed) == 1);
   jobs.waitAll();
@@ -32,7 +32,7 @@ TEST_CASE("job_system: runs submitted tasks across workers", "[job][job_system]"
 
   std::atomic<int> count{0};
   for (int index = 0; index < kTasks; ++index) {
-    jobs.submit([&] { count.fetch_add(1, std::memory_order_relaxed); });
+    (void)jobs.submit([&] { count.fetch_add(1, std::memory_order_relaxed); });
   }
 
   jobs.waitAll();
@@ -43,9 +43,9 @@ TEST_CASE("job_system: waitAll covers nested submissions", "[job][job_system]") 
   JobSystem jobs(2);
   std::atomic<int> count{0};
 
-  jobs.submit([&] {
+  (void)jobs.submit([&] {
     count.fetch_add(1, std::memory_order_relaxed);
-    jobs.submit([&] { count.fetch_add(1, std::memory_order_relaxed); });
+    (void)jobs.submit([&] { count.fetch_add(1, std::memory_order_relaxed); });
   });
 
   jobs.waitAll();
@@ -59,7 +59,7 @@ TEST_CASE("job_system: destructor drains submitted tasks", "[job][job_system]") 
   {
     JobSystem jobs(2);
     for (int index = 0; index < kTasks; ++index) {
-      jobs.submit([&] {
+      (void)jobs.submit([&] {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
         count.fetch_add(1, std::memory_order_relaxed);
       });
@@ -82,7 +82,7 @@ TEST_CASE("job_system: waitAll is idempotent", "[job][job_system]") {
   std::atomic<int> count{0};
 
   for (int index = 0; index < kTasks; ++index) {
-    jobs.submit([&] { count.fetch_add(1, std::memory_order_relaxed); });
+    (void)jobs.submit([&] { count.fetch_add(1, std::memory_order_relaxed); });
   }
 
   jobs.waitAll();
