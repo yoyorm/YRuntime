@@ -112,3 +112,8 @@ ctest --preset asan -R task_handle
 - 2026-11-15：实现采用每任务 `State{atomic<bool> completed, mutex, cv}`。`ready()` 只读 atomic；`wait()` 在 state 锁下等 predicate；完成方同一锁内置位，锁外 `notify_all`，无 lost wakeup。
 - 2026-11-15：`submit` 把任务包成 `lambda`，执行完置 completed；`workerCount == 0` 路径在返回前直接置位，保证 handle 已 ready。
 - 2026-11-15：验证：`YrTests_job` 23/23、81 assertions；debug 100 轮 0 失败；ASan 527/527；TSan（setarch -R）20 轮 0 失败。
+- 2026-11-15：**包装任务的 lambda 必须按值/按移动捕获**。队列里的闭包会活过 `submit`，用 `[&]` 捕获形参会让它持有已销毁栈帧的引用；ASan 报 `stack-use-after-scope`（`task()` 处），症状可以是 HANG / SIGABRT / SIGSEGV 三种（UB 不保证一致症状）。正确写法 `[state, task = std::move(task)]`——`std::function` 要求 callable 可拷贝，`std::function` 与 `shared_ptr` 都满足。
+- 2026-11-15：`State::completed` 保持 `std::atomic<bool>` 的**唯一**理由是 `ready()`：它是锁外、无锁、`noexcept` 的轮询查询。改成普通 `bool` 且 `ready()` 不加锁 = 数据竞争（TSan 实证：worker 在锁内写 vs `ready()` 无锁读 → `data race`，写方标 `(mutexes: write M0)`、读方无锁）。另一条合法路线是 `ready()` 加锁 + 去掉 `noexcept`（`mutex::lock` 可能抛），但会让每帧轮询与 worker 争锁，故不取。
+- 2026-11-15：atomic 的代价可忽略：`atomic<bool>::load` 与普通 `bool` 读取编译成同一条 `movzbl`（x86 上 load 天然具备 acquire 语义）；写在锁内、每任务一次，相对提交时的 mutex + 队列操作可忽略。
+- 2026-11-15：`workerCount == 0` 的内联路径对 `completed` 只做普通置位、不加锁也不通知，这是**有意**的：此刻只有调用线程持有 `state`，handle 尚未返回，没有任何其他线程能观察它。
+- 2026-11-15：每个任务分配一个 `State`（含 `mutex` + `condition_variable`），即每次提交一次堆分配 + 两个同步对象。提交非常密集时可能成为开销，届时再评估"延迟创建 cv / futex"（R3：现在不做，等 benchmark 数据）。
