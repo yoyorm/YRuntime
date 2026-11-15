@@ -11,13 +11,13 @@ YRuntime 是一个 C++20 游戏运行时：Object/SceneTree/EventBus/MainLoop + 
 ## 2. 当前任务
 
 ```text
-M10-a：手写 JobSystem（MtQueue 已完成）
-任务卡：doc/tasks/m10-a-job-system.md
+M10-a：手写 TaskHandle（MtQueue、JobSystem 已完成）
+任务卡：doc/tasks/m10-a-task-handle.md
 用户负责：engine/job/include/yr/job/job_system.h、engine/job/src/job_system.cpp
 AI 负责：tests/job/**、CMake、doc/**、机械式调用点迁移
 ```
 
-MtQueue 已完成并通过 ASan/TSan；当前第一原则：**AI 不写 JobSystem 的实现**。
+MtQueue 与 JobSystem 已完成并通过 ASan/TSan；当前第一原则：**AI 不写 TaskHandle 的实现**。
 AI 只写测试、CMake、文档，运行并报告失败。
 
 ## 3. 架构不变量
@@ -86,6 +86,13 @@ DISPLAY=:99 ./build/debug-vk/bin/yr_render_demo --frames 60
 - 在用户未要求时重构用户文件；
 - 用“顺手修一下”的方式改变契约；
 - 大规模生成核心实现后让用户 review。
+
+**红灯规则：**
+
+- AI 创建“等待用户实现”的失败测试或 stub 时，**不要提交**；
+- 这些文件保留在工作区，等实现通过后与实现一起提交；
+- 已提交的测试必须全绿，CI 不允许红灯；
+- 如果已经误提交，先 `git reset --mixed HEAD~1` 收回，再让实现与测试一起提交。
 
 ## 7. 会话与上下文
 
