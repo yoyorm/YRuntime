@@ -19,16 +19,16 @@
 | **M7 Snapshot 驱动画面** | ✅ 已完成 / 收口（2026-10-24）—— 7a/7b/7c/7d/7e：MainLoop 接线、DrawItem/Camera、WASD、dump/replay、帧统计、600s soak、resize、GIF/PNG；双/三缓冲按 D22 推迟 |
 | **M8 序列化** | ✅ 已完成 / 收口（2026-10-31）—— M8a 文本；M8b 引用/连接；M8c headless `--scene` 加载与 1000 节点 benchmark；364 tests |
 | **M9 资源系统** | ✅ 主体完成（M9.2b streaming + M9.5 PBR/多光源/阴影；Sponza 4K 纹理待 M9.5d-0） |
-| **M9.5 ~ M11** | 🔨 M9.5 主体完成；下一步 M9.5d-0 worker 解码 / M10 任务系统 |
+| **M9.5 ~ M11** | 🔨 M9.5 主体完成；**M10 任务系统进行中**（MtQueue / JobSystem / TaskHandle 已完成，当前 M10-a waitAll 主线程帮忙）；M9.5d-0 与 M10 的 asset worker 迁移合并执行（见 `02-roadmap.md` M10 分步计划） |
 
-**远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend ✅ → M6 最小 Vulkan bootstrap ✅ → M7 Snapshot 驱动画面（首个主要作品节点）✅ → M8 序列化 ✅ → M9 资源系统 ✅ → M9.5 基础 PBR 主体 ✅ → M10 任务系统 → M11 工具链打磨。**当前任务：M9.5d-0（Sponza 4K 纹理 worker 解码 / 1K 缓存）或 M10 任务系统规划。**
+**远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend ✅ → M6 最小 Vulkan bootstrap ✅ → M7 Snapshot 驱动画面（首个主要作品节点）✅ → M8 序列化 ✅ → M9 资源系统 ✅ → M9.5 基础 PBR 主体 ✅ → M10 任务系统 → M11 工具链打磨。**当前任务：M10-a waitAll 主线程帮忙（任务卡 `doc/tasks/m10-a-wait-help.md`）。**
 
 进度**只在两处维护**：根 `README.md` 的里程碑表（对外）+ `02-roadmap.md` 的 checkbox（对内）。
 别的地方不要重复记录，否则一定会漂移。
 
 ---
 
-## 2. 下一步：M9.5d-0 或 M10
+## 2. 下一步：M10 任务系统（路线已定）
 
 **M9.1 已收口（2026-11-11）**：`AssetDatabase` 强 Ref 缓存 + fixpoint GC + `evict` + `AssetStats`；glTF loader 通过 hooks 复用资源；MainLoop 阶段 12 接 `collectGarbage()`。ToyCar 首次 `resident=12` / `cpu_bytes=22,659,328` B，循环结束 final `resident=0`；debug-vk 与 ASan 410/410，validation 0。决策见 D31。
 
@@ -40,24 +40,17 @@
 
 **最终切片（D26）**：ToyCar（仓库内，视觉/PBR）+ Sponza（外部路径，资源/并行压力测试，大资产不进仓库）。M9 顺序：M9.0 walking skeleton（baseColor + Blinn-Phong）→ M9.1 AssetDatabase/GC → M9.2a 协作式异步 + 纹理 streaming → M9.2b mesh/scene streaming + Sponza → M9.5 完整 PBR。每个子系统必须出现在视觉/流式/并行 demo 中，否则删除。
 
-**执行模式（D27）**：coder 负责实现、测试、CMake、文档机械同步；用户 review 契约与关键 diff，不再手写核心。
+**执行模式（D27）**：coder 负责实现、测试、CMake、文档机械同步；用户 review 契约与关键 diff，不再手写核心。**M10 例外（2026-11-14 起）**：并发核心（`job_system.h/.cpp`）回到用户手写，AI 只写测试、CMake、文档与机械替换，见 `AGENTS.md` §5。
 
-下一步二选一：
+路线已定（2026-11-16，原"二选一"选 B 并细化，理由：M9.5d-0 的 worker 解码依赖任务系统，先做 M10 可让两者合并验证 §6 铁律）：
 
-**A. M9.5d-0（推荐先做）**
-1. worker 纹理解码 + 下采样：`LoaderWorker` 读字节后直接 `decodeRgba8`，completion 回传 RGBA；
-2. in-flight/字节预算，避免 72 张 4K completion 堆积；
-3. 或预生成 1K Sponza 纹理缓存，作为 demo 的快速路径；
-4. Sponza 室内点光调参，决定 shadow 默认开关；
-5. 重新跑带纹理 Sponza，补齐 M9.5 最终画面。
+1. **当前 M10-a**：MtQueue / JobSystem / TaskHandle 已完成并提交；剩余 `waitAll` 主线程帮忙（任务卡 [`m10-a-wait-help.md`](tasks/m10-a-wait-help.md)，失败测试在工作区未提交）与 `TaskHandle::wait()` 帮忙两小步。
+2. **M10-b**：依赖图 `submit(fn, deps)` + `parallel_for` + 确定性测试；收尾件：TSan 正式 preset、`bench_jobs`、`JobStats`、内存序头文件注释、`--jobs 0` 单线程路径全绿。
+3. **M10-c work stealing 不做**（移入 Stretch S13）；Transform 并行刷新推迟（当前无真实消费者）。
+4. **M10 收口后回头做 M9.5d-0**，与"AssetDatabase IO/解码搬 worker"合并执行：worker 纹理解码 + 下采样、in-flight/字节预算、1K Sponza 纹理缓存快速路径、室内点光调参与 shadow 默认开关、重跑带纹理 Sponza 补齐 M9.5 最终画面。
+5. **M11 只做包装收口子集**（README 实测 / 架构图 / 展示数据）；`yr_pack` 为机动项；其余 Stretch 项冻结。
 
-**B. 直接进入 M10**
-1. JobSystem + MtQueue；
-2. 把 AssetDatabase IO/解码搬到 worker；
-3. Transform 并行刷新；
-4. 再回头处理 Sponza 纹理与室内光照。
-
-详细计划见 `02-roadmap.md` M9.5 / M10。
+详细计划见 `02-roadmap.md` M10 分步执行计划。
 
 ### M7 复盘题（已收口，供面试自测）
 
