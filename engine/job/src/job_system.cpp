@@ -35,16 +35,8 @@ namespace yr::job {
       workers_.emplace_back([&]() {
         while (1) {
           std::function<void()> task;
-          bool finish = false;
           if (queue_.wait_pop(task)) {
-            task();
-            {
-              std::lock_guard lock{mutex_};
-              pendings_--;
-              finish = !pendings_;
-            }
-            if (finish)
-              cv_.notify_all();
+            finishTask_(std::move(task));
           } else {
             break;
           }
@@ -77,20 +69,53 @@ namespace yr::job {
       state->cv.notify_all();
     };
 
-    std::lock_guard lock{mutex_};
+    {
+      std::lock_guard lock{mutex_};
+      queue_.push(std::move(task_with_state));
+      pendings_++;
+    }
 
-    queue_.push(std::move(task_with_state));
-    pendings_++;
+    cv_.notify_all();
     return TaskHandle(state);
   }
 
   void JobSystem::waitAll() {
-    std::unique_lock lock{mutex_};
-    cv_.wait(lock, [&]() { return !pendings_; });
+    bool finish = false;
+
+    while (1) {
+      std::function<void()> task{};
+
+      if (queue_.try_pop(task)) {
+        finishTask_(std::move(task));
+      } else {
+        std::lock_guard lock{mutex_};
+        finish = !pendings_ && !queue_.size();
+      }
+
+      if (finish) {
+        return;
+      } else {
+        std::unique_lock lock{mutex_};
+        cv_.wait(lock, [&]() { return !pendings_ || queue_.size() > 0; });
+        continue;
+      }
+    }
   }
 
   std::size_t JobSystem::workerCount() const noexcept {
     return workerCount_;
+  }
+
+  void JobSystem::finishTask_(std::function<void()> task) {
+    task();
+    bool finish = false;
+    {
+      std::lock_guard lock{mutex_};
+      pendings_--;
+      finish = !pendings_;
+    }
+    if (finish)
+      cv_.notify_all();
   }
 
 } // namespace yr::job

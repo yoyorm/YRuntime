@@ -19,9 +19,9 @@
 | **M7 Snapshot 驱动画面** | ✅ 已完成 / 收口（2026-10-24）—— 7a/7b/7c/7d/7e：MainLoop 接线、DrawItem/Camera、WASD、dump/replay、帧统计、600s soak、resize、GIF/PNG；双/三缓冲按 D22 推迟 |
 | **M8 序列化** | ✅ 已完成 / 收口（2026-10-31）—— M8a 文本；M8b 引用/连接；M8c headless `--scene` 加载与 1000 节点 benchmark；364 tests |
 | **M9 资源系统** | ✅ 主体完成（M9.2b streaming + M9.5 PBR/多光源/阴影；Sponza 4K 纹理待 M9.5d-0） |
-| **M9.5 ~ M11** | 🔨 M9.5 主体完成；**M10 任务系统进行中**（MtQueue / JobSystem / TaskHandle 已完成，当前 M10-a waitAll 主线程帮忙）；M9.5d-0 与 M10 的 asset worker 迁移合并执行（见 `02-roadmap.md` M10 分步计划） |
+| **M9.5 ~ M11** | 🔨 M9.5 主体完成；**M10 任务系统进行中**（MtQueue / JobSystem / TaskHandle / waitAll 帮忙已完成，当前 M10-a-5 `TaskHandle::wait()` 主线程帮忙）；M9.5d-0 与 M10 的 asset worker 迁移合并执行（见 `02-roadmap.md` M10 分步计划） |
 
-**远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend ✅ → M6 最小 Vulkan bootstrap ✅ → M7 Snapshot 驱动画面（首个主要作品节点）✅ → M8 序列化 ✅ → M9 资源系统 ✅ → M9.5 基础 PBR 主体 ✅ → M10 任务系统 → M11 工具链打磨。**当前任务：M10-a waitAll 主线程帮忙（任务卡 `doc/tasks/m10-a-wait-help.md`）。**
+**远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend ✅ → M6 最小 Vulkan bootstrap ✅ → M7 Snapshot 驱动画面（首个主要作品节点）✅ → M8 序列化 ✅ → M9 资源系统 ✅ → M9.5 基础 PBR 主体 ✅ → M10 任务系统 → M11 工具链打磨。**当前任务：M10-a-5 `TaskHandle::wait()` 主线程帮忙（任务卡 `doc/tasks/m10-a-handle-wait-help.md`）。**
 
 进度**只在两处维护**：根 `README.md` 的里程碑表（对外）+ `02-roadmap.md` 的 checkbox（对内）。
 别的地方不要重复记录，否则一定会漂移。
@@ -44,7 +44,7 @@
 
 路线已定（2026-11-16，原"二选一"选 B 并细化，理由：M9.5d-0 的 worker 解码依赖任务系统，先做 M10 可让两者合并验证 §6 铁律）：
 
-1. **当前 M10-a**：MtQueue / JobSystem / TaskHandle 已完成并提交；剩余 `waitAll` 主线程帮忙（任务卡 [`m10-a-wait-help.md`](tasks/m10-a-wait-help.md)，失败测试在工作区未提交）与 `TaskHandle::wait()` 帮忙两小步。
+1. **当前 M10-a**：MtQueue / JobSystem / TaskHandle / `waitAll` 帮忙已完成并提交；剩余 `TaskHandle::wait()` 主线程帮忙（任务卡 [`m10-a-handle-wait-help.md`](tasks/m10-a-handle-wait-help.md)，失败测试在工作区未提交）一小步。
 2. **M10-b**：依赖图 `submit(fn, deps)` + `parallel_for` + 确定性测试；收尾件：TSan 正式 preset、`bench_jobs`、`JobStats`、内存序头文件注释、`--jobs 0` 单线程路径全绿。
 3. **M10-c work stealing 不做**（移入 Stretch S13）；Transform 并行刷新推迟（当前无真实消费者）。
 4. **M10 收口后回头做 M9.5d-0**，与"AssetDatabase IO/解码搬 worker"合并执行：worker 纹理解码 + 下采样、in-flight/字节预算、1K Sponza 纹理缓存快速路径、室内点光调参与 shadow 默认开关、重跑带纹理 Sponza 补齐 M9.5 最终画面。
@@ -143,6 +143,7 @@ AI 已能写实现，瓶颈不再是"会不会写 API"，而是"能不能判断�
 | `00-vision.md` | 怀疑方向、或想砍功能时 |
 | `03-learning-map.md` | 卡住、需要补知识时 |
 | `06-decisions.md` | 要做取舍前，先查有没有已经定过的 |
+| `layers/job.md` | 动 job 层（线程池 / 任务 / 完成句柄）之前 |
 | `07-portfolio.md` | M9.5 主体已收口，现已修订；下一个视觉节点是 M10 任务系统 |
 
 > **一次开工实际需要的阅读量 ≈ 30 行。** 如果你发现自己在一次读 500 行文档，停下来 ——

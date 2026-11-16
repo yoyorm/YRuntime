@@ -594,14 +594,16 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 **目标**：把 M9 的"假异步"变成真并行，并让 Transform 更新、资源解码能跑在多核上——**同时不引入不可复现的 bug**。
 
 > **分步执行计划（2026-11-16 定）**：
-> ① M10-a 进行中：MtQueue / JobSystem / TaskHandle 已完成并提交；剩余 `waitAll` 主线程帮忙（`doc/tasks/m10-a-wait-help.md`）与 `TaskHandle::wait()` 帮忙两小步。
+> ① M10-a 进行中：MtQueue / JobSystem / TaskHandle / `waitAll` 主线程帮忙 已完成（2026-11-16）；剩余 `TaskHandle::wait()` 帮忙一小步。
 > ② M10-b：依赖图 `submit(fn, deps)` + `parallel_for` + 确定性测试；收尾件为 TSan 正式 preset、`bench_jobs`、`JobStats`、内存序头文件注释、`--jobs 0` 单线程路径全绿。
 > ③ M10-c work stealing **明确不做**，移入 Stretch（S13）；Transform 层级并行刷新**推迟**——当前没有真实消费者（D26 原则）。
 > ④ M10 收口后，M9.5d-0（Sponza 4K 纹理）与"AssetDatabase IO/解码搬 worker"**合并执行**，作为任务系统的第一批真实消费者，验证 §6 铁律。
 > ⑤ 其后 M11 只做包装收口子集（README 实测 / 架构图 / 展示数据），`yr_pack` 为机动项；其余 Stretch 项冻结，不提升。
 
-- [ ] **M10-a 线程池**：`yr/job/job_system.h`：N 个 worker + `MtQueue`（吸收 yo_lib `yo_mtqueue.h` 并重构：加 `try_pop`、`stop()` 幂等、避免 busy wait）+ `submit` + `wait_all` + 优雅停机
-- [ ] `TaskHandle`：`ready()` / `wait()`；主线程 `wait` 时**帮忙执行任务**而不是 sleep（对照 Godot）
+- [x] **M10-a 线程池**：`yr/job/job_system.h`：N 个 worker + `MtQueue`（吸收 yo_lib `yo_mtqueue.h` 并重构：加 `try_pop`、`stop()` 幂等、避免 busy wait）+ `submit` + `wait_all` + 优雅停机（2026-11-16 完成）
+- [x] `TaskHandle`：`ready()` / `wait()`（2026-11-16 完成）
+- [x] `waitAll` 主线程帮忙执行排队任务（M10-a-4，2026-11-16 完成；`doc/layers/job.md`）
+- [ ] `TaskHandle::wait()` 时主线程**帮忙执行任务**而不是 sleep（对照 Godot）
 - [ ] 把 `AssetDatabase` 的 IO+解码搬到 worker，构造仍回主线程（`pump()`）——**验证 §6 铁律**
 - [ ] **M10-b 依赖图**：`submit(fn, deps)`（依赖计数 + 就绪队列）；`parallel_for(n, batch, fn)`
 - [ ] Transform 层级并行刷新：按"脏根"分片，保证同一子树不并行（写清楚分片策略）——**推迟（2026-11-16）：当前无真实消费者，等依赖图完成且出现粒度问题再做**

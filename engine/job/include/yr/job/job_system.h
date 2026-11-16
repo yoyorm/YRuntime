@@ -54,6 +54,8 @@ namespace yr::job {
     [[nodiscard]] std::size_t workerCount() const noexcept;
 
   private:
+    void finishTask_(std::function<void()> task);
+
     std::atomic<std::size_t> workerCount_ = 0;
     std::size_t pendings_ = 0;
     std::condition_variable cv_;
