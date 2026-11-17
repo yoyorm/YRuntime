@@ -1,23 +1,23 @@
 # YRuntime — Agent Context
 
 > 这个文件是**跨会话的上下文锚点**。新会话先读它，再读当前任务卡；聊天记录不是权威。
-> 最近更新：2026-11-16
+> 最近更新：2026-11-17
 
 ## 1. 项目一句话
 
 YRuntime 是一个 C++20 游戏运行时：Object/SceneTree/EventBus/MainLoop + 资源系统 + Snapshot 驱动的 Vulkan 渲染后端。
-当前已完成 M0–M9.5 主体；下一步是 **M10 任务系统**。
+当前已完成 M0–M9.5 主体与 M10-a；当前在 **M10-b 任务依赖与并行循环**。
 
 ## 2. 当前任务
 
 ```text
-M10-a：手写 TaskHandle::wait 主线程帮忙（MtQueue/JobSystem/TaskHandle/waitAll 帮忙已完成）
-任务卡：doc/tasks/m10-a-handle-wait-help.md
+M10-b-1：手写依赖图 submit(fn, deps)（M10-a 已全部完成）
+任务卡：doc/tasks/m10-b-deps.md
 用户负责：engine/job/include/yr/job/job_system.h、engine/job/src/job_system.cpp
 AI 负责：tests/job/**、CMake、doc/**、机械式调用点迁移
 ```
 
-MtQueue/JobSystem/TaskHandle/waitAll 帮忙已完成并通过 ASan/TSan；当前第一原则：**AI 不写 TaskHandle::wait 帮忙执行的实现**。
+M10-a（MtQueue / JobSystem / TaskHandle / waitAll 帮忙 / TaskHandle::wait 帮忙）已完成并通过 ASan/TSan；当前第一原则：**AI 不写 submit(fn, deps) 的核心调度实现**。
 AI 只写测试、CMake、文档，运行并报告失败。
 
 ## 3. 架构不变量

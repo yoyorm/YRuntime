@@ -2,7 +2,8 @@ add_executable(YrTests_job
     test_mt_queue.cpp
     test_job_system.cpp
     test_task_handle.cpp
-    test_wait_help.cpp)
+    test_wait_help.cpp
+    test_handle_wait_help.cpp)
 
 target_link_libraries(YrTests_job PRIVATE
     yr::job

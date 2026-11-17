@@ -1,7 +1,7 @@
 # M10-a-5：TaskHandle::wait 主线程帮忙执行
 
-> 状态：进行中（AI 已准备失败测试；实现由用户完成）
-> 最近更新：2026-11-16
+> 状态：**已完成**（2026-11-17：`handle_wait_help` 4 用例通过；`[job]` 31 用例 / 99 断言全绿；debug 50 轮 + TSan 15 轮 0 失败；全量 535/535）
+> 最近更新：2026-11-17
 
 ## 1. 目标
 
@@ -79,3 +79,9 @@ ctest --preset asan -R handle_wait_help
 ## 7. Q&A / 决策记录
 
 - 2026-11-16：本任务完成后，M10-a（线程池 + TaskHandle + 主线程帮忙）全部收口，下一步进入 M10-b（依赖图 `submit(fn, deps)` 与 `parallel_for`）。
+- 2026-11-17：**设计定稿（用户确认）**：`TaskHandle::State` 增加 `JobSystem* owner`，由 `submit` 写入。契约：`JobSystem` 必须比所有**未完成**的 handle 活得久；`wait()` 先判空句柄 / `completed` 短路，只有未完成时才解引用 `owner`（`~JobSystem()` 的 `waitAll()` 保证对象析构后所有已提交任务必已完成）。
+- 2026-11-17：等待统一睡在 **`JobSystem::cv_` + `mutex_`**，谓词 = `completed || 队列非空`。代价：完成路径从"只在 `pendings_ == 0` 时 `notify_all`"改为**每个任务完成都通知**，否则"自己的任务完成但全局未归零"会漏唤醒（测试 4）。收益：`submit` 与"任意任务完成"都能唤醒等待者（测试 3、4 同时成立）。
+- 2026-11-17：`State::completed` 的置位必须发生在 `JobSystem::mutex_` 之下（与等待谓词同一把锁），否则仍是 lost wakeup。`State` 原有的 `mutex` / `cv` 随之可删除，只保留 `atomic<bool> completed` + `JobSystem* owner`。
+- 2026-11-17：`TaskHandle` 需要访问 `JobSystem` 的 `try_pop` 与 `finishTask_`：在 `JobSystem` 内加 `friend class TaskHandle;`（或提供私有 `helpOne()` 再开放给 friend）。
+- 2026-11-17：完成路径有两种接线方式，均由用户选择：**A（最小改动）** 包装 lambda 内用 `JobSystem::mutex_` 置 `completed`，`finishTask_` 仍负责 `pendings_--` 与通知（两次加锁，可接受）；**B（更整洁）** 队列元素改为携带 `{task, state}`，由 `finishTask_` 在**一次**临界区内完成 `completed` 置位 + `pendings_--`，只 `notify_all` 一次。
+- 2026-11-17：**最终实现采用方案 B**：队列元素升级为 `Job{task, state}`，`TaskHandle::State` 删去独立 `mutex`/`cv` 只留 `atomic<bool> completed`，`TaskHandle` 持有 `JobSystem* owner_` 并委托 `owner_->waitFor(state_)`。`finishTask_` 在同一把 `JobSystem::mutex_` 下置 `completed = true` 并 `--pendings_`，锁外统一 `cv_.notify_all()`。这同时消除每任务的 `mutex`/`cv` 开销，并为 M10-b 依赖图在 `finishTask_` 临界区内触发后继任务铺平道路。

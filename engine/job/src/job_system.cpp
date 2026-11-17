@@ -11,8 +11,6 @@ namespace yr::job {
 
   struct TaskHandle::State {
     std::atomic<bool> completed = false;
-    std::condition_variable cv;
-    std::mutex mutex;
   };
 
   bool TaskHandle::ready() const noexcept {
@@ -23,9 +21,27 @@ namespace yr::job {
   }
 
   void TaskHandle::wait() const {
-    if (state_) {
-      std::unique_lock lock{state_->mutex};
-      state_->cv.wait(lock, [&]() { return state_->completed.load(); });
+    if (!state_) {
+      return;
+    }
+    if (state_->completed.load()) {
+      return;
+    }
+    owner_->waitFor(state_);
+  }
+
+  void JobSystem::waitFor(const std::shared_ptr<TaskHandle::State>& state) {
+    while (1) {
+      if (state->completed.load())
+        return;
+      Job job;
+      if (queue_.try_pop(job)) {
+        finishTask_(std::move(job));
+        continue;
+      }
+
+      std::unique_lock lock{mutex_};
+      cv_.wait(lock, [&]() { return state->completed.load() || queue_.size() > 0; });
     }
   }
 
@@ -34,9 +50,9 @@ namespace yr::job {
     for (std::size_t i = 0; i < workerCount; i++) {
       workers_.emplace_back([&]() {
         while (1) {
-          std::function<void()> task;
-          if (queue_.wait_pop(task)) {
-            finishTask_(std::move(task));
+          Job job;
+          if (queue_.wait_pop(job)) {
+            finishTask_(std::move(job));
           } else {
             break;
           }
@@ -56,40 +72,31 @@ namespace yr::job {
       task();
       auto state = std::make_shared<TaskHandle::State>();
       state->completed = true;
-      return TaskHandle(state);
+      return TaskHandle(state, *this);
     }
 
     auto state = std::make_shared<TaskHandle::State>();
-    auto task_with_state = [state, task = std::move(task)]() {
-      task();
-      {
-        std::lock_guard lock{state->mutex};
-        state->completed.store(true);
-      }
-      state->cv.notify_all();
-    };
-
     {
       std::lock_guard lock{mutex_};
-      queue_.push(std::move(task_with_state));
+      queue_.push(Job{std::move(task), state});
       pendings_++;
     }
 
     cv_.notify_all();
-    return TaskHandle(state);
+    return TaskHandle(state, *this);
   }
 
   void JobSystem::waitAll() {
     bool finish = false;
 
     while (1) {
-      std::function<void()> task{};
+      Job job;
 
-      if (queue_.try_pop(task)) {
-        finishTask_(std::move(task));
+      if (queue_.try_pop(job)) {
+        finishTask_(std::move(job));
       } else {
         std::lock_guard lock{mutex_};
-        finish = !pendings_ && !queue_.size();
+        finish = !pendings_;
       }
 
       if (finish) {
@@ -106,16 +113,14 @@ namespace yr::job {
     return workerCount_;
   }
 
-  void JobSystem::finishTask_(std::function<void()> task) {
-    task();
-    bool finish = false;
+  void JobSystem::finishTask_(Job job) {
+    job.task();
     {
       std::lock_guard lock{mutex_};
+      job.state->completed = true;
       pendings_--;
-      finish = !pendings_;
     }
-    if (finish)
-      cv_.notify_all();
+    cv_.notify_all();
   }
 
 } // namespace yr::job

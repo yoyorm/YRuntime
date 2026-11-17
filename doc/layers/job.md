@@ -58,10 +58,10 @@ waitAll(): 循环 { 取任务就帮忙执行；取不到就判完成 / 在 cv_ �
 - **执行路径（所有完成方共用）**：
 
   ```
-  finishTask_(task):  task();  { lock; --pendings_; last = (pendings_==0); }  if (last) cv_.notify_all();
+  finishTask_(job):  job.task();  { lock; job.state->completed = true; --pendings_; }  cv_.notify_all();
   ```
 
-  worker 与 `waitAll` 的帮忙路径都调用它。**"最后一个完成的人负责通知"是结构保证**，不依赖各处记得补 notify。
+  worker、`waitAll` 与 `TaskHandle::wait`（`waitFor`）的帮忙路径都调用它。每次任务完成都在同一临界区内同时更新 `state->completed` 与 `pendings_`，并在锁外 `notify_all`，从而同时唤醒等待单任务的 `waitFor` 与等待全局清空的 `waitAll`。
 
 - **`waitAll` 的形状（不可简化掉的部分）**：
 
@@ -91,8 +91,8 @@ waitAll(): 循环 { 取任务就帮忙执行；取不到就判完成 / 在 cv_ �
   | `void wait() const` | 阻塞到完成；默认 handle 立即返回 |
   | `TaskHandle()` | 无效句柄（非拥有） |
 
-- **`State` 字段与分工**：`atomic<bool> completed` 服务锁外 `ready()`；`mutex + cv` 服务 `wait()`；完成方在锁内置位、锁外 `notify_all`。
-- **边界**：不要在 worker 线程调 `wait()`（会占住 worker；本阶段不保证）；任务异常不在本阶段处理（任务不得抛出，否则 handle 永不 ready）。
+- **`State` 字段与分工**：`State` 只含 `atomic<bool> completed`（服务锁外 `ready()`，写入在 `JobSystem::mutex_` 内）；`TaskHandle` 另持 `JobSystem* owner_`，未完成时委托 `owner_->waitFor(state_)` 在 `JobSystem::cv_` 上等待并帮忙执行排队任务（谓词 = `state->completed || queue_.size() > 0`）。
+- **边界**：`JobSystem` 必须比所有未完成的 `TaskHandle` 活得久（`~JobSystem()` 会先 `waitAll()`）；不要在 worker 线程调 `wait()`；任务异常不在本阶段处理（任务不得抛出，否则 handle 永不 ready）。
 
 ## 5. 并发不变量（写/审 job 层代码时逐条对照）
 
@@ -144,7 +144,6 @@ cmake --build --preset asan && ./build/asan/bin/YrTests_job "[job]"
 
 ## 9. 遗留 / 已知缺口
 
-- `TaskHandle::wait()` 的主线程帮忙执行（M10-a-5，未做）；
 - 依赖图 `submit(fn, deps)` / `parallel_for`（M10-b）；`JobStats`；benchmark（`bench_jobs`）；
 - 有界队列 / 背压 / 优先级 / 取消 / work stealing：明确不做；
 - `AssetDatabase` 的 IO+解码尚未搬到 worker（M9.5d-0 与 M10 收口后合并执行）；
