@@ -37,13 +37,12 @@ namespace {
     }
 
     void complete(AssetUID uid, std::vector<std::uint8_t> payload,
-                  TextureColorSpace colorSpace = TextureColorSpace::kSrgb, std::uint32_t maxDimension = 0) {
-      completed.push_back(
-          LoadCompletion{uid, {}, ResourceKind::kUnknown, std::move(payload), {}, colorSpace, maxDimension});
+                  TextureColorSpace colorSpace = TextureColorSpace::kSrgb) {
+      completed.push_back(LoadCompletion{uid, {}, ResourceKind::kUnknown, std::move(payload), {}, {}, colorSpace});
     }
 
     void fail(AssetUID uid, std::string error) {
-      completed.push_back(LoadCompletion{uid, {}, ResourceKind::kUnknown, {}, std::move(error)});
+      completed.push_back(LoadCompletion{uid, {}, ResourceKind::kUnknown, {}, {}, std::move(error)});
     }
 
     std::vector<LoadRequest> submitted;
@@ -97,12 +96,11 @@ TEST_CASE("async loader: completion passes through color space and dimension cap
 
   const AssetUID uid =
       loader.requestLoad("res://textures/normal.png", ResourceKind::kTexture, TextureColorSpace::kLinear, 256);
-  backend.complete(uid, bytesOf("rgba"), TextureColorSpace::kLinear, 256);
+  backend.complete(uid, bytesOf("rgba"), TextureColorSpace::kLinear);
 
   const std::vector<LoadCompletion> completions = loader.pump();
   REQUIRE(completions.size() == 1);
   CHECK(completions[0].colorSpace == TextureColorSpace::kLinear);
-  CHECK(completions[0].maxDimension == 256);
 }
 
 TEST_CASE("async loader: repeated request for same path is merged", "[asset][async_loader]") {

@@ -9,10 +9,15 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include <yr/asset/async_loader.h>
 #include <yr/asset/file_access.h>
 #include <yr/asset/gltf_loader.h>
 #include <yr/asset/resource.h>
 #include <yr/object/ref.h>
+
+namespace yr::job {
+  class JobSystem;
+} // namespace yr::job
 
 namespace yr::asset {
 
@@ -28,7 +33,6 @@ namespace yr::asset {
     std::uint64_t cache_hits = 0;
     std::uint64_t cache_misses = 0;
     std::uint64_t failed_loads = 0;
-    // 只统计尚未安装的 deferred mesh job，不含 job 持有的 model source 内存。
     std::size_t pending_meshes = 0;
   };
 
@@ -39,12 +43,16 @@ namespace yr::asset {
 
   // 已加载资源的 UID -> 强引用缓存，负责驻留统计与 fixpoint GC。
   // 仅允许主线程使用：ObjectDB、RefCounted 的释放路径和本类都没有跨线程同步。
-  // 异步读取只发生在内部 LoaderWorker 线程；解码与对象构造仍在调用 pump 的主线程。
+  // 文件读取与纹理解码发生在 JobSystem worker；对象构造与安装仍在调用 pump 的主线程。
   class AssetDatabase final {
   public:
-    explicit AssetDatabase(std::string assetRoot);
+    // jobs 为空时本类自持一个默认 JobSystem；注入时 JobSystem 必须比本类活得更久。
+    // byteBudget：LoaderWorker 完成队列的字节预算；0 表示不限制。
+    explicit AssetDatabase(std::string assetRoot, yr::job::JobSystem* jobs = nullptr,
+                           std::size_t byteBudget = kDefaultLoadByteBudget);
     // access 非空且归本类所有；用于 Memory/Throttled 等注入实现。
-    explicit AssetDatabase(std::unique_ptr<IFileAccess> access);
+    explicit AssetDatabase(std::unique_ptr<IFileAccess> access, yr::job::JobSystem* jobs = nullptr,
+                           std::size_t byteBudget = kDefaultLoadByteBudget);
     ~AssetDatabase();
 
     AssetDatabase(const AssetDatabase&) = delete;
@@ -72,12 +80,12 @@ namespace yr::asset {
     // skipTextures：不创建 Texture，也不产生 pendingTextures。
     [[nodiscard]] GltfLoadResult loadGltfScene(std::string_view resPath, const GltfLoadOptions& options = {});
 
-    // 异步加载：worker 读取原始文件字节，pump 在主线程解码并安装到 cache_。
-    // cache 中已 ready 时直接返回，不再重复 submit。
+    // 异步加载：worker 读取原始文件字节，pump 在主线程解码并安装到 cache_
     // colorSpace 写入 Texture；maxDimension 非 0 时在主线程解码后按比例下采样。
     [[nodiscard]] AssetUID requestLoad(std::string_view resPath, ResourceKind kind = ResourceKind::kTexture,
                                        TextureColorSpace colorSpace = TextureColorSpace::kSrgb,
                                        std::uint32_t maxDimension = 1024);
+
     // 优先查询 cache_，异步结果尚未安装时才回退到 AsyncLoader。
     [[nodiscard]] LoadState state(AssetUID uid) const;
     [[nodiscard]] std::string error(AssetUID uid) const;
@@ -108,8 +116,10 @@ namespace yr::asset {
     void cancelPendingMesh(AssetUID uid);
 
     std::string assetRoot_;
-    // 声明顺序即析构顺序的逆序：async → worker（join）→ access。
+    // 声明顺序即析构顺序的逆序：async → worker → jobs → access。
     std::unique_ptr<IFileAccess> fileAccess_;
+    std::unique_ptr<yr::job::JobSystem> ownedJobs_;
+    yr::job::JobSystem* jobs_ = nullptr;
     std::unique_ptr<LoaderWorker> loaderWorker_;
     std::unique_ptr<AsyncLoader> asyncLoader_;
     std::unordered_map<AssetUID, Entry> cache_;

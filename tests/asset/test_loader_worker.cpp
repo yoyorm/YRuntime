@@ -19,6 +19,7 @@
 #include <yr/asset/memory_file_access.h>
 #include <yr/asset/resource.h>
 #include <yr/asset/throttled_file_access.h>
+#include <yr/job/job_system.h>
 
 namespace {
 
@@ -30,6 +31,12 @@ namespace {
   using yr::asset::ResourceKind;
   using yr::asset::TextureColorSpace;
   using yr::asset::ThrottledFileAccess;
+
+  // 这些用例只验证 LoaderWorker 的读写语义，共享一个 2 worker 的 JobSystem 即可。
+  yr::job::JobSystem& sharedJobs() {
+    static yr::job::JobSystem jobs(2);
+    return jobs;
+  }
 
   std::vector<std::uint8_t> bytesOf(std::string_view text) {
     std::vector<std::uint8_t> bytes;
@@ -60,14 +67,14 @@ TEST_CASE("loader worker: reads file on worker thread", "[asset][loader_worker]"
   MemoryFileAccess memory;
   memory.addFile("res://data.bin", bytesOf("payload"));
 
-  LoaderWorker worker(memory);
-  worker.submit(LoadRequest{AssetUID{1}, "res://data.bin", ResourceKind::kTexture});
+  LoaderWorker worker(memory, sharedJobs());
+  worker.submit(LoadRequest{AssetUID{1}, "res://data.bin", ResourceKind::kUnknown});
 
   const std::vector<LoadCompletion> completions = collect(worker, 1);
   REQUIRE(completions.size() == 1);
   CHECK(completions[0].uid == AssetUID{1});
   CHECK(completions[0].resPath == "res://data.bin");
-  CHECK(completions[0].kind == ResourceKind::kTexture);
+  CHECK(completions[0].kind == ResourceKind::kUnknown);
   CHECK(completions[0].payload == bytesOf("payload"));
   CHECK(completions[0].error.empty());
 }
@@ -76,23 +83,22 @@ TEST_CASE("loader worker: request metadata is copied to completion", "[asset][lo
   MemoryFileAccess memory;
   memory.addFile("res://data/normal.png", bytesOf("png"));
 
-  LoaderWorker worker(memory);
+  LoaderWorker worker(memory, sharedJobs());
   worker.submit(
-      LoadRequest{AssetUID{7}, "res://data/normal.png", ResourceKind::kTexture, TextureColorSpace::kLinear, 128});
+      LoadRequest{AssetUID{7}, "res://data/normal.png", ResourceKind::kUnknown, TextureColorSpace::kLinear, 128});
 
   const std::vector<LoadCompletion> completions = collect(worker, 1);
   REQUIRE(completions.size() == 1);
   CHECK(completions[0].uid == AssetUID{7});
-  CHECK(completions[0].kind == ResourceKind::kTexture);
+  CHECK(completions[0].kind == ResourceKind::kUnknown);
   CHECK(completions[0].colorSpace == TextureColorSpace::kLinear);
-  CHECK(completions[0].maxDimension == 128);
   CHECK(completions[0].payload == bytesOf("png"));
 }
 
 TEST_CASE("loader worker: missing file reports error", "[asset][loader_worker]") {
   MemoryFileAccess memory;
 
-  LoaderWorker worker(memory);
+  LoaderWorker worker(memory, sharedJobs());
   worker.submit(LoadRequest{AssetUID{2}, "res://data/missing.bin", ResourceKind::kMesh});
 
   const std::vector<LoadCompletion> completions = collect(worker, 1);
@@ -110,7 +116,7 @@ TEST_CASE("loader worker: multiple requests complete", "[asset][loader_worker]")
   memory.addFile("res://data/b.bin", bytesOf("b"));
   memory.addFile("res://data/c.bin", bytesOf("c"));
 
-  LoaderWorker worker(memory);
+  LoaderWorker worker(memory, sharedJobs());
   worker.submit(LoadRequest{AssetUID{10}, "res://data/a.bin", ResourceKind::kUnknown});
   worker.submit(LoadRequest{AssetUID{11}, "res://data/b.bin", ResourceKind::kUnknown});
   worker.submit(LoadRequest{AssetUID{12}, "res://data/c.bin", ResourceKind::kUnknown});
@@ -130,7 +136,7 @@ TEST_CASE("loader worker: take completed zero returns empty", "[asset][loader_wo
   MemoryFileAccess memory;
   memory.addFile("res://data.bin", bytesOf("payload"));
 
-  LoaderWorker worker(memory);
+  LoaderWorker worker(memory, sharedJobs());
   worker.submit(LoadRequest{AssetUID{3}, "res://data.bin", ResourceKind::kUnknown});
   REQUIRE(collect(worker, 1).size() == 1);
 
@@ -141,7 +147,7 @@ TEST_CASE("loader worker: destruction with pending request", "[asset][loader_wor
   MemoryFileAccess memory;
   memory.addFile("res://data.bin", bytesOf("payload"));
 
-  LoaderWorker worker(memory);
+  LoaderWorker worker(memory, sharedJobs());
   worker.submit(LoadRequest{AssetUID{4}, "res://data.bin", ResourceKind::kUnknown});
 }
 
@@ -150,7 +156,7 @@ TEST_CASE("loader worker: read runs off the submitting thread", "[asset][loader_
   memory->addFile("res://data/slow.bin", bytesOf("slow"));
   ThrottledFileAccess access(std::move(memory), std::chrono::milliseconds(20));
 
-  LoaderWorker worker(access);
+  LoaderWorker worker(access, sharedJobs());
   const auto start = std::chrono::steady_clock::now();
   worker.submit(LoadRequest{AssetUID{5}, "res://data/slow.bin", ResourceKind::kUnknown});
 
@@ -168,7 +174,7 @@ TEST_CASE("loader worker: duplicate requests are not merged", "[asset][loader_wo
   MemoryFileAccess memory;
   memory.addFile("res://data/dup.bin", bytesOf("dup"));
 
-  LoaderWorker worker(memory);
+  LoaderWorker worker(memory, sharedJobs());
   worker.submit(LoadRequest{AssetUID{6}, "res://data/dup.bin", ResourceKind::kUnknown});
   worker.submit(LoadRequest{AssetUID{6}, "res://data/dup.bin", ResourceKind::kUnknown});
 

@@ -9,8 +9,12 @@
 
 #include <yr/asset/asset_uid.h>
 #include <yr/asset/resource.h>
+#include <yr/asset/texture_loader.h>
 
 namespace yr::asset {
+
+  // LoaderWorker 完成队列的默认字节预算
+  inline constexpr std::size_t kDefaultLoadByteBudget = 256u * 1024u * 1024u;
 
   struct LoadRequest {
     AssetUID uid;
@@ -24,10 +28,11 @@ namespace yr::asset {
     AssetUID uid;
     std::string resPath;
     ResourceKind kind = ResourceKind::kUnknown;
+    // 非纹理（kUnknown/kMesh）的原始字节；纹理路径解码后此字段为空。
     std::vector<std::uint8_t> payload;
+    DecodedTexture decoded; // 纹理：worker 内 decodeRgba8 的结果（含下采样）
     std::string error;
     TextureColorSpace colorSpace = TextureColorSpace::kSrgb;
-    std::uint32_t maxDimension = 0;
   };
 
   class ILoadBackend {

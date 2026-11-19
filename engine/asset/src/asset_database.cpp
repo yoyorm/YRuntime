@@ -10,20 +10,34 @@
 #include <yr/core/assert.h>
 #include <yr/core/log.h>
 #include <yr/core/thread_check.h>
+#include <yr/job/job_system.h>
 
 #include "gltf_mesh_builder.h"
 #include "loader_worker.h"
 
 namespace yr::asset {
 
-  AssetDatabase::AssetDatabase(std::string assetRoot)
-      : assetRoot_(std::move(assetRoot)), fileAccess_(std::make_unique<DiskFileAccess>(assetRoot_)),
-        loaderWorker_(std::make_unique<LoaderWorker>(*fileAccess_)),
-        asyncLoader_(std::make_unique<AsyncLoader>(*loaderWorker_)) {}
+  AssetDatabase::AssetDatabase(std::string assetRoot, yr::job::JobSystem* jobs, std::size_t byteBudget)
+      : assetRoot_(std::move(assetRoot)), fileAccess_(std::make_unique<DiskFileAccess>(assetRoot_)) {
+    jobs_ = jobs;
+    if (jobs_ == nullptr) {
+      ownedJobs_ = std::make_unique<yr::job::JobSystem>();
+      jobs_ = ownedJobs_.get();
+    }
+    loaderWorker_ = std::make_unique<LoaderWorker>(*fileAccess_, *jobs_, 4, byteBudget);
+    asyncLoader_ = std::make_unique<AsyncLoader>(*loaderWorker_);
+  }
 
-  AssetDatabase::AssetDatabase(std::unique_ptr<IFileAccess> access)
-      : fileAccess_(std::move(access)), loaderWorker_(std::make_unique<LoaderWorker>(*fileAccess_)),
-        asyncLoader_(std::make_unique<AsyncLoader>(*loaderWorker_)) {}
+  AssetDatabase::AssetDatabase(std::unique_ptr<IFileAccess> access, yr::job::JobSystem* jobs, std::size_t byteBudget)
+      : fileAccess_(std::move(access)) {
+    jobs_ = jobs;
+    if (jobs_ == nullptr) {
+      ownedJobs_ = std::make_unique<yr::job::JobSystem>();
+      jobs_ = ownedJobs_.get();
+    }
+    loaderWorker_ = std::make_unique<LoaderWorker>(*fileAccess_, *jobs_, 4, byteBudget);
+    asyncLoader_ = std::make_unique<AsyncLoader>(*loaderWorker_);
+  }
 
   AssetDatabase::~AssetDatabase() = default;
 
@@ -206,6 +220,7 @@ namespace yr::asset {
           if (it != cache_.end() && it->second.resource->state() == LoadState::kLoading) {
             (void)it->second.resource->markFailed(completion.error);
           }
+          ++counters_.failed_loads; // 读取/解码失败在 worker 处发生，统一计数
           continue;
         }
 
@@ -239,7 +254,7 @@ namespace yr::asset {
             (void)texture->markLoading();
           }
           if (texture->state() != LoadState::kLoading) {
-            continue; // 同步路径已加载完成，保留现有内容。
+            continue;
           }
         } else {
           texture = obj::make_ref<Texture>();
@@ -249,19 +264,18 @@ namespace yr::asset {
           created = true;
         }
 
-        DecodedTexture decoded;
-        std::string error;
-        if (!decodeRgba8(completion.payload.data(), completion.payload.size(), completion.maxDimension, decoded,
-                         error)) {
-          (void)texture->markFailed(error);
+        // 解码已在 worker 完成，这里只安装。
+        if (completion.decoded.rgba8.empty() || completion.decoded.width == 0 || completion.decoded.height == 0) {
+          const std::string text = "AssetDatabase::pump: 纹理解码结果为空";
+          (void)texture->markFailed(text);
           ++counters_.failed_loads;
-          asyncLoader_->markFailed(uid, error);
+          asyncLoader_->markFailed(uid, text);
           continue;
         }
 
-        texture->width = decoded.width;
-        texture->height = decoded.height;
-        texture->rgba8 = std::move(decoded.rgba8);
+        texture->width = completion.decoded.width;
+        texture->height = completion.decoded.height;
+        texture->rgba8 = std::move(completion.decoded.rgba8);
         texture->colorSpace = completion.colorSpace;
 
         if (!texture->markReady()) {

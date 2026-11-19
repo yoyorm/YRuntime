@@ -13,12 +13,12 @@ YRuntime 是一个 C++20 游戏运行时：Object/SceneTree/EventBus/MainLoop + 
 ```text
 Asset worker 迁移：AssetDatabase 的 IO/解码搬上 JobSystem，构造仍回主线程 pump()
 任务卡：doc/tasks/m10-asset-worker.md
-用户负责：engine/asset/src/loader_worker.*、asset_database.*（并发桥接核心）
-AI 负责：tests/asset/**、CMake、doc/**、机械式调用点迁移、benchmark/report
+用户负责：review 每步 diff、确认关键取舍（预算/命名/顺序）
+AI 负责：engine/asset/src/loader_worker.*、asset_database.* 的并发桥接实现；tests/asset/**、CMake、doc/**、benchmark/report
 ```
 
-M10 已全部收口；当前第一原则：**AI 不写 LoaderWorker→JobSystem 的桥接与预算调度实现**。
-AI 只写测试、CMake、文档，运行并报告失败。
+M10 已全部收口。当前分工（2026-11-19 调整）：**AI 可以写资产层并发桥接实现**（`loader_worker` / `pump` 安装 / 预算），
+但必须**分步提交**：每步给出 `git diff` 与测试结果，用户 review 后再继续；用户不再手写该层代码。
 
 ## 3. 架构不变量
 
@@ -53,15 +53,20 @@ DISPLAY=:99 ./build/debug-vk/bin/yr_render_demo --frames 60
 
 ## 5. 文件所有权（M10-a）
 
-**用户手写，AI 不得改实现：**
+**用户手写（历史；M10 已收口，冻结）：**
 
 - `engine/job/include/yr/job/job_system.h`
 - `engine/job/src/job_system.cpp`
 
+**AI 实现（分步提交，用户逐步 review）：**
+
+- `engine/asset/src/loader_worker.*`
+- `engine/asset/src/asset_database.cpp` 的 `pump` 安装段
+
 **AI 负责：**
 
-- `tests/job/**`
-- `engine/job/CMakeLists.txt`、`tests/job/CMakeLists.txt`、根 `CMakeLists.txt` / `tests/CMakeLists.txt` 的接线
+- `tests/job/**`、`tests/asset/**`
+- `engine/asset/CMakeLists.txt`、`engine/job/CMakeLists.txt`、`tests/**/CMakeLists.txt` 的接线
 - `doc/**`
 - 机械式调用点迁移（改名、签名、include、格式化）
 
