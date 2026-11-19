@@ -56,11 +56,21 @@ AssetDatabase
 
 ### 步骤 1（用户）：`LoaderWorker` 改为 `JobSystem` 后端
 
-- 构造：`LoaderWorker(IFileAccess&, JobSystem&)`，**删除自有 `std::thread` 与它的 `mutex_/cv_` 等待循环**；
-- `submit(LoadRequest)`：入 `pending_`，在 in-flight 预算内 `jobs.submit(...)`；任务体：
-  `readFile → decodeRgba8 → 锁内 push completion`；
-- `takeCompleted(max)`：语义不变（pump 轮询），返回后释放额度、继续提升 `pending_`；
-- 删除 `LoaderWorker` 的线程，`AssetDatabase` 的析构顺序变成：`asyncLoader_` → `loaderWorker_` → `fileAccess_`（JobSystem 由 `Engine` 拥有，必须比 `AssetDatabase` 活得久）。
+**已准备的脚手架（工作区未提交，等实现通过后一起提交）**：
+
+- `LoaderWorker(IFileAccess&, yr::job::JobSystem&, std::size_t maxInFlight = 4)`——签名已改，旧线程实现保留，作为红灯期的可编译 stub；
+- `AssetDatabase` 两个构造函数增加可选 `yr::job::JobSystem* jobs = nullptr`：为空时自持一个默认池（现有调用点无需改动），注入时要求 `JobSystem` 活得更久；
+- `LoadCompletion` 增加过渡字段 `DecodedTexture decoded`（`payload` 暂留，迁移完成后删除）；
+- `engine/asset/CMakeLists.txt`：`yr_asset` 增加 `yr::job` 公共依赖（`check_deps` 允许 asset → job）；
+- 现有 `test_loader_worker.cpp` 的 8 处构造改为显式传入共享 `JobSystem`。
+
+**你要实现的部分**：
+
+- 删除自有 `std::thread` 与 `run()` 的等待循环；
+- `submit(LoadRequest)`：入 `pending_`，在 `maxInFlight_` 预算内 `jobs_->submit(...)`；
+- 任务体：`readFile → decodeRgba8（kind == kTexture）→ 锁内 push completion`；
+- `takeCompleted(max)`：返回后释放额度、继续提升 `pending_`；
+- 保持 `AsyncLoader` 状态机与 `pump` 轮询语义不变。
 
 ### 步骤 2（用户）：`LoadCompletion` 携带解码结果
 
@@ -77,14 +87,13 @@ AssetDatabase
 
 ### 步骤 4（AI）：测试
 
-`tests/asset/test_async_decode.cpp`：
+`tests/asset/test_async_decode.cpp`（已写好，当前 4 条红）：
 
-1. worker 解码：`MemoryFileAccess` + 小 PNG → completion 直接带 RGBA，`pump` 安装后像素与同步路径一致；
-2. in-flight 上限：慢 `IFileAccess` + N 个请求，并发任务数不超过 cap；
-3. 失败路径：文件缺失 / 坏 PNG → `kFailed` + error，不崩溃，后续请求可继续；
-4. `--jobs 0`：`JobSystem(0)` 内联路径仍然正确（decode 在调用线程完成）；
-5. 取消/evict：加载中 evict → 完成后不安装、不泄漏；
-6. TSan 下全绿（`./tools/ctest_tsan.sh`）。
+1. **texture completion carries decoded pixels**：`LoaderWorker` 对 PNG 的 completion 直接带 `decoded.width/height/rgba8`（红：目前 `decoded` 为空）；
+2. **bad texture reports decode error**：坏 PNG 在 worker 内报 error（红：目前无解码）；
+3. **in-flight reads are capped**：16 个 10ms 请求，并发读 `>= 2` 且 `<= 4`（红：目前单线程 `maxActive == 1`）；
+4. **zero-worker JobSystem still completes**：`JobSystem(0)` 内联路径带回像素（红：同 1）；
+5. **pump installs worker-decoded pixels**：`AssetDatabase` 端到端像素一致（绿，迁移后必须保持）。
 
 ### 步骤 5（AI + 用户）：Sponza 收口与数据
 
