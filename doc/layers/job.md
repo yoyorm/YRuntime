@@ -131,9 +131,13 @@ waitAll(): 循环 { 取任务就帮忙执行；取不到就判完成 / 在 cv_ �
 
 ```bash
 cmake --build --preset debug-vk --target YrTests_job
-./build/debug-vk/bin/YrTests_job "[job]"          # mt_queue / job_system / task_handle / wait_help
+./build/debug-vk/bin/YrTests_job "[job]"          # mt_queue / job_system / task_handle / wait_help / job_deps / parallel_for
 ctest --test-dir build/debug-vk -R "job"          # 按用例名注册
 cmake --build --preset asan && ./build/asan/bin/YrTests_job "[job]"
+
+# TSan（正式 preset；本机/容器需要 tools/ctest_tsan.sh 关闭 ASLR）
+cmake --preset tsan && cmake --build --preset tsan
+./tools/ctest_tsan.sh -R "job|wait_help|mt_queue|task_handle|parallel_for"
 ```
 
 | 手法 | 用途 | 命令要点 |
@@ -143,7 +147,7 @@ cmake --build --preset asan && ./build/asan/bin/YrTests_job "[job]"
 | 断点看栈 | 不知道卡在哪 | `gdb -batch -ex run ...` + 向 gdb 发 `SIGINT`（本机 `ptrace_scope` 限制，不能 attach） |
 | 时序放大 | 复现极低概率竞态 | 任务里注入 `sleep`、`taskset -c 0`、或 `LD_PRELOAD` 放慢 `pthread_cond_wait` |
 | 变异测试 | 判断"测试有没有用" | 拷贝一份故意改坏一行，重编后看用例是否变红 |
-| TSan | 数据竞争 | 需手编（无 preset）：`-fsanitize=thread` + `setarch $(uname -m) -R` 绕 ASLR |
+| TSan | 数据竞争 | 正式 preset：`cmake --preset tsan` + `./tools/ctest_tsan.sh`（内部 `setarch -R` 关 ASLR） |
 
 **已知测试弱点**：`wait_help` 的"返回时不能有任务在跑"那条是低频探针——变异测试（把 `wait` 后的 `continue` 换成"队列空就 return"）**无法稳定抓到**。该不变量真正的防线是 `wait` 之后无条件 `continue` 的结构，而不是这条用例。
 
@@ -155,7 +159,7 @@ cmake --build --preset asan && ./build/asan/bin/YrTests_job "[job]"
 
 ## 9. 遗留 / 已知缺口
 
-- `parallel_for`（M10-b-2）；`JobStats`；benchmark（`bench_jobs`）；
+- `JobStats`（M10 收口件）；`--jobs 0` 的单线程路径已有测试覆盖，运行时接线在 asset worker 迁移时再验证；
 - 有界队列 / 背压 / 优先级 / 取消 / work stealing：明确不做；
 - `AssetDatabase` 的 IO+解码尚未搬到 worker（M9.5d-0 与 M10 收口后合并执行）；
-- TSan 尚未进入 CMake preset，目前靠手编命令。
+- TSan 已是正式 preset；`LoaderWorker` 成员初始化顺序竞态已在 2026-11-19 修复（TSan preset 首次全量运行发现）。

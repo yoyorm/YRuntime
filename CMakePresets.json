@@ -42,6 +42,19 @@
             }
         },
         {
+            "name": "tsan",
+            "displayName": "TSan（并发/数据竞争检查）",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "YR_ENABLE_THREAD_SANITIZER": "ON",
+                "YR_BUILD_VULKAN_BACKEND": "OFF",
+                "YR_ENABLE_ASSERTS": "ON",
+                "YR_ENABLE_LOG": "ON",
+                "YR_ENABLE_DEBUG_LOG": "ON"
+            }
+        },
+        {
             "name": "benchmark",
             "displayName": "Benchmark（手动性能实验）",
             "inherits": "base",
@@ -85,10 +98,15 @@
             "configurePreset": "asan"
         },
         {
+            "name": "tsan",
+            "configurePreset": "tsan"
+        },
+        {
             "name": "benchmark",
             "configurePreset": "benchmark",
             "targets": [
-                "YrBench_slot_map"
+                "YrBench_slot_map",
+                "YrBench_jobs"
             ]
         },
         {
@@ -118,6 +136,13 @@
         {
             "name": "asan",
             "configurePreset": "asan",
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "tsan",
+            "configurePreset": "tsan",
             "output": {
                 "outputOnFailure": true
             }

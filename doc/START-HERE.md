@@ -19,9 +19,9 @@
 | **M7 Snapshot 驱动画面** | ✅ 已完成 / 收口（2026-10-24）—— 7a/7b/7c/7d/7e：MainLoop 接线、DrawItem/Camera、WASD、dump/replay、帧统计、600s soak、resize、GIF/PNG；双/三缓冲按 D22 推迟 |
 | **M8 序列化** | ✅ 已完成 / 收口（2026-10-31）—— M8a 文本；M8b 引用/连接；M8c headless `--scene` 加载与 1000 节点 benchmark；364 tests |
 | **M9 资源系统** | ✅ 主体完成（M9.2b streaming + M9.5 PBR/多光源/阴影；Sponza 4K 纹理待 M9.5d-0） |
-| **M9.5 ~ M11** | 🔨 M9.5 主体完成；**M10 任务系统进行中**（M10-a 与 M10-b-1 依赖图已完成，当前 **M10-b-2 `parallel_for`**）；M9.5d-0 与 M10 的 asset worker 合并执行（见 `02-roadmap.md` M10 分步计划） |
+| **M9.5 ~ M11** | 🔨 M9.5 主体完成；**M10 任务系统进行中**（M10-a / M10-b 全部完成，TSan preset 与 `bench_jobs` 已落地；当前 **M10 收口件 JobStats**）；M9.5d-0 与 M10 的 asset worker 合并执行（见 `02-roadmap.md` M10 分步计划） |
 
-**远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend ✅ → M6 最小 Vulkan bootstrap ✅ → M7 Snapshot 驱动画面（首个主要作品节点）✅ → M8 序列化 ✅ → M9 资源系统 ✅ → M9.5 基础 PBR 主体 ✅ → M10 任务系统 → M11 工具链打磨。**当前任务：M10-b-2 `parallel_for`（任务卡 `doc/tasks/m10-b-parallel-for.md`）。**
+**远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend ✅ → M6 最小 Vulkan bootstrap ✅ → M7 Snapshot 驱动画面（首个主要作品节点）✅ → M8 序列化 ✅ → M9 资源系统 ✅ → M9.5 基础 PBR 主体 ✅ → M10 任务系统 → M11 工具链打磨。**当前任务：M10 收口件 `JobStats`（任务卡 `doc/tasks/m10-closeout-job-stats.md`）。**
 
 进度**只在两处维护**：根 `README.md` 的里程碑表（对外）+ `02-roadmap.md` 的 checkbox（对内）。
 别的地方不要重复记录，否则一定会漂移。
@@ -45,8 +45,8 @@
 路线已定（2026-11-16，原"二选一"选 B 并细化，理由：M9.5d-0 的 worker 解码依赖任务系统，先做 M10 可让两者合并验证 §6 铁律）：
 
 1. **M10-a 已完成（2026-11-17）**：MtQueue / JobSystem / TaskHandle / `waitAll` 帮忙 / `TaskHandle::wait()` 帮忙全部提交并验证通过。
-2. **M10-b-1 依赖图已完成（2026-11-19）**：`submit(fn, deps)` 依赖计数 + 就绪队列，38 cases / 1666 assertions，含随机 DAG 压力用例。
-3. **当前 M10-b-2 `parallel_for`**（任务卡 [`m10-b-parallel-for.md`](tasks/m10-b-parallel-for.md)），随后是确定性测试；收尾件：TSan 正式 preset、`bench_jobs`、`JobStats`、内存序头文件注释、`--jobs 0` 单线程路径全绿。
+2. **M10-b 已完成（2026-11-19）**：`submit(fn, deps)` 依赖图 + `parallel_for`，44 cases / 2771 assertions，含随机 DAG 压力用例。
+3. **M10 收口件（当前）**：`JobStats`（任务卡 [`m10-closeout-job-stats.md`](tasks/m10-closeout-job-stats.md)）；TSan 正式 preset（`cmake --preset tsan` + `tools/ctest_tsan.sh`）与 `bench_jobs`（E11）已落地。剩余：确定性测试、内存序头文件注释、线程安全审计。
 3. **M10-c work stealing 不做**（移入 Stretch S13）；Transform 并行刷新推迟（当前无真实消费者）。
 4. **M10 收口后回头做 M9.5d-0**，与"AssetDatabase IO/解码搬 worker"合并执行：worker 纹理解码 + 下采样、in-flight/字节预算、1K Sponza 纹理缓存快速路径、室内点光调参与 shadow 默认开关、重跑带纹理 Sponza 补齐 M9.5 最终画面。
 5. **M11 只做包装收口子集**（README 实测 / 架构图 / 展示数据）；`yr_pack` 为机动项；其余 Stretch 项冻结。
