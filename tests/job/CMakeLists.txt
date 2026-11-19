@@ -5,7 +5,8 @@ add_executable(YrTests_job
     test_wait_help.cpp
     test_handle_wait_help.cpp
     test_job_deps.cpp
-    test_parallel_for.cpp)
+    test_parallel_for.cpp
+    test_job_stats.cpp)
 
 target_link_libraries(YrTests_job PRIVATE
     yr::job

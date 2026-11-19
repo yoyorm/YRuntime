@@ -6,18 +6,18 @@
 ## 1. 项目一句话
 
 YRuntime 是一个 C++20 游戏运行时：Object/SceneTree/EventBus/MainLoop + 资源系统 + Snapshot 驱动的 Vulkan 渲染后端。
-当前已完成 M0–M9.5 主体与 M10-a/M10-b；当前在 **M10 收口件 `JobStats`**。
+当前已完成 M0–M9.5 主体与 M10 主体；当前在 **M10 最后收尾（内存序头注释 + 确定性回归）**，随后进入 asset worker 迁移。
 
 ## 2. 当前任务
 
 ```text
-M10 收口件：手写 JobStats（M10-a / M10-b 已完成；TSan preset 与 bench_jobs 已落地）
-任务卡：doc/tasks/m10-closeout-job-stats.md
+M10 最后收尾：内存序决策写进 job_system.h 头注释（用户手写）+ 确定性回归测试（AI）
+任务卡：doc/tasks/m10-closeout-final.md
 用户负责：engine/job/include/yr/job/job_system.h、engine/job/src/job_system.cpp
 AI 负责：tests/job/**、CMake、doc/**、机械式调用点迁移
 ```
 
-M10-a 与 `submit(fn, deps)` / `parallel_for` 已完成并通过 ASan/TSan；当前第一原则：**AI 不写 JobStats 的实现**。
+M10-a / M10-b / JobStats / TSan preset / bench_jobs 已完成；当前第一原则：**AI 不写头文件的并发语义注释**（那是用户对自己设计的解释）。
 AI 只写测试、CMake、文档，运行并报告失败。
 
 ## 3. 架构不变量

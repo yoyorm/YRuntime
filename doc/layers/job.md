@@ -54,6 +54,7 @@ waitAll(): 循环 { 取任务就帮忙执行；取不到就判完成 / 在 cv_ �
   | `TaskHandle submit(function<void()> task)` | 入队（锁内 `push` + `pendings_++`），出锁后 `notify_all` | `workerCount==0` 时在调用线程执行完再返回 |
   | `TaskHandle submit(function<void()> task, span<const TaskHandle> deps)` | 前置依赖全部完成时才入就绪队列；`initializer_list` 重载支持 `{a, b}` | 同一 `JobSystem` 的句柄；DAG 由构造方式天然保证 |
   | `void waitAll()` | 帮忙执行排队任务直到 `pendings_ == 0` | 只允许**非 worker 线程**调用；可在多个非 worker 线程并发调用 |
+  | `JobStats stats() const` | 运行统计快照（submitted / completed / helperCompleted / 就绪队列深度与峰值） | 只在同步点读取；数值是近似快照 |
   | `size_t workerCount() const noexcept` | 构造时配置值 | — |
 
 - **执行路径（所有完成方共用）**：
@@ -159,7 +160,8 @@ cmake --preset tsan && cmake --build --preset tsan
 
 ## 9. 遗留 / 已知缺口
 
-- `JobStats`（M10 收口件）；`--jobs 0` 的单线程路径已有测试覆盖，运行时接线在 asset worker 迁移时再验证；
+- 确定性测试（`parallel_for` 两轮运行结果逐元素一致）与内存序头文件注释：M10 最后收尾项；
+- 线程安全审计（`YR_ASSERT(on_main_thread())`）**推迟**：当前没有跨线程访问 scene/asset 的消费者，等 asset worker 迁移落地后再加，否则是无消费者的负担；
 - 有界队列 / 背压 / 优先级 / 取消 / work stealing：明确不做；
-- `AssetDatabase` 的 IO+解码尚未搬到 worker（M9.5d-0 与 M10 收口后合并执行）；
+- `AssetDatabase` 的 IO+解码尚未搬到 worker（下一步：M9.5d-0 与 M10 合并执行）；
 - TSan 已是正式 preset；`LoaderWorker` 成员初始化顺序竞态已在 2026-11-19 修复（TSan preset 首次全量运行发现）。

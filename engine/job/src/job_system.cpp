@@ -42,7 +42,7 @@ namespace yr::job {
         return;
       Job job;
       if (queue_.try_pop(job)) {
-        finishTask_(std::move(job));
+        finishTask_(std::move(job), true); // 非 worker 线程帮忙执行
         continue;
       }
 
@@ -58,7 +58,7 @@ namespace yr::job {
         while (1) {
           Job job;
           if (queue_.wait_pop(job)) {
-            finishTask_(std::move(job));
+            finishTask_(std::move(job), false);
           } else {
             break;
           }
@@ -81,13 +81,24 @@ namespace yr::job {
 
     // 内联模式：deps 中的任务在各自 submit 返回前已完成，等价于全部满足。
     if (!workerCount_.load()) {
+      {
+        std::lock_guard lock{mutex_};
+        ++submitted_;
+      }
       task();
       state->completed = true;
+      {
+        std::lock_guard lock{mutex_};
+        ++completed_;       // 内联执行同样是"完成了一次任务"
+        ++helperCompleted_; // 且执行者是非 worker 线程
+      }
       return TaskHandle(state, *this);
     }
 
     {
       std::lock_guard lock{mutex_};
+
+      ++submitted_; // 每次 submit 都计一次（含依赖未就绪的）
 
       // 先记账：即使依赖未满足，它也是"已提交但未完成"的任务，
       // 否则 waitAll 可能在"前置完成、后继尚未入队"的间隙提前返回。
@@ -104,6 +115,7 @@ namespace yr::job {
 
       if (remaining == 0) {
         queue_.push(Job{std::move(task), state}); // 已就绪，直接进就绪队列
+        noteReadyDepthLocked();
       } else {
         state->remaining = remaining;
         state->task = std::move(task); // 未就绪：自己保管任务体
@@ -121,7 +133,7 @@ namespace yr::job {
       Job job;
 
       if (queue_.try_pop(job)) {
-        finishTask_(std::move(job));
+        finishTask_(std::move(job), true); // 非 worker 线程帮忙执行
       } else {
         std::lock_guard lock{mutex_};
         finish = !pendings_;
@@ -139,6 +151,25 @@ namespace yr::job {
 
   std::size_t JobSystem::workerCount() const noexcept {
     return workerCount_;
+  }
+
+  JobStats JobSystem::stats() const {
+    std::lock_guard lock{mutex_};
+
+    JobStats snapshot;
+    snapshot.submitted = submitted_;
+    snapshot.completed = completed_;
+    snapshot.helperCompleted = helperCompleted_;
+    snapshot.peakReadyDepth = peakReadyDepth_;
+    snapshot.readyDepth = queue_.size(); // 近似值：size() 内部加锁
+    return snapshot;
+  }
+
+  void JobSystem::noteReadyDepthLocked() {
+    const std::size_t depth = queue_.size();
+    if (depth > peakReadyDepth_) {
+      peakReadyDepth_ = depth;
+    }
   }
 
   void JobSystem::parallelFor(std::size_t count, std::size_t batchSize,
@@ -170,16 +201,21 @@ namespace yr::job {
     }
   }
 
-  void JobSystem::finishTask_(Job job) {
+  void JobSystem::finishTask_(Job job, bool helped) {
     job.task();
     {
       std::lock_guard lock{mutex_};
       job.state->completed = true;
       pendings_--;
+      ++completed_; // 每执行完一个任务记一次
+      if (helped) {
+        ++helperCompleted_; // 其中由非 worker 线程执行的
+      }
 
       for (const std::shared_ptr<TaskHandle::State>& dependent : job.state->dependents) {
         if (--dependent->remaining == 0) {
           queue_.push(Job{std::move(dependent->task), dependent}); // 最后一个前置完成
+          noteReadyDepthLocked();
         }
       }
       job.state->dependents.clear(); // 释放后继引用

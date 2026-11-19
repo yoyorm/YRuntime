@@ -595,7 +595,7 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 
 > **分步执行计划（2026-11-16 定，2026-11-19 更新）**：
 > ① **M10-a 已全部完成**（2026-11-17）：MtQueue / JobSystem / TaskHandle / `waitAll` 帮忙 / `TaskHandle::wait()` 帮忙全部收口（38 cases / 1666 assertions，ASan/TSan 全绿）。
-> ② **M10-b-1 依赖图已收口**（2026-11-19）：`submit(fn, deps)` 依赖计数 + 就绪队列，随机 DAG 压力用例通过。**M10-b-2 `parallel_for` 已收口**（2026-11-19，`doc/tasks/m10-b-parallel-for.md`）。**当前：M10 收口件 JobStats**（`doc/tasks/m10-closeout-job-stats.md`）；TSan 正式 preset 与 `bench_jobs` 已落地（`tools/ctest_tsan.sh`，`benchmarks/README.md` E11）。
+> ② **M10-b-1 依赖图已收口**（2026-11-19）：`submit(fn, deps)` 依赖计数 + 就绪队列，随机 DAG 压力用例通过。**M10-b-2 `parallel_for` 已收口**（2026-11-19，`doc/tasks/m10-b-parallel-for.md`）。**JobStats 已收口**（2026-11-19，`doc/tasks/m10-closeout-job-stats.md`）；TSan 正式 preset 与 `bench_jobs` 已落地（`tools/ctest_tsan.sh`，`benchmarks/README.md` E11）。剩余：确定性回归测试与内存序头文件注释（`doc/tasks/m10-closeout-final.md`）。
 > ③ M10-c work stealing **明确不做**，移入 Stretch（S13）；Transform 层级并行刷新**推迟**——当前没有真实消费者（D26 原则）。
 > ④ M10 收口后，M9.5d-0（Sponza 4K 纹理）与"AssetDatabase IO/解码搬 worker"**合并执行**，作为任务系统的第一批真实消费者，验证 §6 铁律。
 > ⑤ 其后 M11 只做包装收口子集（README 实测 / 架构图 / 展示数据），`yr_pack` 为机动项；其余 Stretch 项冻结，不提升。
@@ -608,7 +608,7 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 - [x] **M10-b 依赖图**：`submit(fn, deps)`（依赖计数 + 就绪队列）✅ 2026-11-19；`parallel_for(n, batch, fn)` ✅ 2026-11-19
 - [ ] Transform 层级并行刷新：按"脏根"分片，保证同一子树不并行（写清楚分片策略）——**推迟（2026-11-16）：当前无真实消费者，等依赖图完成且出现粒度问题再做**
 - [ ] ~~**M10-c（可选）work stealing**~~：**不做，移入 Stretch S13（2026-11-16）**；每线程本地双端队列 + 随机偷取的设想保留在 S13 备注
-- [x] `JobStats`：**2026-11-19 范围收窄**——只做互斥量保护的累计计数（submitted / completed / helperCompleted / 就绪队列深度峰值），不做 per-worker cacheline 统计；`alignas(64)` 实验归入 E12（无消费者，暂缓）
+- [x] `JobStats`：**2026-11-19 完成（范围收窄）**——互斥量保护的累计计数（submitted / completed / helperCompleted / 就绪队列深度峰值）；per-worker `alignas(64)` 统计归入 E12（无消费者，暂缓）
 - [ ] **确定性保证**：并行任务的**结果**必须与串行一致（浮点求和顺序！`parallel_for` 里禁止做非结合性归约，或提供确定性归约接口）——写测试证明
 - [ ] 线程安全审计：给所有"仅主线程"的 API 加 `YR_ASSERT(on_main_thread())`
 - [ ] **内存序决策写进 `yr/job/` 的头文件注释**：哪个 atomic 用哪个 order、为什么。这类信息离开代码就会失效，不适合放文档（`doc/layers/job.md` §8 已有整理，待回填头文件）
