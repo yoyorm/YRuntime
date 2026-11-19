@@ -52,6 +52,7 @@ waitAll(): 循环 { 取任务就帮忙执行；取不到就判完成 / 在 cv_ �
   |---|---|---|
   | `JobSystem(size_t workerCount = hardware_concurrency())` | 启动 N 个 worker | `0` → 内联模式，不启动线程 |
   | `TaskHandle submit(function<void()> task)` | 入队（锁内 `push` + `pendings_++`），出锁后 `notify_all` | `workerCount==0` 时在调用线程执行完再返回 |
+  | `TaskHandle submit(function<void()> task, span<const TaskHandle> deps)` | 前置依赖全部完成时才入就绪队列；`initializer_list` 重载支持 `{a, b}` | 同一 `JobSystem` 的句柄；DAG 由构造方式天然保证 |
   | `void waitAll()` | 帮忙执行排队任务直到 `pendings_ == 0` | 只允许**非 worker 线程**调用；可在多个非 worker 线程并发调用 |
   | `size_t workerCount() const noexcept` | 构造时配置值 | — |
 
@@ -79,6 +80,16 @@ waitAll(): 循环 { 取任务就帮忙执行；取不到就判完成 / 在 cv_ �
 - **锁顺序**：`JobSystem::mutex_` → `MtQueue` 内部锁（`submit` 持锁入队、`waitAll` 谓词持锁读 `size()`）。worker 侧是 `wait_pop` 返回后才拿 `mutex_`，两者不嵌套；**不得反向**。
 
 - **析构顺序**：`~JobSystem()` 先 `waitAll()`（清空已提交任务）再 `queue_.close()`；随后成员逆序析构，`workers_` **必须最后声明**，以便 `std::jthread` 的隐式 join 早于 `queue_` / `mutex_` / `cv_` 的销毁。前提：析构期间不得有别的线程 `submit`，也不得在任务执行中销毁。
+
+### 3.1 依赖图（`submit(fn, deps)`）
+
+- **结构**：未就绪状态挂在 `TaskHandle::State` 上——`remaining`（未完成前置数）、`task`（保管中的任务体）、`dependents`（完成时唤醒的后继 `State` 列表）。不引入独立 `Pending` 类型。
+- **就绪队列语义**：队列里**只有可以立刻执行的任务**。`remaining == 0` 的那一刻才 `queue_.push`；worker / `waitAll` / `TaskHandle::wait` 的帮忙路径都不判断依赖。
+- **`submit` 顺序（持 `mutex_`）**：① `pendings_++`（必须在判就绪之前，否则 `waitAll` 会在"前置完成、后继未入队"的间隙提前返回）；② 跳过空/已完成 dep，其余 `dep.state_->dependents.push_back(state)` 并计数；③ `remaining == 0` 直接入队，否则保管任务体。
+- **`finishTask_`（持 `mutex_`）**：置 `completed`、`--pendings_`、逐个 `--dependent->remaining`，归零者入就绪队列；最后 `clear()` `dependents` 释放引用，锁外 `notify_all`。
+- **检查与挂载同一临界区**：`dep.completed` 检查与 `push_back` 必须同锁，否则会出现"检查未完成 → 完成方清空 → 再挂上"的 lost transition，后继永远不触发。
+- **重复依赖** `{a, a}` 不去重：挂两次、`remaining = 2`，完成时同一循环减两次，第二次归零只入队一次。
+- **环**：`TaskHandle` 只能在 `submit` 返回后存在，依赖只能指向更早提交的任务，故图天然是 DAG，不做环检测。
 
 ## 4. `TaskHandle`
 
@@ -144,7 +155,7 @@ cmake --build --preset asan && ./build/asan/bin/YrTests_job "[job]"
 
 ## 9. 遗留 / 已知缺口
 
-- 依赖图 `submit(fn, deps)` / `parallel_for`（M10-b）；`JobStats`；benchmark（`bench_jobs`）；
+- `parallel_for`（M10-b-2）；`JobStats`；benchmark（`bench_jobs`）；
 - 有界队列 / 背压 / 优先级 / 取消 / work stealing：明确不做；
 - `AssetDatabase` 的 IO+解码尚未搬到 worker（M9.5d-0 与 M10 收口后合并执行）；
 - TSan 尚未进入 CMake preset，目前靠手编命令。

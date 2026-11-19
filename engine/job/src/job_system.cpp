@@ -5,12 +5,18 @@
 #include <memory>
 #include <mutex>
 #include <utility>
+#include <vector>
 #include <yr/job/job_system.h>
 
 namespace yr::job {
 
   struct TaskHandle::State {
     std::atomic<bool> completed = false;
+
+    // "未就绪"的任务状态
+    std::size_t remaining = 0;                      // 尚未完成的前置依赖数
+    std::function<void()> task;                     // 未就绪期间保管的任务体
+    std::vector<std::shared_ptr<State>> dependents; // 我完成后要唤醒的后继
   };
 
   bool TaskHandle::ready() const noexcept {
@@ -67,19 +73,41 @@ namespace yr::job {
   }
 
   TaskHandle JobSystem::submit(std::function<void()> task) {
-    // workerCount == 0 时直接执行。
+    return submit(std::move(task), std::span<const TaskHandle>{});
+  }
+
+  TaskHandle JobSystem::submit(std::function<void()> task, std::span<const TaskHandle> deps) {
+    auto state = std::make_shared<TaskHandle::State>();
+
+    // 内联模式：deps 中的任务在各自 submit 返回前已完成，等价于全部满足。
     if (!workerCount_.load()) {
       task();
-      auto state = std::make_shared<TaskHandle::State>();
       state->completed = true;
       return TaskHandle(state, *this);
     }
 
-    auto state = std::make_shared<TaskHandle::State>();
     {
       std::lock_guard lock{mutex_};
-      queue_.push(Job{std::move(task), state});
+
+      // 先记账：即使依赖未满足，它也是"已提交但未完成"的任务，
+      // 否则 waitAll 可能在"前置完成、后继尚未入队"的间隙提前返回。
       pendings_++;
+
+      std::size_t remaining = 0;
+      for (const TaskHandle& dep : deps) {
+        if (!dep.state_ || dep.state_->completed.load()) {
+          continue; // 默认空句柄 / 已完成：视为已满足
+        }
+        remaining++;
+        dep.state_->dependents.push_back(state);
+      }
+
+      if (remaining == 0) {
+        queue_.push(Job{std::move(task), state}); // 已就绪，直接进就绪队列
+      } else {
+        state->remaining = remaining;
+        state->task = std::move(task); // 未就绪：自己保管任务体
+      }
     }
 
     cv_.notify_all();
@@ -119,6 +147,13 @@ namespace yr::job {
       std::lock_guard lock{mutex_};
       job.state->completed = true;
       pendings_--;
+
+      for (const std::shared_ptr<TaskHandle::State>& dependent : job.state->dependents) {
+        if (--dependent->remaining == 0) {
+          queue_.push(Job{std::move(dependent->task), dependent}); // 最后一个前置完成
+        }
+      }
+      job.state->dependents.clear(); // 释放后继引用
     }
     cv_.notify_all();
   }

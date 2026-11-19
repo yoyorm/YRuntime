@@ -1,7 +1,7 @@
 # M10-b-1：手写依赖图 `submit(fn, deps)`
 
-> 状态：进行中（M10-a 已全部完成；AI 已准备契约与失败测试）
-> 最近更新：2026-11-17
+> 状态：**已完成**（2026-11-19：`job_deps` 7/7 通过；`[job]` 38 cases / 1666 assertions；30 轮 0 失败；ASan/TSan 干净）
+> 最近更新：2026-11-19
 
 ## 1. 目标
 
@@ -89,9 +89,9 @@ doc/tasks/**
 
 > 红灯规则：AI 准备的 `submit(fn, deps)` 占位声明与 `tests/job/test_job_deps.cpp` **不提交**，留在工作区等你实现通过后一起提交。
 
-## 6. 测试（当前应为红）
+## 6. 测试
 
-`tests/job/test_job_deps.cpp`（6 条）：
+`tests/job/test_job_deps.cpp`（7 条，已全绿）：
 
 1. **single dependency ordering (A → B)**：A 睡眠 20ms 后写标志，B 依赖 A 并读取该标志；验证 B 一定在 A 完成后才开始执行。
 2. **diamond dependency (A → B, C → D)**：A 产出数据，B 和 C 并发依赖 A 各自写结果，D 同时依赖 `{B, C}` 汇总结果；验证 `D.wait()` 返回时 A/B/C/D 顺序与结果全部正确。
@@ -99,6 +99,7 @@ doc/tasks/**
 4. **duplicate handle in deps (`{A, A}`)**：同一个未完成句柄在 `deps` 中出现两次；验证 A 完成后 B 正常执行且只执行一次。
 5. **`waitAll` covers tasks still waiting on dependencies**：提交长链 `A → B → C → D`，主线程直接调 `jobs.waitAll()`；验证不会在 A 完成、B 刚解锁的间隙提前返回。
 6. **`workerCount == 0` inline execution with deps**：0 线程模式下提交 `A → B → C`，验证按序内联完成且句柄均为 `ready()`。
+7. **random DAG stress**：8 个种子 × 64 节点随机 DAG（每节点依赖 0~2 个更早节点），用全局递增票据断言每条边 `后继开始票 > 前置结束票`、每个任务恰好执行一次。
 
 ## 7. 验收
 
@@ -109,3 +110,15 @@ ctest --test-dir build/debug-vk -R job_deps
 cmake --build --preset asan --target YrTests_job
 ./build/asan/bin/YrTests_job
 ```
+
+## 8. Q&A / 决策记录
+
+- 2026-11-19：**不引入独立的 `Pending` 类型**。未就绪任务的信息直接挂在 `TaskHandle::State` 上：`remaining`（未完成前置数）、`task`（未就绪期间保管的任务体）、`dependents`（完成后要唤醒的后继 `State`）。好处：少一个类型、避开"`State` 访问 `JobSystem` 私有 `Job` 类型"的访问权限问题；`finishTask_` 拿到的 `shared_ptr<State>` 可直接构造 `Job{std::move(dep->task), dep}` 入队。
+- 2026-11-19：**未就绪任务不进 `queue_`**。只有 `remaining == 0` 的那一刻才 `queue_.push`，因此队列里永远只有"可以立刻执行"的任务，worker / `waitAll` / `TaskHandle::wait` 的帮忙路径都不需要判断依赖。否决的替代方案："全部任务都入队，pop 出来再等 `remaining`"——会占住 worker（1 worker 时死锁）、且 FIFO 队列会出现队头阻塞。
+- 2026-11-19：`submit(task, deps)` 的第一件事是 `pendings_++`（锁内），**在判断是否就绪之前**。否则前置完成把 `pendings_` 减到 0 的瞬间，`waitAll` 可能看到 0 而提前返回（测试 5）。
+- 2026-11-19：检查 `dep.completed` 与 `dep.dependents.push_back` 必须在同一把 `JobSystem::mutex_` 内，避免"检查为未完成 → 完成方清空 dependents → 再挂上"的 lost transition（卡片 §4 思考点）。
+- 2026-11-19：重复依赖（`{a, a}`）不需要去重：挂两次、`remaining = 2`，完成时在同一循环里减两次，第二次归零只入队一次（测试 4 验证"只执行一次"）。
+- 2026-11-19：`finishTask_` 触发后继后 `clear()` `dependents`，释放引用；`notify_all` 仍在锁外。
+- 2026-11-19：`submit(task)` 改为委托 `submit(task, 空 span)`，内联分支只在带 deps 的版本里保留一份。
+- 2026-11-19：`workerCount == 0` 时 deps 已在各自 submit 时内联完成，统一走"全部已满足 → 直接执行"的路径，没有特判。
+- 2026-11-19：变异测试（只在 `/tmp` 副本上做）：删掉 `pendings_++` → 挂住；删掉 `dependents.push_back` → 挂住；不跳过已完成 dep → 挂住。三种失败都能被 6 条用例捕获（以超时形式收口）。

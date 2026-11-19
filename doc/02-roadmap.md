@@ -593,9 +593,9 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 
 **目标**：把 M9 的"假异步"变成真并行，并让 Transform 更新、资源解码能跑在多核上——**同时不引入不可复现的 bug**。
 
-> **分步执行计划（2026-11-16 定，2026-11-17 更新）**：
-> ① **M10-a 已全部完成**（2026-11-17）：MtQueue / JobSystem / TaskHandle / `waitAll` 帮忙 / `TaskHandle::wait()` 帮忙全部收口（31 cases / 99 assertions，ASan/TSan 全绿）。
-> ② **M10-b（当前）**：先做 M10-b-1 依赖图 `submit(fn, deps)`（`doc/tasks/m10-b-deps.md`），再做 M10-b-2 `parallel_for` + 确定性测试；收尾件为 TSan 正式 preset、`bench_jobs`、`JobStats`、内存序头文件注释、`--jobs 0` 单线程路径全绿。
+> **分步执行计划（2026-11-16 定，2026-11-19 更新）**：
+> ① **M10-a 已全部完成**（2026-11-17）：MtQueue / JobSystem / TaskHandle / `waitAll` 帮忙 / `TaskHandle::wait()` 帮忙全部收口（38 cases / 1666 assertions，ASan/TSan 全绿）。
+> ② **M10-b-1 依赖图已收口**（2026-11-19）：`submit(fn, deps)` 依赖计数 + 就绪队列，随机 DAG 压力用例通过。**当前 M10-b-2 `parallel_for(n, batch, fn)`**（`doc/tasks/m10-b-parallel-for.md`），随后是确定性测试；收尾件为 TSan 正式 preset、`bench_jobs`、`JobStats`、内存序头文件注释、`--jobs 0` 单线程路径全绿。
 > ③ M10-c work stealing **明确不做**，移入 Stretch（S13）；Transform 层级并行刷新**推迟**——当前没有真实消费者（D26 原则）。
 > ④ M10 收口后，M9.5d-0（Sponza 4K 纹理）与"AssetDatabase IO/解码搬 worker"**合并执行**，作为任务系统的第一批真实消费者，验证 §6 铁律。
 > ⑤ 其后 M11 只做包装收口子集（README 实测 / 架构图 / 展示数据），`yr_pack` 为机动项；其余 Stretch 项冻结，不提升。
@@ -605,7 +605,7 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 - [x] `waitAll` 主线程帮忙执行排队任务（M10-a-4，2026-11-16 完成；`doc/layers/job.md`）
 - [x] `TaskHandle::wait()` 时主线程**帮忙执行任务**而不是 sleep（M10-a-5，2026-11-17 完成）
 - [ ] 把 `AssetDatabase` 的 IO+解码搬到 worker，构造仍回主线程（`pump()`）——**验证 §6 铁律**
-- [ ] **M10-b 依赖图**：`submit(fn, deps)`（依赖计数 + 就绪队列）；`parallel_for(n, batch, fn)`
+- [x] **M10-b 依赖图**：`submit(fn, deps)`（依赖计数 + 就绪队列）✅ 2026-11-19；`parallel_for(n, batch, fn)` 进行中（M10-b-2）
 - [ ] Transform 层级并行刷新：按"脏根"分片，保证同一子树不并行（写清楚分片策略）——**推迟（2026-11-16）：当前无真实消费者，等依赖图完成且出现粒度问题再做**
 - [ ] ~~**M10-c（可选）work stealing**~~：**不做，移入 Stretch S13（2026-11-16）**；每线程本地双端队列 + 随机偷取的设想保留在 S13 备注
 - [ ] `JobStats`：每线程独立 cacheline（`alignas(64)`）避免 false sharing；统计队列深度/等待/窃取次数

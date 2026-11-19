@@ -5,14 +5,15 @@
 #include <condition_variable>
 #include <cstddef>
 #include <functional>
+#include <initializer_list>
 #include <memory>
 #include <mutex>
+#include <span>
 #include <thread>
 #include <utility>
 #include <vector>
 
 namespace yr::job {
-  // JobSystem written by yoyorm
 
   // 单个任务的完成句柄。声明周期必须小于JobSystem
   // 可拷贝,所有副本共享同一个完成状态。
@@ -26,8 +27,6 @@ namespace yr::job {
 
   private:
     struct State;
-    explicit TaskHandle(JobSystem& owner) : owner_(&owner) {}
-
     explicit TaskHandle(std::shared_ptr<State> state, JobSystem& owner) : state_(std::move(state)), owner_(&owner) {}
 
     std::shared_ptr<State> state_;
@@ -50,6 +49,12 @@ namespace yr::job {
     // workerCount == 0 时在调用线程内联执行。
     // 返回的 TaskHandle 在任务完成后 ready() == true。
     [[nodiscard]] TaskHandle submit(std::function<void()> task);
+
+    // 当 deps 中所有有效任务完成后，task 才进入就绪队列执行。
+    [[nodiscard]] TaskHandle submit(std::function<void()> task, std::span<const TaskHandle> deps);
+    [[nodiscard]] TaskHandle submit(std::function<void()> task, std::initializer_list<TaskHandle> deps) {
+      return submit(std::move(task), std::span<const TaskHandle>{deps.begin(), deps.size()});
+    }
 
     // 等待当前已提交的任务全部完成。
     void waitAll();
