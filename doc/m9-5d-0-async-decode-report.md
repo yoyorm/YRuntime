@@ -54,20 +54,20 @@ completed_ 驻留 ≤ byteBudget_ = 256 MiB
 | `check_format` / `check_deps` | 通过 |
 | `--jobs 0` | 全部用例通过（内联路径同步加载） |
 
-## 5. Sponza 4K 待实测（需要外部资产）
+## 5. Sponza 4K 实测（2026-11-19 完成）
 
-本机仓库不含 Sponza（按 D26，大资产不在仓库）。在有资产的机器上跑：
+完整数据见 [`m9-5d-0-sponza-benchmark.md`](m9-5d-0-sponza-benchmark.md)（环境、方法、trace 口径都在里面）。摘要：
 
-```bash
-# 4K 端到端（目标 ≤ 25 s，8 worker）
-DISPLAY=:99 ./build/debug-vk/bin/yr_render_demo --gltf <sponza.gltf> --asset-root <path> \
-    --stream-assets --trace --frames 600
+| 场景（72 张 4K 源，输出 1024²） | 首帧 | 全部就绪 | RSS 峰值 | pump p95 |
+|---|---|---|---|---|
+| 同步（M9.5 行为） | 35.2 s | 35.2 s | 2.07 GB | — |
+| 异步 worker | **0.23 s** | **10.2 s** | 1.69 GB | 6.3 µs |
+| 异步 + 预生成 1K 缓存（1K 源） | 0.22 s | **3.8 s** | 0.97 GB | 4.5 µs |
+| 异步 + 4K 输出 | 0.24 s | 11.6 s | 6.7 GB | 7.2 µs |
 
-# 1K 快速路径（目标 ≤ 5 s）：把 maxTextureDimension 调到 1024（demo 参数或 AssetDatabase 构造参数）
-```
-
-记录项：端到端 ready 时间、首帧 items/upload、峰值 RSS、帧 p50/p95、validation 错误数；截图存
-`doc/media/m9.5-sponza-textured.png`。
+- 首帧从 35.2 s 降到 0.23 s，`pump p95 ≤ 0.02 ms`（目标 < 5 ms）；
+- 4096² 输出常驻 ≈ 4.6 GiB，默认 1024 是合理取舍；
+- 截图：`doc/media/m9.5-sponza-textured.png`（异步 1K 缓存 + `--no-shadow`；无 IBL，室内偏暗）。
 
 ## 6. 已知限制
 

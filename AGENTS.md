@@ -1,24 +1,24 @@
 # YRuntime — Agent Context
 
 > 这个文件是**跨会话的上下文锚点**。新会话先读它，再读当前任务卡；聊天记录不是权威。
-> 最近更新：2026-11-19
+> 最近更新：2026-11-20
 
 ## 1. 项目一句话
 
 YRuntime 是一个 C++20 游戏运行时：Object/SceneTree/EventBus/MainLoop + 资源系统 + Snapshot 驱动的 Vulkan 渲染后端。
-当前已完成 M0–M9.5 主体与 M10；当前在 **asset worker 迁移**（M10 最后一项 checkbox + M9.5d-0）。
+当前已完成 M0–M9.5 主体、M10 与资产 worker 迁移；M9.5d-0 已实测；当前在 **M11 工具链与包装**（`yr_pack` 优先）。
 
 ## 2. 当前任务
 
 ```text
-Asset worker 迁移：AssetDatabase 的 IO/解码搬上 JobSystem，构造仍回主线程 pump()
-任务卡：doc/tasks/m10-asset-worker.md
-用户负责：review 每步 diff、确认关键取舍（预算/命名/顺序）
-AI 负责：engine/asset/src/loader_worker.*、asset_database.* 的并发桥接实现；tests/asset/**、CMake、doc/**、benchmark/report
+M11-1：yr_pack 打包工具（assets → .yrpak + 运行时 PakFileAccess）
+计划：doc/02-roadmap.md M11 段；实测数据见 doc/m9-5d-0-sponza-benchmark.md
+用户负责：review diff、确认格式与 CLI 取舍
+AI 负责：tools/yr_pack、engine/asset 的 PakFileAccess、tests、CMake、doc
 ```
 
-M10 已全部收口。当前分工（2026-11-19 调整）：**AI 可以写资产层并发桥接实现**（`loader_worker` / `pump` 安装 / 预算），
-但必须**分步提交**：每步给出 `git diff` 与测试结果，用户 review 后再继续；用户不再手写该层代码。
+M10 / 资产 worker / Sponza 基准已完成；当前第一原则：**新格式先定契约再实现**，先在任务卡/ADR 写清
+manifest + blob + 内容哈希 + 版本号，再动代码。
 
 ## 3. 架构不变量
 

@@ -19,9 +19,9 @@
 | **M7 Snapshot 驱动画面** | ✅ 已完成 / 收口（2026-10-24）—— 7a/7b/7c/7d/7e：MainLoop 接线、DrawItem/Camera、WASD、dump/replay、帧统计、600s soak、resize、GIF/PNG；双/三缓冲按 D22 推迟 |
 | **M8 序列化** | ✅ 已完成 / 收口（2026-10-31）—— M8a 文本；M8b 引用/连接；M8c headless `--scene` 加载与 1000 节点 benchmark；364 tests |
 | **M9 资源系统** | ✅ 主体完成（M9.2b streaming + M9.5 PBR/多光源/阴影；Sponza 4K 纹理待 M9.5d-0） |
-| **M9.5 ~ M11** | 🔨 M9.5 主体完成；**M10 任务系统已收口**（2026-11-19）；下一步 asset worker 迁移（与 M9.5d-0 合并） |
+| **M9.5 ~ M11** | 🔨 M9.5 主体完成；**M10 与资产 worker 迁移已收口**；M9.5d-0 已实测（报告 `m9-5d-0-sponza-benchmark.md`）；下一步 M11 包装/工具链 |
 
-**远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend ✅ → M6 最小 Vulkan bootstrap ✅ → M7 Snapshot 驱动画面（首个主要作品节点）✅ → M8 序列化 ✅ → M9 资源系统 ✅ → M9.5 基础 PBR 主体 ✅ → M10 任务系统 ✅ → **当前：asset worker 迁移（M10 最后一项 checkbox + M9.5d-0）→ M11 工具链打磨。当前任务：任务卡 `doc/tasks/m10-asset-worker.md`。**
+**远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend ✅ → M6 最小 Vulkan bootstrap ✅ → M7 Snapshot 驱动画面（首个主要作品节点）✅ → M8 序列化 ✅ → M9 资源系统 ✅ → M9.5 基础 PBR 主体 ✅ → M10 任务系统 ✅ → **当前：M9.5d-0 实测完成，下一步 M11 工具链打磨（`yr_pack` / README 实测 / 展示数据）**。室内布光/IBL 留在 stretch。
 
 进度**只在两处维护**：根 `README.md` 的里程碑表（对外）+ `02-roadmap.md` 的 checkbox（对内）。
 别的地方不要重复记录，否则一定会漂移。

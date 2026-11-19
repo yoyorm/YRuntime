@@ -531,7 +531,8 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 - [x] M9.2a 协作式异步 + 纹理 streaming：IFileAccess / AsyncLoader / LoaderWorker / deferTextures / `--async-textures`；454/454 ✅ 2026-11-12
 - [x] **M9.2b mesh/scene streaming + Sponza**：GltfDeferredMesh / AssetDatabase job 队列 / pump 双预算 / AABB / `--gltf`/`--asset-root`/`--stream-assets`/`--skip-textures`/`--trace`；Sponza 405 primitives / 3,747,018 triangles；472/472 ✅ 2026-11-13
 - [x] **M9.5 主体**：Cook-Torrance / 四贴图 / LightNode 多光源 / 单方向光 shadow / alpha mask / snapshot v3；ToyCar PBR；Sponza 几何 405 primitives；504/504 ✅ 2026-11-13
-- [ ] **M9.5d-0**：Sponza 4K 纹理 worker 解码 / 1K 缓存 / 室内点光与 shadow 预算
+- [x] **M9.5d-0**：Sponza 4K 纹理 worker 解码 ✅ 2026-11-19（首帧 35.2 s → 0.23 s，全部就绪 10.2 s；1K 缓存 3.8 s；RSS 2.07 GB → 1.69/0.97 GB；报告 `doc/m9-5d-0-sponza-benchmark.md`）
+- [ ] M9.5d-0 剩余：室内点光与 shadow 预算 / IBL（当前室内偏暗，留作 stretch）
 - [ ] **下一步 M10** 任务系统规划
 - [ ] `yr/asset/asset_uid.h`：`AssetUID`（内容哈希或稳定 ID）+ `path ↔ uid` 映射表（对照 Godot `resource_uid.h`）
 - [ ] `yr/asset/resource.h`：`Resource : RefCounted`（source_path / uid / 加载状态 / 元数据）

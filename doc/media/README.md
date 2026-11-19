@@ -9,6 +9,7 @@
 | 图形 Demo | `m7-render-demo.gif` / `m7-snapshot.png` | GIF ≤ 5MB | `yr_render_demo`：WASD 移动中间蓝色 Node（GIF 1280×720、24 帧 / 1.92s / ~12.5fps）；复现：live 与 `--dump-snapshot` / `--replay-snapshot` 画面一致 |
 | 数据图 | `e10-async-loading.png` | — | 由 `tools/plot_stats.py` 生成，脚本必须一起提交 |
 | 工具截图 | `m2-yr-inspect.png` | — | |
+| Sponza 纹理实测 | `m9.5-sponza-textured.png` | — | 异步 worker 解码 + 1K 缓存 + `--no-shadow`；复现见 `doc/m9-5d-0-sponza-benchmark.md` §7 |
 
 **规则**：① 大文件（>5MB）不进 git；② 每张图都要有生成它的脚本或明确的复现步骤；③ 文件名带里程碑前缀，便于清理。
 
