@@ -139,3 +139,55 @@ TEST_CASE("parallel_for: returns without waiting for unrelated slow task", "[job
   slow.wait();
   CHECK(slow_done.load(std::memory_order_acquire));
 }
+// 确定性：批划分只是执行策略，不改变语义——两次运行结果逐元素相同，且等于串行。
+TEST_CASE("parallel_for: two runs produce identical results", "[job][parallel_for]") {
+  JobSystem jobs(4);
+
+  constexpr std::size_t kCount = 4096;
+  auto compute = [](std::size_t index) { return (index * 2654435761u) ^ (index >> 3); };
+
+  std::vector<std::uint32_t> serial(kCount, 0);
+  for (std::size_t index = 0; index < kCount; ++index) {
+    serial[index] = compute(index);
+  }
+
+  std::vector<std::uint32_t> first(kCount, 0);
+  std::vector<std::uint32_t> second(kCount, 0);
+
+  jobs.parallelFor(kCount, 7, [&](std::size_t begin, std::size_t end) {
+    for (std::size_t index = begin; index < end; ++index) {
+      first[index] = compute(index);
+    }
+  });
+  jobs.parallelFor(kCount, 7, [&](std::size_t begin, std::size_t end) {
+    for (std::size_t index = begin; index < end; ++index) {
+      second[index] = compute(index);
+    }
+  });
+
+  CHECK(first == serial);
+  CHECK(second == first);
+}
+
+// 不同 batch size 必须得到完全相同的数组。
+TEST_CASE("parallel_for: batch size does not change results", "[job][parallel_for]") {
+  JobSystem jobs(4);
+
+  constexpr std::size_t kCount = 1024;
+  auto compute = [](std::size_t index) { return index * index + 17; };
+
+  std::vector<std::uint64_t> reference(kCount, 0);
+  for (std::size_t index = 0; index < kCount; ++index) {
+    reference[index] = compute(index);
+  }
+
+  for (const std::size_t batch : {std::size_t{1}, std::size_t{7}, std::size_t{64}, std::size_t{4096}}) {
+    std::vector<std::uint64_t> results(kCount, 0);
+    jobs.parallelFor(kCount, batch, [&](std::size_t begin, std::size_t end) {
+      for (std::size_t index = begin; index < end; ++index) {
+        results[index] = compute(index);
+      }
+    });
+    CHECK(results == reference);
+  }
+}
