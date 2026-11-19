@@ -15,7 +15,7 @@
 
 namespace yr::job {
 
-  // 单个任务的完成句柄。声明周期必须小于JobSystem
+  // 单个任务的完成句柄。生命周期必须小于JobSystem
   // 可拷贝,所有副本共享同一个完成状态。
   class JobSystem;
   class TaskHandle {
@@ -58,6 +58,12 @@ namespace yr::job {
 
     // 等待当前已提交的任务全部完成。
     void waitAll();
+
+    // 把 [0, count) 按 batchSize 切成不重叠区间并发执行；阻塞到本调用提交的批次全部完成。
+    // count == 0 直接返回；batchSize == 0 视作 1；只允许非 worker 线程调用。
+    // 不提供跨批次归约：fn 若写共享目标，需自行保证无数据竞争且结果与串行一致。
+    void parallelFor(std::size_t count, std::size_t batchSize,
+                     std::function<void(std::size_t begin, std::size_t end)> fn);
 
     [[nodiscard]] std::size_t workerCount() const noexcept;
 

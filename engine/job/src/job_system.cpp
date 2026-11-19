@@ -141,6 +141,35 @@ namespace yr::job {
     return workerCount_;
   }
 
+  void JobSystem::parallelFor(std::size_t count, std::size_t batchSize,
+                              std::function<void(std::size_t, std::size_t)> fn) {
+    if (count == 0) {
+      return; // 不提交任何批次
+    }
+    if (batchSize == 0) {
+      batchSize = 1; // 每个元素一个批次
+    }
+
+    // 用除法 + 取余计算批次数，避免 (count + batchSize - 1) 的溢出。
+    const std::size_t batches = count / batchSize + (count % batchSize == 0 ? 0 : 1);
+
+    std::vector<TaskHandle> handles;
+    handles.reserve(batches);
+
+    for (std::size_t batch = 0; batch < batches; ++batch) {
+      const std::size_t begin = batch * batchSize;
+      // count - begin < batchSize 避免 begin + batchSize 溢出。
+      const std::size_t end = (count - begin < batchSize) ? count : begin + batchSize;
+      // fn 按值拷贝进每个批次；move 会让后续批次拿到空 function。
+      handles.push_back(submit([fn, begin, end] { fn(begin, end); }));
+    }
+
+    // 只等本调用提交的批次，不等全局（不是 waitAll）。
+    for (const TaskHandle& handle : handles) {
+      handle.wait();
+    }
+  }
+
   void JobSystem::finishTask_(Job job) {
     job.task();
     {
