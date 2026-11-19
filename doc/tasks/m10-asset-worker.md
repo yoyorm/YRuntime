@@ -45,13 +45,14 @@ AssetDatabase
 
 ## 4. 分步执行
 
-### 步骤 0（AI）：`on_main_thread` 审计基础设施
+### 步骤 0（AI）：`on_main_thread` 审计基础设施 ✅ 2026-11-19
 
 - 新增 `engine/core/include/yr/core/thread_check.h`：
-  `markMainThread()` / `isMainThread()` / `YR_ASSERT_MAIN_THREAD()`（基于现有 `YR_ASSERT`）；
-- 在 `AssetDatabase::store`、`pump` 里的 `Texture` 构造、glTF 安装点插入断言；
-- 测试：`tests/core/test_thread_check.cpp`（主线程 true、子线程 false、未标记时行为）；
-- 这是 asset worker 迁移的前置门禁，先加断言再动并发代码。
+  `markMainThread()` / `isMainThread()` / `mainThreadMarked()` / `YR_ASSERT_MAIN_THREAD()`（基于现有 `YR_ASSERT`）；
+- 在 `AssetDatabase` 的 8 个主线程入口插断言：`store` / `loadGltfScene` / `requestLoad` / `pump` / `pumpMeshes` / `evict` / `collectGarbage` / `clear`；
+- `Engine::Engine()` 调用 `markMainThread()`（宿主在主线程构造 Engine）；
+- 测试：`tests/core/test_thread_check.cpp` 5 条（未标记 / 标记 / reset / 幂等 / 宏在 worker 上触发）；
+- 关键取舍：**未标记时宏 no-op**——单测与无宿主场景不被误伤；只有 Engine 标记后才真正强制执行。
 
 ### 步骤 1（用户）：`LoaderWorker` 改为 `JobSystem` 后端
 
@@ -150,3 +151,4 @@ CMake、doc/**、benchmark、报告
 - 2026-11-19：completion 携带解码结果（POD 字节），`Resource` 构造仍留 `pump()`，维持 §6 铁律。
 - 2026-11-19：`LoaderWorker` 保留为 JobSystem 之上的门面（API 不变），`AsyncLoader` 状态机不动，减少一次性改动面。
 - 2026-11-19：先加 `on_main_thread` 断言再改并发代码——这是 M10 收尾时明确推迟的审计项，现在有了真实消费者。
+- 2026-11-19：步骤 0 实现细节：`std::atomic<std::thread::id>`（acquire/release）；标记未设置时 `YR_ASSERT_MAIN_THREAD()` **不做检查**（单测/无宿主不误伤）；`markMainThread()` 幂等，换线程重复标记时 Debug 断言；`resetMainThreadForTesting()` 仅供测试。验证：561/561（debug / ASan / TSan）。

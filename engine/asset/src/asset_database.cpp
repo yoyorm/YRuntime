@@ -9,6 +9,7 @@
 #include <yr/asset/texture_loader.h>
 #include <yr/core/assert.h>
 #include <yr/core/log.h>
+#include <yr/core/thread_check.h>
 
 #include "gltf_mesh_builder.h"
 #include "loader_worker.h"
@@ -27,6 +28,7 @@ namespace yr::asset {
   AssetDatabase::~AssetDatabase() = default;
 
   bool AssetDatabase::store(obj::Ref<Resource> resource) {
+    YR_ASSERT_MAIN_THREAD();
     if (!resource) {
       return false;
     }
@@ -66,6 +68,7 @@ namespace yr::asset {
   }
 
   GltfLoadResult AssetDatabase::loadGltfScene(std::string_view resPath, const GltfLoadOptions& options) {
+    YR_ASSERT_MAIN_THREAD();
     ++counters_.loads;
 
     std::vector<AssetUID> newUids;
@@ -135,6 +138,7 @@ namespace yr::asset {
 
   AssetUID AssetDatabase::requestLoad(std::string_view resPath, ResourceKind kind, TextureColorSpace colorSpace,
                                       std::uint32_t maxDimension) {
+    YR_ASSERT_MAIN_THREAD();
     const AssetUID uid = AssetUID::fromPath(resPath);
     if (!uid.valid()) {
       return AssetUID{};
@@ -187,6 +191,7 @@ namespace yr::asset {
   }
 
   void AssetDatabase::pump(std::size_t maxTextureCompletions, std::size_t maxMeshVertices) {
+    YR_ASSERT_MAIN_THREAD();
     if (maxTextureCompletions == 0) {
       return;
     }
@@ -282,6 +287,7 @@ namespace yr::asset {
   }
 
   void AssetDatabase::pumpMeshes(std::size_t maxMeshVertices) {
+    YR_ASSERT_MAIN_THREAD();
     std::size_t builtVertices = 0;
     std::size_t builtJobs = 0;
 
@@ -335,6 +341,7 @@ namespace yr::asset {
   }
 
   bool AssetDatabase::evict(AssetUID uid) {
+    YR_ASSERT_MAIN_THREAD();
     const auto it = cache_.find(uid);
     if (it == cache_.end() || it->second.resource->refcount() != 1) {
       return false;
@@ -350,6 +357,7 @@ namespace yr::asset {
   }
 
   GcStats AssetDatabase::collectGarbage() {
+    YR_ASSERT_MAIN_THREAD();
     GcStats gc;
 
     while (true) {
@@ -398,6 +406,7 @@ namespace yr::asset {
   }
 
   void AssetDatabase::clear() {
+    YR_ASSERT_MAIN_THREAD();
     pendingMeshes_.clear();
     pendingMeshUids_.clear();
     cache_.clear();
