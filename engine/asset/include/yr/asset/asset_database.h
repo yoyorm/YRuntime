@@ -21,7 +21,7 @@ namespace yr::job {
 
 namespace yr::asset {
 
-  class LoaderWorker;
+  class JobLoadBackend;
   class AsyncLoader;
 
   struct AssetStats {
@@ -47,7 +47,7 @@ namespace yr::asset {
   class AssetDatabase final {
   public:
     // jobs 为空时本类自持一个默认 JobSystem；注入时 JobSystem 必须比本类活得更久。
-    // byteBudget：LoaderWorker 完成队列的字节预算；0 表示不限制。
+    // byteBudget：JobLoadBackend 完成队列的字节预算；0 表示不限制。
     explicit AssetDatabase(std::string assetRoot, yr::job::JobSystem* jobs = nullptr,
                            std::size_t byteBudget = kDefaultLoadByteBudget);
     // access 非空且归本类所有；用于 Memory/Throttled 等注入实现。
@@ -120,7 +120,7 @@ namespace yr::asset {
     std::unique_ptr<IFileAccess> fileAccess_;
     std::unique_ptr<yr::job::JobSystem> ownedJobs_;
     yr::job::JobSystem* jobs_ = nullptr;
-    std::unique_ptr<LoaderWorker> loaderWorker_;
+    std::unique_ptr<JobLoadBackend> loadBackend_;
     std::unique_ptr<AsyncLoader> asyncLoader_;
     std::unordered_map<AssetUID, Entry> cache_;
     // job 只持有 uid + source，不持有 obj::Ref<Mesh>，避免阻止 evict/GC。

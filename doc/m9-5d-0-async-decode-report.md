@@ -10,7 +10,7 @@
 改造后：JobSystem worker 读字节 + decodeRgba8 + 下采样 → completed_ → 主线程 pump 只安装
 ```
 
-- **生产端**：`LoaderWorker` 不再拥有线程，变成 `JobSystem` 之上的门面（`submit` → `jobs_->submit`）；
+- **生产端**：`JobLoadBackend` 不再拥有线程，变成 `JobSystem` 之上的门面（`submit` → `jobs_->submit`）；
 - **解码**：纹理在 worker 内完成（`decodeRgba8`，含 `maxDimension` 下采样），4K PNG 不再占主线程；
 - **主线程**：`pump` 删除 `decodeRgba8`，只做 `Texture` 构造 / `markReady` / 注册 `cache_`（主线程铁律不变）；
 - **背压**：在飞任务上限 `maxInFlight = 4` + 完成队列字节预算 `byteBudget = 256 MiB`（0 = 不限制）。
@@ -73,4 +73,4 @@ DISPLAY=:99 ./build/debug-vk/bin/yr_render_demo --gltf <sponza.gltf> --asset-roo
 
 - `stb_image` 的 `stbi_failure_reason()` 使用全局缓冲区（未定义 `STBI_THREAD_LOCAL`）；多个 worker 同时解码**失败**时可能竞争该文本。只影响错误信息，修复方式是给 `stb_image_impl.cpp` 加 `#define STBI_THREAD_LOCAL thread_local`。
 - `LoadCompletion::payload` 保留给非纹理（`kUnknown/kMesh`）原始字节；纹理路径解码后立即释放。
-- 3 条旧的 `loader_worker` 用例把 `kTexture` 改成 `kUnknown`：它们测的是"原始字节透传"，纹理路径现在会解码。
+- 3 条旧的 job load backend 用例把 `kTexture` 改成 `kUnknown`：它们测的是"原始字节透传"，纹理路径现在会解码。

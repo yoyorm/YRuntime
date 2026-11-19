@@ -166,3 +166,4 @@ CMake、doc/**、benchmark、报告
 - 2026-11-19：`LoadCompletion::maxDimension` 删除（解码已在 worker 完成，无消费者）；`payload` 保留给非纹理（`kUnknown/kMesh`）原始字节，纹理路径解码后立即释放容量。
 - 2026-11-19：`test_loader_worker` 两条"原始字节透传"用例的 kind 由 `kTexture` 改为 `kUnknown`——纹理路径现在会解码，旧断言编码的是迁移前契约。
 - 2026-11-19：未做/待办：Sponza 4K 实测（需外部资产）；`LoaderWorker` → `JobLoadBackend` 改名（待用户确认后单独机械 commit）。
+- 2026-11-19：`LoaderWorker` 重命名为 `JobLoadBackend`（它不再拥有线程，只是 `ILoadBackend` 的 JobSystem 实现），成员 `loaderWorker_` 同步改为 `loadBackend_`。

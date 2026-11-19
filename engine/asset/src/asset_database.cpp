@@ -13,7 +13,7 @@
 #include <yr/job/job_system.h>
 
 #include "gltf_mesh_builder.h"
-#include "loader_worker.h"
+#include "job_load_backend.h"
 
 namespace yr::asset {
 
@@ -24,8 +24,8 @@ namespace yr::asset {
       ownedJobs_ = std::make_unique<yr::job::JobSystem>();
       jobs_ = ownedJobs_.get();
     }
-    loaderWorker_ = std::make_unique<LoaderWorker>(*fileAccess_, *jobs_, 4, byteBudget);
-    asyncLoader_ = std::make_unique<AsyncLoader>(*loaderWorker_);
+    loadBackend_ = std::make_unique<JobLoadBackend>(*fileAccess_, *jobs_, 4, byteBudget);
+    asyncLoader_ = std::make_unique<AsyncLoader>(*loadBackend_);
   }
 
   AssetDatabase::AssetDatabase(std::unique_ptr<IFileAccess> access, yr::job::JobSystem* jobs, std::size_t byteBudget)
@@ -35,8 +35,8 @@ namespace yr::asset {
       ownedJobs_ = std::make_unique<yr::job::JobSystem>();
       jobs_ = ownedJobs_.get();
     }
-    loaderWorker_ = std::make_unique<LoaderWorker>(*fileAccess_, *jobs_, 4, byteBudget);
-    asyncLoader_ = std::make_unique<AsyncLoader>(*loaderWorker_);
+    loadBackend_ = std::make_unique<JobLoadBackend>(*fileAccess_, *jobs_, 4, byteBudget);
+    asyncLoader_ = std::make_unique<AsyncLoader>(*loadBackend_);
   }
 
   AssetDatabase::~AssetDatabase() = default;

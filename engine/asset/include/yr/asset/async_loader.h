@@ -13,7 +13,7 @@
 
 namespace yr::asset {
 
-  // LoaderWorker 完成队列的默认字节预算
+  // JobLoadBackend 完成队列的默认字节预算
   inline constexpr std::size_t kDefaultLoadByteBudget = 256u * 1024u * 1024u;
 
   struct LoadRequest {

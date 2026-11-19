@@ -1,4 +1,4 @@
-#include "loader_worker.h"
+#include "job_load_backend.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -27,8 +27,8 @@ namespace {
   using yr::asset::AssetDatabase;
   using yr::asset::AssetUID;
   using yr::asset::IFileAccess;
+  using yr::asset::JobLoadBackend;
   using yr::asset::LoadCompletion;
-  using yr::asset::LoaderWorker;
   using yr::asset::LoadRequest;
   using yr::asset::LoadState;
   using yr::asset::MemoryFileAccess;
@@ -82,7 +82,7 @@ namespace {
     mutable std::atomic<int> max_active_{0};
   };
 
-  std::vector<LoadCompletion> collect(LoaderWorker& worker, std::size_t count,
+  std::vector<LoadCompletion> collect(JobLoadBackend& worker, std::size_t count,
                                       std::chrono::milliseconds timeout = std::chrono::seconds(5)) {
     std::vector<LoadCompletion> out;
     const auto deadline = std::chrono::steady_clock::now() + timeout;
@@ -121,7 +121,7 @@ TEST_CASE("async decode: texture completion carries decoded pixels", "[asset][as
   memory.addFile("res://pixel.png", pngBytes());
 
   yr::job::JobSystem jobs(2);
-  LoaderWorker worker(memory, jobs);
+  JobLoadBackend worker(memory, jobs);
   worker.submit(LoadRequest{AssetUID{1}, "res://pixel.png", ResourceKind::kTexture, TextureColorSpace::kSrgb, 0});
 
   const std::vector<LoadCompletion> completions = collect(worker, 1);
@@ -140,7 +140,7 @@ TEST_CASE("async decode: bad texture reports decode error", "[asset][async_decod
   memory.addFile("res://bad.png", bytesOf("not a png"));
 
   yr::job::JobSystem jobs(2);
-  LoaderWorker worker(memory, jobs);
+  JobLoadBackend worker(memory, jobs);
   worker.submit(LoadRequest{AssetUID{2}, "res://bad.png", ResourceKind::kTexture, TextureColorSpace::kSrgb, 0});
 
   const std::vector<LoadCompletion> completions = collect(worker, 1);
@@ -157,7 +157,7 @@ TEST_CASE("async decode: in-flight reads are capped", "[asset][async_decode]") {
 
   constexpr std::size_t kRequests = 16;
   yr::job::JobSystem jobs(4);
-  LoaderWorker worker(access, jobs, 4);
+  JobLoadBackend worker(access, jobs, 4);
 
   for (std::size_t index = 0; index < kRequests; ++index) {
     worker.submit(LoadRequest{AssetUID{static_cast<std::uint64_t>(index + 1)}, "res://pixel.png",
@@ -176,7 +176,7 @@ TEST_CASE("async decode: zero-worker JobSystem still completes", "[asset][async_
   memory.addFile("res://pixel.png", pngBytes());
 
   yr::job::JobSystem jobs(0);
-  LoaderWorker worker(memory, jobs);
+  JobLoadBackend worker(memory, jobs);
   worker.submit(LoadRequest{AssetUID{3}, "res://pixel.png", ResourceKind::kTexture, TextureColorSpace::kSrgb, 0});
 
   const std::vector<LoadCompletion> completions = collect(worker, 1);
@@ -212,7 +212,7 @@ TEST_CASE("async decode: byte budget stalls submissions", "[asset][async_decode]
   memory.addFile("res://pixel.png", pngBytes());
 
   yr::job::JobSystem jobs(0);
-  LoaderWorker worker(memory, jobs, 4, 4); // 预算 = 一个 1x1 纹素的 4 字节
+  JobLoadBackend worker(memory, jobs, 4, 4); // 预算 = 一个 1x1 纹素的 4 字节
 
   for (std::size_t index = 0; index < 4; ++index) {
     worker.submit(LoadRequest{AssetUID{static_cast<std::uint64_t>(index + 1)}, "res://pixel.png",
@@ -236,7 +236,7 @@ TEST_CASE("async decode: zero byte budget means unlimited", "[asset][async_decod
   memory.addFile("res://pixel.png", pngBytes());
 
   yr::job::JobSystem jobs(0);
-  LoaderWorker worker(memory, jobs, 4, 0);
+  JobLoadBackend worker(memory, jobs, 4, 0);
 
   for (std::size_t index = 0; index < 4; ++index) {
     worker.submit(LoadRequest{AssetUID{static_cast<std::uint64_t>(index + 1)}, "res://pixel.png",

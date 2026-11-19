@@ -16,7 +16,7 @@ add_library(yr_asset
     src/memory_file_access.cpp
     src/throttled_file_access.cpp
     src/async_loader.cpp
-    src/loader_worker.cpp
+    src/job_load_backend.cpp
     src/texture_loader.cpp)
 add_library(yr::asset ALIAS yr_asset)
 

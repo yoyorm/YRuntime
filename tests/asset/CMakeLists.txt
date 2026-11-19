@@ -7,7 +7,7 @@ add_executable(YrTests_asset
     test_texture_loader.cpp
     test_file_access.cpp
     test_async_loader.cpp
-    test_loader_worker.cpp
+    test_job_load_backend.cpp
     test_async_decode.cpp)
 
 target_include_directories(YrTests_asset PRIVATE

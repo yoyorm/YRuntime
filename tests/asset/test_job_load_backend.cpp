@@ -1,4 +1,4 @@
-#include "loader_worker.h"
+#include "job_load_backend.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -24,15 +24,15 @@
 namespace {
 
   using yr::asset::AssetUID;
+  using yr::asset::JobLoadBackend;
   using yr::asset::LoadCompletion;
-  using yr::asset::LoaderWorker;
   using yr::asset::LoadRequest;
   using yr::asset::MemoryFileAccess;
   using yr::asset::ResourceKind;
   using yr::asset::TextureColorSpace;
   using yr::asset::ThrottledFileAccess;
 
-  // 这些用例只验证 LoaderWorker 的读写语义，共享一个 2 worker 的 JobSystem 即可。
+  // 这些用例只验证 JobLoadBackend 的读写语义，共享一个 2 worker 的 JobSystem 即可。
   yr::job::JobSystem& sharedJobs() {
     static yr::job::JobSystem jobs(2);
     return jobs;
@@ -47,7 +47,7 @@ namespace {
     return bytes;
   }
 
-  std::vector<LoadCompletion> collect(LoaderWorker& worker, std::size_t count,
+  std::vector<LoadCompletion> collect(JobLoadBackend& worker, std::size_t count,
                                       std::chrono::milliseconds timeout = std::chrono::seconds(2)) {
     std::vector<LoadCompletion> out;
     const auto deadline = std::chrono::steady_clock::now() + timeout;
@@ -63,11 +63,11 @@ namespace {
 
 } // namespace
 
-TEST_CASE("loader worker: reads file on worker thread", "[asset][loader_worker]") {
+TEST_CASE("job load backend: reads file on worker thread", "[asset][job_load_backend]") {
   MemoryFileAccess memory;
   memory.addFile("res://data.bin", bytesOf("payload"));
 
-  LoaderWorker worker(memory, sharedJobs());
+  JobLoadBackend worker(memory, sharedJobs());
   worker.submit(LoadRequest{AssetUID{1}, "res://data.bin", ResourceKind::kUnknown});
 
   const std::vector<LoadCompletion> completions = collect(worker, 1);
@@ -79,11 +79,11 @@ TEST_CASE("loader worker: reads file on worker thread", "[asset][loader_worker]"
   CHECK(completions[0].error.empty());
 }
 
-TEST_CASE("loader worker: request metadata is copied to completion", "[asset][loader_worker]") {
+TEST_CASE("job load backend: request metadata is copied to completion", "[asset][job_load_backend]") {
   MemoryFileAccess memory;
   memory.addFile("res://data/normal.png", bytesOf("png"));
 
-  LoaderWorker worker(memory, sharedJobs());
+  JobLoadBackend worker(memory, sharedJobs());
   worker.submit(
       LoadRequest{AssetUID{7}, "res://data/normal.png", ResourceKind::kUnknown, TextureColorSpace::kLinear, 128});
 
@@ -95,10 +95,10 @@ TEST_CASE("loader worker: request metadata is copied to completion", "[asset][lo
   CHECK(completions[0].payload == bytesOf("png"));
 }
 
-TEST_CASE("loader worker: missing file reports error", "[asset][loader_worker]") {
+TEST_CASE("job load backend: missing file reports error", "[asset][job_load_backend]") {
   MemoryFileAccess memory;
 
-  LoaderWorker worker(memory, sharedJobs());
+  JobLoadBackend worker(memory, sharedJobs());
   worker.submit(LoadRequest{AssetUID{2}, "res://data/missing.bin", ResourceKind::kMesh});
 
   const std::vector<LoadCompletion> completions = collect(worker, 1);
@@ -110,13 +110,13 @@ TEST_CASE("loader worker: missing file reports error", "[asset][loader_worker]")
   CHECK(completions[0].payload.empty());
 }
 
-TEST_CASE("loader worker: multiple requests complete", "[asset][loader_worker]") {
+TEST_CASE("job load backend: multiple requests complete", "[asset][job_load_backend]") {
   MemoryFileAccess memory;
   memory.addFile("res://data/a.bin", bytesOf("a"));
   memory.addFile("res://data/b.bin", bytesOf("b"));
   memory.addFile("res://data/c.bin", bytesOf("c"));
 
-  LoaderWorker worker(memory, sharedJobs());
+  JobLoadBackend worker(memory, sharedJobs());
   worker.submit(LoadRequest{AssetUID{10}, "res://data/a.bin", ResourceKind::kUnknown});
   worker.submit(LoadRequest{AssetUID{11}, "res://data/b.bin", ResourceKind::kUnknown});
   worker.submit(LoadRequest{AssetUID{12}, "res://data/c.bin", ResourceKind::kUnknown});
@@ -132,31 +132,31 @@ TEST_CASE("loader worker: multiple requests complete", "[asset][loader_worker]")
   CHECK(uids == std::set<std::uint64_t>{10, 11, 12});
 }
 
-TEST_CASE("loader worker: take completed zero returns empty", "[asset][loader_worker]") {
+TEST_CASE("job load backend: take completed zero returns empty", "[asset][job_load_backend]") {
   MemoryFileAccess memory;
   memory.addFile("res://data.bin", bytesOf("payload"));
 
-  LoaderWorker worker(memory, sharedJobs());
+  JobLoadBackend worker(memory, sharedJobs());
   worker.submit(LoadRequest{AssetUID{3}, "res://data.bin", ResourceKind::kUnknown});
   REQUIRE(collect(worker, 1).size() == 1);
 
   CHECK(worker.takeCompleted(0).empty());
 }
 
-TEST_CASE("loader worker: destruction with pending request", "[asset][loader_worker]") {
+TEST_CASE("job load backend: destruction with pending request", "[asset][job_load_backend]") {
   MemoryFileAccess memory;
   memory.addFile("res://data.bin", bytesOf("payload"));
 
-  LoaderWorker worker(memory, sharedJobs());
+  JobLoadBackend worker(memory, sharedJobs());
   worker.submit(LoadRequest{AssetUID{4}, "res://data.bin", ResourceKind::kUnknown});
 }
 
-TEST_CASE("loader worker: read runs off the submitting thread", "[asset][loader_worker]") {
+TEST_CASE("job load backend: read runs off the submitting thread", "[asset][job_load_backend]") {
   auto memory = std::make_unique<MemoryFileAccess>();
   memory->addFile("res://data/slow.bin", bytesOf("slow"));
   ThrottledFileAccess access(std::move(memory), std::chrono::milliseconds(20));
 
-  LoaderWorker worker(access, sharedJobs());
+  JobLoadBackend worker(access, sharedJobs());
   const auto start = std::chrono::steady_clock::now();
   worker.submit(LoadRequest{AssetUID{5}, "res://data/slow.bin", ResourceKind::kUnknown});
 
@@ -170,11 +170,11 @@ TEST_CASE("loader worker: read runs off the submitting thread", "[asset][loader_
   CHECK(elapsed >= std::chrono::milliseconds(10));
 }
 
-TEST_CASE("loader worker: duplicate requests are not merged", "[asset][loader_worker]") {
+TEST_CASE("job load backend: duplicate requests are not merged", "[asset][job_load_backend]") {
   MemoryFileAccess memory;
   memory.addFile("res://data/dup.bin", bytesOf("dup"));
 
-  LoaderWorker worker(memory, sharedJobs());
+  JobLoadBackend worker(memory, sharedJobs());
   worker.submit(LoadRequest{AssetUID{6}, "res://data/dup.bin", ResourceKind::kUnknown});
   worker.submit(LoadRequest{AssetUID{6}, "res://data/dup.bin", ResourceKind::kUnknown});
 

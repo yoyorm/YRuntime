@@ -1,4 +1,4 @@
-#include "loader_worker.h"
+#include "job_load_backend.h"
 
 #include <cstddef>
 #include <exception>
@@ -9,11 +9,11 @@
 
 namespace yr::asset {
 
-  LoaderWorker::LoaderWorker(IFileAccess& access, yr::job::JobSystem& jobs, std::size_t maxInFlight,
-                             std::size_t byteBudget)
+  JobLoadBackend::JobLoadBackend(IFileAccess& access, yr::job::JobSystem& jobs, std::size_t maxInFlight,
+                                 std::size_t byteBudget)
       : access_(&access), jobs_(&jobs), maxInFlight_(maxInFlight == 0 ? 1 : maxInFlight), byteBudget_(byteBudget) {}
 
-  LoaderWorker::~LoaderWorker() {
+  JobLoadBackend::~JobLoadBackend() {
     std::unique_lock lock(mutex_);
     stopping_ = true;
     pending_.clear(); // 从未提交的请求直接丢弃
@@ -22,7 +22,7 @@ namespace yr::asset {
     cv_.wait(lock, [this] { return inFlight_ == 0; });
   }
 
-  void LoaderWorker::submit(LoadRequest request) {
+  void JobLoadBackend::submit(LoadRequest request) {
     {
       std::lock_guard lock(mutex_);
       if (stopping_) {
@@ -33,7 +33,7 @@ namespace yr::asset {
     drainPending();
   }
 
-  std::vector<LoadCompletion> LoaderWorker::takeCompleted(std::size_t maxCount) {
+  std::vector<LoadCompletion> JobLoadBackend::takeCompleted(std::size_t maxCount) {
     std::vector<LoadCompletion> out;
     if (maxCount > 0) {
       std::lock_guard lock(mutex_);
@@ -56,7 +56,7 @@ namespace yr::asset {
     return out;
   }
 
-  void LoaderWorker::drainPending() {
+  void JobLoadBackend::drainPending() {
     for (;;) {
       LoadRequest request;
       {
@@ -78,7 +78,7 @@ namespace yr::asset {
     }
   }
 
-  void LoaderWorker::execute(LoadRequest request) {
+  void JobLoadBackend::execute(LoadRequest request) {
     LoadCompletion completion;
     completion.uid = request.uid;
     completion.resPath = request.resPath;
@@ -87,11 +87,11 @@ namespace yr::asset {
 
     try {
       if (access_ == nullptr) {
-        completion.error = "LoaderWorker 未绑定 IFileAccess";
+        completion.error = "JobLoadBackend 未绑定 IFileAccess";
       } else if (!access_->readFile(request.resPath, completion.payload, completion.error)) {
         completion.payload.clear();
         if (completion.error.empty()) {
-          completion.error = "LoaderWorker 读取文件失败";
+          completion.error = "JobLoadBackend 读取文件失败";
         }
       } else if (completion.kind == ResourceKind::kTexture) {
         // 解码在 worker 内完成：主线程 pump 只负责安装。
@@ -110,7 +110,7 @@ namespace yr::asset {
       completion.error = exception.what();
     } catch (...) {
       completion.payload.clear();
-      completion.error = "LoaderWorker 读取文件时发生未知异常";
+      completion.error = "JobLoadBackend 读取文件时发生未知异常";
     }
 
     const std::size_t bytes = completion.decoded.rgba8.size() + completion.payload.size();

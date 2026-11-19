@@ -17,19 +17,19 @@ namespace yr::asset {
 
   // 资产加载后端：把 LoadRequest 交给 JobSystem 执行（读字节，随后解码），
   // 主线程通过 takeCompleted() 取走完成项。自身不拥有线程。
-  class LoaderWorker final : public ILoadBackend {
+  class JobLoadBackend final : public ILoadBackend {
   public:
-    // access / jobs 非拥有，必须比 LoaderWorker 活得更久。
+    // access / jobs 非拥有，必须比 JobLoadBackend 活得更久。
     // maxInFlight：同时提交给 JobSystem 的最大任务数（背压）；0 视为 1。
     // byteBudget：completed_ 中 decoded+payload 的字节上限；0 表示不限制。
-    explicit LoaderWorker(IFileAccess& access, yr::job::JobSystem& jobs, std::size_t maxInFlight = 4,
-                          std::size_t byteBudget = kDefaultLoadByteBudget);
-    ~LoaderWorker() override;
+    explicit JobLoadBackend(IFileAccess& access, yr::job::JobSystem& jobs, std::size_t maxInFlight = 4,
+                            std::size_t byteBudget = kDefaultLoadByteBudget);
+    ~JobLoadBackend() override;
 
-    LoaderWorker(const LoaderWorker&) = delete;
-    LoaderWorker& operator=(const LoaderWorker&) = delete;
-    LoaderWorker(LoaderWorker&&) = delete;
-    LoaderWorker& operator=(LoaderWorker&&) = delete;
+    JobLoadBackend(const JobLoadBackend&) = delete;
+    JobLoadBackend& operator=(const JobLoadBackend&) = delete;
+    JobLoadBackend(JobLoadBackend&&) = delete;
+    JobLoadBackend& operator=(JobLoadBackend&&) = delete;
 
     void submit(LoadRequest request) override;
     [[nodiscard]] std::vector<LoadCompletion> takeCompleted(std::size_t maxCount) override;
