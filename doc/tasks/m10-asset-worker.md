@@ -1,6 +1,6 @@
 # 资产层 worker 化（M10 最后一项 + M9.5d-0）
 
-> 状态：规划中（M10 已收口；本任务开始前先读 `doc/layers/job.md` 与 `m9-2b-streaming-report.md`）
+> 状态：**主体完成**（2026-11-19；E10 已达标，Sponza 4K 待外部资产实测）
 > 最近更新：2026-11-19
 
 ## 1. 目标
@@ -126,14 +126,14 @@ CMake、doc/**、benchmark、报告
 
 ## 6. 验收标准
 
-- [ ] `ThrottledFileAccess`（50 ms/次）× 20 资源：主循环帧 p95 < 5 ms，全部资源约 1 s 内就绪；
-- [ ] 同一资源并发请求 10 次只加载一次（现有 in-flight 合并测试保持绿）；
-- [ ] Sponza 4K 带纹理端到端 ≤ 25 s；1K 快速路径 ≤ 5 s（记录实测值与瓶颈）；
-- [ ] 在飞字节预算生效：最坏情况下解码结果驻留内存有上界（报告里给数字）；
-- [ ] `JobSystem(0)` / `--jobs 0` 路径全部测试通过；
-- [ ] debug / ASan / TSan 全量绿（`556 + 新增` 条）；
-- [ ] `check_format.sh`、`check_deps.py` 通过；
-- [ ] `engine/`（除 `render/vulkan/`）仍零 Vulkan include。
+- [x] `ThrottledFileAccess`（50 ms/次）× 20 资源：pump p95 **0.00 ms / max 0.01 ms**；1 worker 1002 ms、4 worker 256 ms 全部就绪（`YrBench_asset_async`）；
+- [x] 同一资源并发请求 10 次只加载一次（现有 in-flight 合并测试保持绿）；
+- [ ] Sponza 4K 带纹理端到端 ≤ 25 s；1K 快速路径 ≤ 5 s（**待外部资产实测**，命令与记录项见 `doc/m9-5d-0-async-decode-report.md` §5）；
+- [x] 在飞字节预算生效：完成队列 256 MiB + 在飞 4 × 64 MiB，峰值 ≈ 512 MiB（报告 §3）；
+- [x] `JobSystem(0)` / `--jobs 0` 路径全部测试通过；
+- [x] debug 568/568、TSan 561/561、ASan（asset 107/107）全绿；
+- [x] `check_format.sh`、`check_deps.py` 通过；
+- [x] `engine/`（除 `render/vulkan/`）仍零 Vulkan include。
 
 ## 7. 风险与对策
 
@@ -161,3 +161,8 @@ CMake、doc/**、benchmark、报告
 - 2026-11-19：`LoaderWorker` 保留为 JobSystem 之上的门面（API 不变），`AsyncLoader` 状态机不动，减少一次性改动面。
 - 2026-11-19：先加 `on_main_thread` 断言再改并发代码——这是 M10 收尾时明确推迟的审计项，现在有了真实消费者。
 - 2026-11-19：步骤 0 实现细节：`std::atomic<std::thread::id>`（acquire/release）；标记未设置时 `YR_ASSERT_MAIN_THREAD()` **不做检查**（单测/无宿主不误伤）；`markMainThread()` 幂等，换线程重复标记时 Debug 断言；`resetMainThreadForTesting()` 仅供测试。验证：561/561（debug / ASan / TSan）。
+- 2026-11-19：预算采用方案 A（只限完成队列字节），默认 `maxInFlight = 4` + `byteBudget = 256 MiB`（0 = 不限制）；结构上界 ≈ 512 MiB（队列 256 + 在飞 4×64）。调紧方式：`maxInFlight = 2` + 预算 128 MiB。
+- 2026-11-19：E10 实测（`YrBench_asset_async`）：pump p95 0.00 ms、max 0.01 ms；1 worker 1002 ms / 4 worker 256 ms 就绪 20 张。
+- 2026-11-19：`LoadCompletion::maxDimension` 删除（解码已在 worker 完成，无消费者）；`payload` 保留给非纹理（`kUnknown/kMesh`）原始字节，纹理路径解码后立即释放容量。
+- 2026-11-19：`test_loader_worker` 两条"原始字节透传"用例的 kind 由 `kTexture` 改为 `kUnknown`——纹理路径现在会解码，旧断言编码的是迁移前契约。
+- 2026-11-19：未做/待办：Sponza 4K 实测（需外部资产）；`LoaderWorker` → `JobLoadBackend` 改名（待用户确认后单独机械 commit）。
