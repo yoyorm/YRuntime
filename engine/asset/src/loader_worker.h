@@ -36,8 +36,10 @@ namespace yr::asset {
     std::deque<LoadRequest> queue_;
     std::vector<LoadCompletion> completed_;
 
-    std::thread thread_;
+    // 声明顺序即初始化顺序：thread_ 必须最后声明，
+    // 保证线程启动前 mutex_/cv_/queue_/stopping_ 都已初始化。
     bool stopping_ = false;
+    std::thread thread_;
   };
 
 } // namespace yr::asset
