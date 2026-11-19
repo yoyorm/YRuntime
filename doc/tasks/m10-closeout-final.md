@@ -1,6 +1,6 @@
 # M10 最后收尾：内存序头注释 + 确定性回归
 
-> 状态：进行中（M10-a / M10-b / JobStats / TSan preset / bench_jobs 已完成）
+> 状态：**已完成**（2026-11-19：用户 review 后决定不在头文件重复展开内存序说明，权威整理保留在 `doc/layers/job.md` §8；`workerCount_` 简化为构造后只读的 `const size_t`；确定性回归 2 条已通过）
 > 最近更新：2026-11-19
 
 ## 1. 目标
@@ -78,3 +78,6 @@ python3 tools/check_deps.py -v
 
 - 2026-11-19：内存序信息放头文件（roadmap 要求），`doc/layers/job.md` §8 保留为索引与扩展说明。
 - 2026-11-19：确定性只保证"批次划分不改变结果"，不提供浮点归约接口。
+- 2026-11-19：用户 review 后**决定不在头文件重复展开内存序说明**——`doc/layers/job.md` §8 作为权威整理，头文件只保留接口语义短注释。记录在此，避免下次会话重复提议。
+- 2026-11-19：`workerCount_` 从 `std::atomic<std::size_t>` 改为 `const std::size_t`：构造函数初始化后从不修改，并发只读无数据竞争，语义更轻。`submit` 的内联判断改为直接读 `workerCount_`。
+- 2026-11-19：`YR_ASSERT(on_main_thread())` 审计仍推迟到 asset worker 迁移（届时第一批真实的跨线程访问才出现）。

@@ -79,8 +79,8 @@ namespace yr::job {
   TaskHandle JobSystem::submit(std::function<void()> task, std::span<const TaskHandle> deps) {
     auto state = std::make_shared<TaskHandle::State>();
 
-    // 内联模式：deps 中的任务在各自 submit 返回前已完成，等价于全部满足。
-    if (!workerCount_.load()) {
+    // 内联模式：deps 中的任务在各自 submit 返回前已完成
+    if (!workerCount_) {
       {
         std::lock_guard lock{mutex_};
         ++submitted_;
@@ -89,7 +89,7 @@ namespace yr::job {
       state->completed = true;
       {
         std::lock_guard lock{mutex_};
-        ++completed_;       // 内联执行同样是"完成了一次任务"
+        ++completed_;
         ++helperCompleted_; // 且执行者是非 worker 线程
       }
       return TaskHandle(state, *this);
@@ -98,27 +98,24 @@ namespace yr::job {
     {
       std::lock_guard lock{mutex_};
 
-      ++submitted_; // 每次 submit 都计一次（含依赖未就绪的）
-
-      // 先记账：即使依赖未满足，它也是"已提交但未完成"的任务，
-      // 否则 waitAll 可能在"前置完成、后继尚未入队"的间隙提前返回。
+      ++submitted_; // 每次 submit 都计一次
       pendings_++;
 
       std::size_t remaining = 0;
       for (const TaskHandle& dep : deps) {
         if (!dep.state_ || dep.state_->completed.load()) {
-          continue; // 默认空句柄 / 已完成：视为已满足
+          continue;
         }
         remaining++;
         dep.state_->dependents.push_back(state);
       }
 
       if (remaining == 0) {
-        queue_.push(Job{std::move(task), state}); // 已就绪，直接进就绪队列
+        queue_.push(Job{std::move(task), state}); // 已就绪直接进就绪队列
         noteReadyDepthLocked();
       } else {
         state->remaining = remaining;
-        state->task = std::move(task); // 未就绪：自己保管任务体
+        state->task = std::move(task); // 未就绪自己保管任务体
       }
     }
 

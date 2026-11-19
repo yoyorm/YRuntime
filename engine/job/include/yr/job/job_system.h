@@ -1,7 +1,6 @@
 #pragma once
 
 #include "yr/job/mt_queue.h"
-#include <atomic>
 #include <condition_variable>
 #include <cstddef>
 #include <functional>
@@ -59,7 +58,7 @@ namespace yr::job {
     // 返回的 TaskHandle 在任务完成后 ready() == true。
     [[nodiscard]] TaskHandle submit(std::function<void()> task);
 
-    // 当 deps 中所有有效任务完成后，task 才进入就绪队列执行。
+    // 当 deps 中所有有效任务完成后，task 才进入就绪队列执行
     [[nodiscard]] TaskHandle submit(std::function<void()> task, std::span<const TaskHandle> deps);
     [[nodiscard]] TaskHandle submit(std::function<void()> task, std::initializer_list<TaskHandle> deps) {
       return submit(std::move(task), std::span<const TaskHandle>{deps.begin(), deps.size()});
@@ -68,9 +67,9 @@ namespace yr::job {
     // 等待当前已提交的任务全部完成。
     void waitAll();
 
-    // 把 [0, count) 按 batchSize 切成不重叠区间并发执行；阻塞到本调用提交的批次全部完成。
-    // count == 0 直接返回；batchSize == 0 视作 1；只允许非 worker 线程调用。
-    // 不提供跨批次归约：fn 若写共享目标，需自行保证无数据竞争且结果与串行一致。
+    // 切成不重叠区间并发执行；阻塞到本调用提交的批次全部完成
+    // count == 0 直接返回；batchSize == 0 视作 1；只允许非 worker 线程调用
+    // 不提供跨批次归约：fn 若写共享目标，需自行保证无数据竞争且结果与串行一致
     void parallelFor(std::size_t count, std::size_t batchSize,
                      std::function<void(std::size_t begin, std::size_t end)> fn);
 
@@ -93,14 +92,14 @@ namespace yr::job {
     // 必须在持有 mutex_ 时调用：push 之后更新就绪队列深度峰值。
     void noteReadyDepthLocked();
 
-    std::atomic<std::size_t> workerCount_ = 0;
+    const std::size_t workerCount_ = 0;
     std::size_t pendings_ = 0;
     std::condition_variable cv_;
-    mutable std::mutex mutex_; // stats() 是 const，需要加锁
+    mutable std::mutex mutex_;
     yr::job::MtQueue<Job> queue_;
     std::vector<std::jthread> workers_;
 
-    // 统计计数；全部受 mutex_ 保护（stats() 返回快照，不承诺实时精确）。
+    // 统计计数,全部受 mutex_ 保护
     std::size_t submitted_ = 0;
     std::size_t completed_ = 0;
     std::size_t helperCompleted_ = 0;
