@@ -224,6 +224,7 @@ namespace {
     bool asyncTextures = false;
     bool streamAssets = false;
     bool skipTextures = false;
+    std::uint32_t textureMaxDim = 1024; // 纹理解码后最大边长（0 = 不限制）
     bool hasCamera = false;
     bool hasTarget = false;
     yr::math::Vec3 cameraEye{};
@@ -270,11 +271,13 @@ namespace {
                  "usage: %s [--frames N] [--drop-at N] [--dump-snapshot PATH] [--replay-snapshot PATH]\n"
                  "          [--gltf RES_PATH] [--asset-root PATH] [--stream-assets] [--skip-textures]\n"
                  "          [--async-textures] [--trace PATH] [--camera X,Y,Z] [--target X,Y,Z] [--no-shadow]\n"
+                 "          [--texture-max-dim N]\n"
                  "  --gltf RES_PATH          glTF scene to load (default res://models/ToyCar/ToyCar.gltf)\n"
                  "  --asset-root PATH        filesystem root for res:// (default YR_ASSET_ROOT)\n"
                  "  --stream-assets          defer both meshes and textures\n"
                  "  --skip-textures          create no textures (geometry stress test)\n"
                  "  --async-textures         stream glTF textures through AssetDatabase/LoaderWorker\n"
+                 "  --texture-max-dim N      max texture dimension after decode (default 1024, 0 = unlimited)\n"
                  "  --camera X,Y,Z           explicit camera eye, overrides the scene AABB camera\n"
                  "  --target X,Y,Z           explicit look-at target (default scene AABB center)\n"
                  "  --no-shadow              disable the directional shadow map (Sponza perf runs)\n"
@@ -353,6 +356,17 @@ namespace {
         options.skipTextures = true; // 幂等：重复出现不改变结果
       } else if (arg == "--async-textures") {
         options.asyncTextures = true; // 幂等：重复出现不改变结果
+      } else if (arg == "--texture-max-dim") {
+        if (i + 1 >= argc) {
+          return false;
+        }
+        std::uint32_t value = 0;
+        const std::string_view text = argv[++i];
+        const auto result = std::from_chars(text.data(), text.data() + text.size(), value);
+        if (result.ec != std::errc{} || result.ptr != text.data() + text.size()) {
+          return false;
+        }
+        options.textureMaxDim = value;
       } else if (arg == "--no-shadow") {
         options.noShadow = true; // 幂等：重复出现不改变结果
       } else if (arg == "--help" || arg == "-h") {
@@ -593,6 +607,7 @@ int main(int argc, char** argv) {
     loadOptions.deferTextures = options.asyncTextures || options.streamAssets;
     loadOptions.deferMeshes = options.streamAssets;
     loadOptions.skipTextures = options.skipTextures;
+    loadOptions.maxTextureDimension = options.textureMaxDim;
 
     // GltfScene 仅用于构建节点树；资源缓存由 AssetDatabase 持有，节点持自己的 Ref。
     yr::asset::GltfLoadResult loaded = assets.loadGltfScene(options.gltfPath, loadOptions);
