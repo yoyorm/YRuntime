@@ -47,7 +47,8 @@
 1. **M10-a 已完成（2026-11-17）**：MtQueue / JobSystem / TaskHandle / `waitAll` 帮忙 / `TaskHandle::wait()` 帮忙全部提交并验证通过。
 2. **M10-b 已完成（2026-11-19）**：`submit(fn, deps)` 依赖图 + `parallel_for`，44 cases / 2771 assertions，含随机 DAG 压力用例。
 3. **M10 已全部收口（2026-11-19）**：M10-a / M10-b / JobStats / TSan preset / `bench_jobs` / 确定性回归全部完成；内存序整理在 `doc/layers/job.md` §8。
-4. **下一步：asset worker 迁移**（任务卡 [`m10-asset-worker.md`](tasks/m10-asset-worker.md)）：`AssetDatabase` 的 IO + 解码搬到 `JobSystem`，构造仍回主线程 `pump()`；与 M9.5d-0（Sponza 4K 纹理）合并执行，先补 `on_main_thread()` 审计。
+4. **资产 worker 与 Sponza 基准已完成（2026-11-19）**：报告 `doc/m9-5d-0-sponza-benchmark.md`；首帧 35.2 s → 0.23 s。
+5. **当前 M11-1**：`yr_pack` + `PakFileAccess`。任务卡 [`m11-1-yr-pack.md`](tasks/m11-1-yr-pack.md) 已创建，**等待确认格式决策 D1~D7**（manifest 形式、哈希、对齐、压缩、重复路径、版本、读模型），确认后交实现会话。
 3. **M10-c work stealing 不做**（移入 Stretch S13）；Transform 并行刷新推迟（当前无真实消费者）。
 4. **M10 收口后回头做 M9.5d-0**，与"AssetDatabase IO/解码搬 worker"合并执行：worker 纹理解码 + 下采样、in-flight/字节预算、1K Sponza 纹理缓存快速路径、室内点光调参与 shadow 默认开关、重跑带纹理 Sponza 补齐 M9.5 最终画面。
 5. **M11 只做包装收口子集**（README 实测 / 架构图 / 展示数据）；`yr_pack` 为机动项；其余 Stretch 项冻结。

@@ -12,9 +12,10 @@ YRuntime 是一个 C++20 游戏运行时：Object/SceneTree/EventBus/MainLoop + 
 
 ```text
 M11-1：yr_pack 打包工具（assets → .yrpak + 运行时 PakFileAccess）
+任务卡：doc/tasks/m11-1-yr-pack.md（规划中，格式决策 D1~D7 待确认）
 计划：doc/02-roadmap.md M11 段；协作规则：AGENTS §7
 用户负责：.yrpak 格式契约、pack/unpack 核心、验收测试第一版
-AI 负责：CLI 参数、CMake、损坏包/边界测试、fuzz、文档
+AI 负责：PakFileAccess、CLI 参数、CMake、损坏包/边界测试、fuzz、文档
 ```
 
 M10 / 资产 worker / Sponza 基准已完成；当前第一原则：**新格式先定契约再实现**，先在任务卡写清
