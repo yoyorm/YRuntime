@@ -18,42 +18,30 @@
 | **M6 最小 Vulkan Bootstrap** | ✅ 已完成 / 收口（2026-10-23）—— M6-1 外壳 + M6-2 Surface / Device / 队列 + M6-3 Swapchain / 清屏上屏 + M6-4 N 帧在飞 + 硬编码三角形 + M6-5 健壮性（resize / 最小化手测、soak） |
 | **M7 Snapshot 驱动画面** | ✅ 已完成 / 收口（2026-10-24）—— 7a/7b/7c/7d/7e：MainLoop 接线、DrawItem/Camera、WASD、dump/replay、帧统计、600s soak、resize、GIF/PNG；双/三缓冲按 D22 推迟 |
 | **M8 序列化** | ✅ 已完成 / 收口（2026-10-31）—— M8a 文本；M8b 引用/连接；M8c headless `--scene` 加载与 1000 节点 benchmark；364 tests |
-| **M9 资源系统** | ✅ 主体完成（M9.2b streaming + M9.5 PBR/多光源/阴影；Sponza 4K 纹理待 M9.5d-0） |
-| **M9.5 ~ M11** | 🔨 M9.5 主体完成；**M10 与资产 worker 迁移已收口**；M9.5d-0 已实测（报告 `m9-5d-0-sponza-benchmark.md`）；下一步 M11 包装/工具链 |
+| **M9 资源系统** | ✅ 已完成（M9.2b streaming + M9.5 PBR/多光源/阴影 + M9.5d-0 异步纹理解码基准） |
+| **M10 任务系统** | ✅ 已完成（线程池、TaskHandle、主线程帮忙、依赖图、`parallel_for`、JobStats、资产 worker 化） |
+| **M11 核心收口** | 🔨 外围工程化内容已砍掉，只做最后一项核心能力：资源打包与 `PakFileAccess` 读取 |
 
-**远期方向一句话**（现在不要跳过去）：M4 最小闭环 ✅ → M5 渲染契约 + NullBackend ✅ → M6 最小 Vulkan bootstrap ✅ → M7 Snapshot 驱动画面（首个主要作品节点）✅ → M8 序列化 ✅ → M9 资源系统 ✅ → M9.5 基础 PBR 主体 ✅ → M10 任务系统 ✅ → **当前：M9.5d-0 实测完成，下一步 M11 工具链打磨（`yr_pack` / README 实测 / 展示数据）**。室内布光/IBL 留在 stretch。
+**远期方向一句话**（现在不要跳过去）：M0–M10 全部核心模块已完成 ✅ → **当前：M11-1 资源打包与 `PakFileAccess` 读取（任务卡 `doc/tasks/m11-1-yr-pack.md`）**。
 
 进度**只在两处维护**：根 `README.md` 的里程碑表（对外）+ `02-roadmap.md` 的 checkbox（对内）。
 别的地方不要重复记录，否则一定会漂移。
 
 ---
 
-## 2. 下一步：M10 任务系统（路线已定）
+## 2. 下一步：M11-1 资源打包与读取（外围工程化已砍掉）
 
-**M9.1 已收口（2026-11-11）**：`AssetDatabase` 强 Ref 缓存 + fixpoint GC + `evict` + `AssetStats`；glTF loader 通过 hooks 复用资源；MainLoop 阶段 12 接 `collectGarbage()`。ToyCar 首次 `resident=12` / `cpu_bytes=22,659,328` B，循环结束 final `resident=0`；debug-vk 与 ASan 410/410，validation 0。决策见 D31。
+**已完成背景**：
+- M9 / M9.5 / M10 及资产 worker 异步纹理解码均已完成并验证（568/568 tests，Sponza 基准见 [`m9-5d-0-sponza-benchmark.md`](m9-5d-0-sponza-benchmark.md)）。
+- 原 M11 中的外围工程化与包装项（cook 导入管线、perf/Tracy/绘图脚本、`.gdbinit` 手册、clang-tidy、覆盖率、ImGui、热重载、15 分钟陌生人实测流程）**全部砍掉**，专注于核心运行时功能。
 
-**M9.2a 已完成（2026-11-12）**：`IFileAccess`（Disk/Memory/Throttled）+ `AsyncLoader` 状态机 / in-flight 合并 / pump 预算 + 单线程 `LoaderWorker` + glTF `deferTextures` + MainLoop 阶段 4 `pump(1)`；`render_demo --async-textures` 为 opt-in。debug-vk 与 ASan 454/454，validation 0。决策见 D32。
+**当前执行模式（2026-11-20 调整，见 `AGENTS.md` §3）**：
+1. **AI 只指明大致推进方向与问题边界**（不预设头文件模板、结构体字段或二进制格式）；
+2. **用户主导讨论架构方案**（与 AI 探讨取舍，由用户拍板）；
+3. **用户编写大部分架构代码**（头文件、核心数据结构、类接口与主干骨架）；
+4. **AI 填充实现细节与周边代码**（具体实现细节、CLI/CMake 接线、单元测试）。
 
-**M9.2b 已完成（2026-11-13）**：显式 `GltfDeferredMesh` + `shared_ptr<GltfSourceData>` + `AssetDatabase` job 队列 + `pump(maxTextureCompletions, maxMeshVertices)` 预算安装 + `evict/GC/clear` 取消 + Mesh local AABB；`render_demo --gltf/--asset-root/--stream-assets/--skip-textures/--trace`。Sponza 405 primitives / 3,747,018 triangles / 140MB bin；debug-vk 与 ASan 472/472，validation 0。数据见 [`m9-2b-streaming-report.md`](m9-2b-streaming-report.md)，决策见 D33。
-
-**M9.5 主体完成（2026-11-13）**：Cook-Torrance + 四贴图 + `LightNode` 多光源（Directional/Point ≤8）+ 单张方向光 2048² shadow map（3×3 PCF）+ alpha mask；snapshot v3；`render_demo --gltf/--asset-root/--stream-assets/--skip-textures/--trace/--camera/--target/--no-shadow`。ToyCar PBR + 3 光源 + 阴影；Sponza 室内几何 405 primitives。debug-vk 与 ASan 504/504，validation 0。截图 `doc/media/m9.5-toycar.png`、`doc/media/m9.5-sponza.png`，数据见 [`m9-5-pbr-report.md`](m9-5-pbr-report.md)，决策见 D34。
-
-**最终切片（D26）**：ToyCar（仓库内，视觉/PBR）+ Sponza（外部路径，资源/并行压力测试，大资产不进仓库）。M9 顺序：M9.0 walking skeleton（baseColor + Blinn-Phong）→ M9.1 AssetDatabase/GC → M9.2a 协作式异步 + 纹理 streaming → M9.2b mesh/scene streaming + Sponza → M9.5 完整 PBR。每个子系统必须出现在视觉/流式/并行 demo 中，否则删除。
-
-**执行模式（D27）**：coder 负责实现、测试、CMake、文档机械同步；用户 review 契约与关键 diff，不再手写核心。**M10 例外（2026-11-14 起）**：并发核心（`job_system.h/.cpp`）回到用户手写，AI 只写测试、CMake、文档与机械替换，见 `AGENTS.md` §5。
-
-路线已定（2026-11-16，原"二选一"选 B 并细化，理由：M9.5d-0 的 worker 解码依赖任务系统，先做 M10 可让两者合并验证 §6 铁律）：
-
-1. **M10-a 已完成（2026-11-17）**：MtQueue / JobSystem / TaskHandle / `waitAll` 帮忙 / `TaskHandle::wait()` 帮忙全部提交并验证通过。
-2. **M10-b 已完成（2026-11-19）**：`submit(fn, deps)` 依赖图 + `parallel_for`，44 cases / 2771 assertions，含随机 DAG 压力用例。
-3. **M10 已全部收口（2026-11-19）**：M10-a / M10-b / JobStats / TSan preset / `bench_jobs` / 确定性回归全部完成；内存序整理在 `doc/layers/job.md` §8。
-4. **资产 worker 与 Sponza 基准已完成（2026-11-19）**：报告 `doc/m9-5d-0-sponza-benchmark.md`；首帧 35.2 s → 0.23 s。
-5. **当前 M11-1**：`yr_pack` + `PakFileAccess`。任务卡 [`m11-1-yr-pack.md`](tasks/m11-1-yr-pack.md) 已创建，**等待确认格式决策 D1~D7**（manifest 形式、哈希、对齐、压缩、重复路径、版本、读模型），确认后交实现会话。
-3. **M10-c work stealing 不做**（移入 Stretch S13）；Transform 并行刷新推迟（当前无真实消费者）。
-4. **M10 收口后回头做 M9.5d-0**，与"AssetDatabase IO/解码搬 worker"合并执行：worker 纹理解码 + 下采样、in-flight/字节预算、1K Sponza 纹理缓存快速路径、室内点光调参与 shadow 默认开关、重跑带纹理 Sponza 补齐 M9.5 最终画面。
-5. **M11 只做包装收口子集**（README 实测 / 架构图 / 展示数据）；`yr_pack` 为机动项；其余 Stretch 项冻结。
-
-详细计划见 `02-roadmap.md` M10 分步执行计划。
+当前任务见 [`doc/tasks/m11-1-yr-pack.md`](tasks/m11-1-yr-pack.md)。
 
 ### M7 复盘题（已收口，供面试自测）
 

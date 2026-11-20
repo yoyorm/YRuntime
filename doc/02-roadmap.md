@@ -631,31 +631,21 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 
 ---
 
-## M11 · 工具链与打磨（2~4 周，可与 M8~M10 并行）
+## M11 · 核心收口：资源包与最小文档（已精简工程化内容）
 
-**目标**：让项目从"一堆 C++ 代码"变成"有开发流程的引擎环境"，并完成作品包装。
+> **2026-11-20 范围裁剪**：砍掉原 M11 中偏外围工程化与包装的内容（cook 导入管线、perf/Tracy/Python 绘图脚本、`.gdbinit` 调试手册、clang-tidy、覆盖率、ImGui 检视器、热重载、陌生人 15 分钟实测流程），只保留**最后一项核心运行时能力（虚拟文件系统打包读取）**与最小 README 同步。
 
-- [ ] `tools/yr_pack`：`assets/` → `.yrpak`（manifest(JSON/二进制) + blob 区 + 内容哈希 + 版本号）；对照 Godot PCK
-- [ ] `PakFileAccess`：Runtime 从 `.yrpak` 加载；`--pak` 启动参数；验证 `runtime_headless` / `render_demo` 能完全从 pak 跑起来
-- [ ] 资源导入管线雏形：`assets_src/`（源）→ `yr_pack` 转换/压缩 → `assets/`（cooked），写清"为什么需要 cook"
-- [ ] 性能：接入 `perf` 工作流文档 + 可选 Tracy（submodule）；FrameStats 导出 CSV + 一个 Python 绘图脚本
-- [ ] 调试文档：`.gdbinit`、常用断点配方、core dump 分析、ASan 报告解读、Catch2 `--break`
-- [ ] （可选）clang-tidy：装 + `.clang-tidy` + CI 接入。**优先级最低**——它被 M0→M1→M11 连推三次，说明对你的学习价值最低；不痛就不做（R3）
-- [ ] （可选）覆盖率：gcovr/lcov → 本地报告或 CI 徽章。**只统计，不做门禁**（学习项目里覆盖率是给别人看的数字，不是质量指标）
-- [ ] 文档收尾：架构图更新（Mermaid）、`doc/README.md` 状态更新、README 重写（面向"第一次看到这个项目的人"）。**不在 doc/ 写"每模块一页说明"**——那些内容属于头文件注释（D17 文档要有限）
-- [ ] `07-portfolio.md` 收口：展示物清单打勾、§5 面试题库自问自答一遍（**不设博客篇数指标**——想写就写，见 §4）
-- [ ] （可选）ImGui 只读检视器：SceneTree + 属性 + FrameStats
-- [ ] （可选）热重载：`.scn` 文件变更 → 自动重载场景（inotify），演示效果极好
+**目标**：验证 `IFileAccess` 抽象的最后一环——把散文件打成单个包，运行时无需修改上层 loader 即可直接从包中加载资源。
+
+- [ ] 资源打包与读取（`.yrpak`）：打包工具 + `PakFileAccess : IFileAccess` + 运行时 `--pak` 启动支持
+- [ ] 最小文档收口：根 `README.md` 与 `doc/01-architecture.md` 同步当前已完成的核心模块状态
+- [x] ~~资源导入管线雏形（cook）~~：**砍掉（2026-11-20）**，不偏离核心运行时主线
+- [x] ~~`perf` 文档 / Tracy / Python 绘图脚本 / `.gdbinit` 调试手册~~：**砍掉（2026-11-20）**
+- [x] ~~clang-tidy / 覆盖率 / ImGui 检视器 / 热重载~~：**砍掉（2026-11-20）**
 
 **验收标准**
-- `apps/render_demo --pak game.yrpak` 完全从 pak 启动运行，`assets/` 目录不存在也能跑。
-- CI：build + ctest + format + 架构门禁全绿。（clang-tidy / 覆盖率若做了就加上，没做不阻塞）
-- 一个完全陌生的开发者按 README 能在 15 分钟内构建并跑起两个可运行物（`runtime_headless` / `render_demo`）（**找人实测一次**）。
-- `doc/` 与代码一致：架构图是最新的、`06-decisions.md` 收录了全部架构级取舍、`benchmarks/README.md` 有数据。
-
-**产出物**：完整可展示仓库 + 工具（+ 你想写的博客）。
-**Godot 对照**：`core/io/file_access_pack.h`（PCK 格式）、`editor/platform/`（导入管线）、`platform/web/`（打包思路）、`core/io/resource_format_binary.cpp`（cooked 格式）。
-**降级方案**：Tracy、ImGui 检视器、热重载、clang-tidy、覆盖率全部可砍——M11 是收尾里程碑，不是必做清单。
+- `apps/render_demo` / `apps/runtime_headless` 可通过 `--pak` 从单个包文件加载资源运行；
+- CI 现有门禁（build + ctest + format + `check_deps.py`）全绿。
 
 ---
 
