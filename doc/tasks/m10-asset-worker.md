@@ -161,7 +161,7 @@ CMake、doc/**、benchmark、报告
 - 2026-11-19：`LoaderWorker` 保留为 JobSystem 之上的门面（API 不变），`AsyncLoader` 状态机不动，减少一次性改动面。
 - 2026-11-19：先加 `on_main_thread` 断言再改并发代码——这是 M10 收尾时明确推迟的审计项，现在有了真实消费者。
 - 2026-11-19：步骤 0 实现细节：`std::atomic<std::thread::id>`（acquire/release）；标记未设置时 `YR_ASSERT_MAIN_THREAD()` **不做检查**（单测/无宿主不误伤）；`markMainThread()` 幂等，换线程重复标记时 Debug 断言；`resetMainThreadForTesting()` 仅供测试。验证：561/561（debug / ASan / TSan）。
-- 2026-11-19：预算采用方案 A（只限完成队列字节），默认 `maxInFlight = 4` + `byteBudget = 256 MiB`（0 = 不限制）；结构上界 ≈ 512 MiB（队列 256 + 在飞 4×64）。调紧方式：`maxInFlight = 2` + 预算 128 MiB。
+- 2026-11-20：默认参数调整为 `maxInFlight = 8`、每帧安装 4 张（`byteBudget = 256 MiB` 不变）。依据：4→8 解码 ready 10.2 s → 6.5 s；1K 缓存下 pump 1→4 使 ready 3.76 s → 1.50 s。结构上界 ≈ 768 MiB（队列 256 + 在飞 8×64）；4K 输出时预算需提到 512 MiB、pump 降到 1–2。
 - 2026-11-19：E10 实测（`YrBench_asset_async`）：pump p95 0.00 ms、max 0.01 ms；1 worker 1002 ms / 4 worker 256 ms 就绪 20 张。
 - 2026-11-19：`LoadCompletion::maxDimension` 删除（解码已在 worker 完成，无消费者）；`payload` 保留给非纹理（`kUnknown/kMesh`）原始字节，纹理路径解码后立即释放容量。
 - 2026-11-19：`test_loader_worker` 两条"原始字节透传"用例的 kind 由 `kTexture` 改为 `kUnknown`——纹理路径现在会解码，旧断言编码的是迁移前契约。

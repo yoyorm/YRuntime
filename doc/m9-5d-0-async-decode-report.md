@@ -13,7 +13,7 @@
 - **生产端**：`JobLoadBackend` 不再拥有线程，变成 `JobSystem` 之上的门面（`submit` → `jobs_->submit`）；
 - **解码**：纹理在 worker 内完成（`decodeRgba8`，含 `maxDimension` 下采样），4K PNG 不再占主线程；
 - **主线程**：`pump` 删除 `decodeRgba8`，只做 `Texture` 构造 / `markReady` / 注册 `cache_`（主线程铁律不变）；
-- **背压**：在飞任务上限 `maxInFlight = 4` + 完成队列字节预算 `byteBudget = 256 MiB`（0 = 不限制）。
+- **背压**：在飞任务上限 `maxInFlight = 8` + 完成队列字节预算 `byteBudget = 256 MiB`（0 = 不限制），每帧安装默认 4 张。
 
 ## 2. E10：慢 IO 下的主线程帧开销
 
@@ -35,8 +35,8 @@
 
 ```
 completed_ 驻留 ≤ byteBudget_ = 256 MiB
-在飞解码     ≤ maxInFlight_ × 64 MiB = 256 MiB
-峰值         ≈ 512 MiB（默认参数）
+在飞解码     ≤ maxInFlight_ × 64 MiB = 512 MiB
+峰值         ≈ 768 MiB（默认参数；4K 输出时预算应提到 512 MiB）
 ```
 
 - 调紧：`maxInFlight = 2` + `byteBudget = 128 MiB` → 峰值 ≈ 256 MiB；
