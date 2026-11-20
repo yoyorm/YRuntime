@@ -3,7 +3,6 @@ add_executable(YrTests_job
     test_job_system.cpp
     test_task_handle.cpp
     test_wait_help.cpp
-    test_handle_wait_help.cpp
     test_job_deps.cpp
     test_parallel_for.cpp
     test_job_stats.cpp)

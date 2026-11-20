@@ -15,6 +15,7 @@ target_include_directories(YrTests_asset PRIVATE
 
 target_link_libraries(YrTests_asset PRIVATE
     yr::asset
+    yr_test_support
     Catch2::Catch2WithMain)
 
 target_compile_definitions(YrTests_asset PRIVATE

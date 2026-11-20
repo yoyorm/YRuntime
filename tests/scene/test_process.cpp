@@ -1,5 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "scene_test_support.h"
+
 #include <yr/core/assert.h>
 #include <yr/object/object_db.h>
 #include <yr/scene/node.h>
@@ -12,30 +14,9 @@
 #include <utility>
 #include <vector>
 
+using namespace yr_test;
+
 namespace {
-
-  int g_assertCount = 0;
-
-  yr::core::AssertAction continueAssertHandler(const yr::core::AssertInfo& /*info*/) noexcept {
-    ++g_assertCount;
-    return yr::core::AssertAction::kContinue;
-  }
-
-  // 把全局 assert handler 换成“记录并继续”，析构时恢复默认。
-  // 用它验证：process 重入 / process 期间 flush 被降级为 kContinue（或 Release 下宏为空）时
-  // 也只被安全拒绝，不重复派发、不提前销毁。
-  class ScopedContinueAssertHandler {
-  public:
-    ScopedContinueAssertHandler() {
-      g_assertCount = 0;
-      yr::core::setAssertHandler(&continueAssertHandler);
-    }
-
-    ~ScopedContinueAssertHandler() { yr::core::setAssertHandler(nullptr); }
-
-    ScopedContinueAssertHandler(const ScopedContinueAssertHandler&) = delete;
-    ScopedContinueAssertHandler& operator=(const ScopedContinueAssertHandler&) = delete;
-  };
 
   // 每次用例开头 clear()；单线程，仅用于断言 update 顺序。
   std::vector<std::string> g_order;

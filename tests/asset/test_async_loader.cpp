@@ -1,5 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "asset_test_support.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -11,6 +13,8 @@
 #include <yr/asset/asset_uid.h>
 #include <yr/asset/async_loader.h>
 #include <yr/asset/resource.h>
+
+using namespace yr_test;
 
 namespace {
 
@@ -48,15 +52,6 @@ namespace {
     std::vector<LoadRequest> submitted;
     std::deque<LoadCompletion> completed;
   };
-
-  std::vector<std::uint8_t> bytesOf(std::string_view text) {
-    std::vector<std::uint8_t> bytes;
-    bytes.reserve(text.size());
-    for (const char c : text) {
-      bytes.push_back(static_cast<std::uint8_t>(c));
-    }
-    return bytes;
-  }
 
 } // namespace
 

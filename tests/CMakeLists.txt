@@ -23,6 +23,10 @@ endif()
 
 include(Catch)          # 提供 catch_discover_tests()，两种方式都需要
 
+add_library(yr_test_support INTERFACE)
+target_include_directories(yr_test_support INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/support)
+target_link_libraries(yr_test_support INTERFACE Catch2::Catch2WithMain)
+
 add_subdirectory(core)
 add_subdirectory(math)
 add_subdirectory(job)

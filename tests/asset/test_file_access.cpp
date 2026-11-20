@@ -1,5 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "asset_test_support.h"
+
 #include <chrono>
 #include <cstdint>
 #include <fstream>
@@ -15,21 +17,14 @@
 #include <yr/asset/memory_file_access.h>
 #include <yr/asset/throttled_file_access.h>
 
+using namespace yr_test;
+
 namespace {
 
   using yr::asset::DiskFileAccess;
   using yr::asset::IFileAccess;
   using yr::asset::MemoryFileAccess;
   using yr::asset::ThrottledFileAccess;
-
-  std::vector<std::uint8_t> bytesOf(std::string_view text) {
-    std::vector<std::uint8_t> bytes;
-    bytes.reserve(text.size());
-    for (const char c : text) {
-      bytes.push_back(static_cast<std::uint8_t>(c));
-    }
-    return bytes;
-  }
 
 } // namespace
 

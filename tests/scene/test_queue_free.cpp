@@ -1,5 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "scene_test_support.h"
+
 #include <yr/core/assert.h>
 #include <yr/object/object_db.h>
 #include <yr/scene/node.h>
@@ -15,30 +17,9 @@
 // 访问器：const + noexcept。
 static_assert(noexcept(std::declval<const yr::scene::Node&>().isQueuedForDeletion()));
 
+using namespace yr_test;
+
 namespace {
-
-  int g_assertCount = 0;
-
-  yr::core::AssertAction continueAssertHandler(const yr::core::AssertInfo& /*info*/) noexcept {
-    ++g_assertCount;
-    return yr::core::AssertAction::kContinue;
-  }
-
-  // 把全局 assert handler 换成“记录并继续”，析构时恢复默认。
-  // 用它验证：即使断言被降级为 kContinue（或 Release 下宏为空），
-  // 非树内 queueFree / 孤儿节点也只被安全跳过，不消费、不误删。
-  class ScopedContinueAssertHandler {
-  public:
-    ScopedContinueAssertHandler() {
-      g_assertCount = 0;
-      yr::core::setAssertHandler(&continueAssertHandler);
-    }
-
-    ~ScopedContinueAssertHandler() { yr::core::setAssertHandler(nullptr); }
-
-    ScopedContinueAssertHandler(const ScopedContinueAssertHandler&) = delete;
-    ScopedContinueAssertHandler& operator=(const ScopedContinueAssertHandler&) = delete;
-  };
 
   // 每次用例开头 clear()；单线程，仅用于断言 exit 顺序。
   std::vector<std::string> g_order;

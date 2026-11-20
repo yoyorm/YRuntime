@@ -2,6 +2,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "asset_test_support.h"
+
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -21,6 +23,8 @@
 #include <yr/asset/throttled_file_access.h>
 #include <yr/job/job_system.h>
 
+using namespace yr_test;
+
 namespace {
 
   using yr::asset::AssetUID;
@@ -36,29 +40,6 @@ namespace {
   yr::job::JobSystem& sharedJobs() {
     static yr::job::JobSystem jobs(2);
     return jobs;
-  }
-
-  std::vector<std::uint8_t> bytesOf(std::string_view text) {
-    std::vector<std::uint8_t> bytes;
-    bytes.reserve(text.size());
-    for (const char c : text) {
-      bytes.push_back(static_cast<std::uint8_t>(c));
-    }
-    return bytes;
-  }
-
-  std::vector<LoadCompletion> collect(JobLoadBackend& worker, std::size_t count,
-                                      std::chrono::milliseconds timeout = std::chrono::seconds(2)) {
-    std::vector<LoadCompletion> out;
-    const auto deadline = std::chrono::steady_clock::now() + timeout;
-    while (out.size() < count && std::chrono::steady_clock::now() < deadline) {
-      std::vector<LoadCompletion> batch = worker.takeCompleted(count - out.size());
-      out.insert(out.end(), std::make_move_iterator(batch.begin()), std::make_move_iterator(batch.end()));
-      if (out.size() < count) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-      }
-    }
-    return out;
   }
 
 } // namespace

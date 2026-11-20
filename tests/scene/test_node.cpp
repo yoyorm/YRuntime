@@ -1,5 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "scene_test_support.h"
+
 #include <yr/core/assert.h>
 #include <yr/object/object_db.h>
 #include <yr/scene/node.h>
@@ -21,32 +23,7 @@ static_assert(noexcept(std::declval<const yr::scene::Node&>().parent()));
 static_assert(noexcept(std::declval<const yr::scene::Node&>().childCount()));
 static_assert(noexcept(std::declval<const yr::scene::Node&>().childAt(0)));
 
-namespace {
-
-  int g_assertCount = 0;
-
-  yr::core::AssertAction continueAssertHandler(const yr::core::AssertInfo& /*info*/) noexcept {
-    ++g_assertCount;
-    return yr::core::AssertAction::kContinue;
-  }
-
-  // 把全局 assert handler 换成“记录并继续”，析构时恢复默认。
-  // 用它验证：即使断言被降级为 kContinue（或 Release 下宏为空），
-  // 非法输入也只返回失败，不会继续解引用或破坏树结构。
-  class ScopedContinueAssertHandler {
-  public:
-    ScopedContinueAssertHandler() {
-      g_assertCount = 0;
-      yr::core::setAssertHandler(&continueAssertHandler);
-    }
-
-    ~ScopedContinueAssertHandler() { yr::core::setAssertHandler(nullptr); }
-
-    ScopedContinueAssertHandler(const ScopedContinueAssertHandler&) = delete;
-    ScopedContinueAssertHandler& operator=(const ScopedContinueAssertHandler&) = delete;
-  };
-
-} // namespace
+using namespace yr_test;
 
 TEST_CASE("Node: addChild transfers ownership and preserves insertion order", "[scene][node][ownership]") {
   auto parent = std::make_unique<yr::scene::Node>();

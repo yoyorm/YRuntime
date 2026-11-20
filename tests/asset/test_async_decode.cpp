@@ -2,6 +2,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "asset_test_support.h"
+
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -22,6 +24,8 @@
 #include <yr/asset/resource_types.h>
 #include <yr/job/job_system.h>
 
+using namespace yr_test;
+
 namespace {
 
   using yr::asset::AssetDatabase;
@@ -35,26 +39,6 @@ namespace {
   using yr::asset::ResourceKind;
   using yr::asset::Texture;
   using yr::asset::TextureColorSpace;
-
-  // 1x1 RGBA PNG：filter 0 + 不透明红色像素（与 test_asset_database_async 相同）。
-  constexpr std::array<std::uint8_t, 70> kPng1x1 = {
-      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00,
-      0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00,
-      0x0D, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0xF8, 0xCF, 0xC0, 0xF0, 0x1F, 0x00, 0x05, 0x00, 0x01, 0xFF,
-      0x89, 0x99, 0x3D, 0x1D, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82};
-
-  std::vector<std::uint8_t> pngBytes() {
-    return {kPng1x1.begin(), kPng1x1.end()};
-  }
-
-  std::vector<std::uint8_t> bytesOf(std::string_view text) {
-    std::vector<std::uint8_t> bytes;
-    bytes.reserve(text.size());
-    for (const char c : text) {
-      bytes.push_back(static_cast<std::uint8_t>(c));
-    }
-    return bytes;
-  }
 
   // 记录并发 readFile 数量，用来验证 in-flight 上限（既要有并行，又不能超上限）。
   class CountingAccess final : public IFileAccess {
@@ -81,20 +65,6 @@ namespace {
     mutable std::atomic<int> active_{0};
     mutable std::atomic<int> max_active_{0};
   };
-
-  std::vector<LoadCompletion> collect(JobLoadBackend& worker, std::size_t count,
-                                      std::chrono::milliseconds timeout = std::chrono::seconds(5)) {
-    std::vector<LoadCompletion> out;
-    const auto deadline = std::chrono::steady_clock::now() + timeout;
-    while (out.size() < count && std::chrono::steady_clock::now() < deadline) {
-      std::vector<LoadCompletion> batch = worker.takeCompleted(count - out.size());
-      out.insert(out.end(), std::make_move_iterator(batch.begin()), std::make_move_iterator(batch.end()));
-      if (out.size() < count) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-      }
-    }
-    return out;
-  }
 
   bool pumpUntilReady(AssetDatabase& database, AssetUID uid,
                       std::chrono::milliseconds timeout = std::chrono::seconds(2)) {

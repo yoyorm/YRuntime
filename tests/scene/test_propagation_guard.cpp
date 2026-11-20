@@ -1,5 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "scene_test_support.h"
+
 #include <yr/core/assert.h>
 #include <yr/scene/node.h>
 #include <yr/scene/scene_tree.h>
@@ -9,30 +11,9 @@
 #include <utility>
 #include <vector>
 
+using namespace yr_test;
+
 namespace {
-
-  int g_assertCount = 0;
-
-  yr::core::AssertAction continueAssertHandler(const yr::core::AssertInfo& /*info*/) noexcept {
-    ++g_assertCount;
-    return yr::core::AssertAction::kContinue;
-  }
-
-  // 把全局 assert handler 换成“记录并继续”，析构时恢复默认。
-  // 用它验证：即使断言被降级为 kContinue（或 Release 下宏为空），
-  // 传播中修改结构的尝试也只返回失败，不会消费 unique_ptr 或破坏树结构。
-  class ScopedContinueAssertHandler {
-  public:
-    ScopedContinueAssertHandler() {
-      g_assertCount = 0;
-      yr::core::setAssertHandler(&continueAssertHandler);
-    }
-
-    ~ScopedContinueAssertHandler() { yr::core::setAssertHandler(nullptr); }
-
-    ScopedContinueAssertHandler(const ScopedContinueAssertHandler&) = delete;
-    ScopedContinueAssertHandler& operator=(const ScopedContinueAssertHandler&) = delete;
-  };
 
   // 可挂生命周期钩子的节点：钩子只处理当前节点自己，便于在回调里尝试结构修改。
   class HookNode : public yr::scene::Node {

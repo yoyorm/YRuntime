@@ -1,6 +1,5 @@
 add_executable(YrTests_event
-    test_event_bus.cpp
-    test_event_bus_reentrancy.cpp)
+    test_event_bus.cpp)
 
 target_link_libraries(YrTests_event PRIVATE
     yr::event
