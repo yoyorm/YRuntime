@@ -24,7 +24,7 @@ namespace yr::asset {
       ownedJobs_ = std::make_unique<yr::job::JobSystem>();
       jobs_ = ownedJobs_.get();
     }
-    loadBackend_ = std::make_unique<JobLoadBackend>(*fileAccess_, *jobs_, 4, byteBudget);
+    loadBackend_ = std::make_unique<JobLoadBackend>(*fileAccess_, *jobs_, kDefaultMaxInFlight, byteBudget);
     asyncLoader_ = std::make_unique<AsyncLoader>(*loadBackend_);
   }
 
@@ -35,7 +35,7 @@ namespace yr::asset {
       ownedJobs_ = std::make_unique<yr::job::JobSystem>();
       jobs_ = ownedJobs_.get();
     }
-    loadBackend_ = std::make_unique<JobLoadBackend>(*fileAccess_, *jobs_, 4, byteBudget);
+    loadBackend_ = std::make_unique<JobLoadBackend>(*fileAccess_, *jobs_, kDefaultMaxInFlight, byteBudget);
     asyncLoader_ = std::make_unique<AsyncLoader>(*loadBackend_);
   }
 

@@ -86,7 +86,7 @@ namespace yr::engine {
   void MainLoop::pumpAssets() {
     // 阶段 4：每条 tick 最多安装 1 个纹理 completion，并按顶点预算安装 mesh job。
     if (assetDatabase_ != nullptr) {
-      assetDatabase_->pump(1);
+      assetDatabase_->pump(asset::kDefaultTextureCompletionsPerPump);
     }
   }
 

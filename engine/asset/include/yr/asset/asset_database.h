@@ -92,7 +92,8 @@ namespace yr::asset {
 
     // maxTextureCompletions：本帧最多安装的纹理 completion 数；0 表示本帧完全不工作。
     // maxMeshVertices：本帧 mesh 顶点预算；0 表示本帧不安装 mesh。至少安装 1 个避免饥饿。
-    void pump(std::size_t maxTextureCompletions = 1, std::size_t maxMeshVertices = 65536);
+    void pump(std::size_t maxTextureCompletions = kDefaultTextureCompletionsPerPump,
+              std::size_t maxMeshVertices = 65536);
 
     // 只有 refcount()==1（只剩 DB）时才允许；被场景/材质使用时返回 false。
     [[nodiscard]] bool evict(AssetUID uid);

@@ -15,6 +15,10 @@ namespace yr::asset {
 
   // JobLoadBackend 完成队列的默认字节预算
   inline constexpr std::size_t kDefaultLoadByteBudget = 256u * 1024u * 1024u;
+  // 同时在飞（已提交未完成）的解码任务数。实测 4→8：解码墙钟 9.23s → 5.62s（12 线程）。
+  inline constexpr std::size_t kDefaultMaxInFlight = 8;
+  // 主线程每帧最多安装的纹理数。小纹理/1K 缓存下 1 张/帧会把 ready 卡在 ~4.8s 地板。
+  inline constexpr std::size_t kDefaultTextureCompletionsPerPump = 4;
 
   struct LoadRequest {
     AssetUID uid;
