@@ -60,7 +60,7 @@
 
 | 不做 | 理由 | 例外 |
 |---|---|---|
-| 完整编辑器 GUI | 无底洞，且与 Runtime 学习目标弱相关 | M11 可选做一个 ImGui 只读检视器 |
+| 完整编辑器 GUI | 无底洞，且传统面向鼠标点击的 GUI 与 Runtime 核心目标弱相关 | **不做 GUI 编辑器**；M11 改为构建 **Agent-Native（AI/自动化友好）的控制协议与语义快照可观测架构** |
 | 脚本语言绑定（GDScript/Lua） | 需要一整套 VM，会吃掉全部时间 | 列为 stretch（`02-roadmap.md` §S1） |
 | 物理引擎 | 只需理解"物理作为 Server 如何被调度" | 实现一个 `IPhysicsBackend` 接口 + 玩具 AABB 实现即可 |
 | 音频 | 同上 | 接口留空 |
@@ -97,9 +97,10 @@
 - [ ] M9.5：ToyCar（仓库内）与 Sponza（外部路径，压力测试）在基础 PBR 材质、平行光/点光、单张阴影下正确显示；validation 0；不含 IBL/skybox/GUI。
 - [ ] Runtime 侧代码 **零** `#include <vulkan/...>`（CI grep 检查）——这是"解耦"的硬指标。
 
-### 4.4 工具链
-- [ ] `tools/yr_pack`：把 `assets/` 打成单个 `.yrpak`（manifest + blob），Runtime 能从 pak 加载。
-- [ ] GitHub Actions：push 触发 build + ctest + format check + 架构门禁，README 有徽章。（clang-tidy 可选，见 `05-engineering.md` §1）
+### 4.4 AI 友好（Agent-Native）控制与工具链（2026-11-20 更新）
+- [ ] 运行时可通过 `ClassDB` 导出自描述类/属性 Schema，且 `.scn` 可完整表达含渲染/资源节点的 3D 场景。
+- [ ] `MainLoop` 阶段 2（帧安全点）支持执行外部结构化命令，结合确定性步进与语义级快照（`SceneTree` + `AssetStats` + `RenderSnapshot` 语义摘要）实现无 GUI 闭环驱动与观测。
+- [ ] GitHub Actions：push 触发 build + ctest + format check + 架构门禁。
 
 ### 4.5 理解与表达（最重要，也最容易被跳过）
 - [ ] 能对着架构图脱稿讲 20 分钟：每层为什么存在、数据怎么流、哪里是单线程边界。

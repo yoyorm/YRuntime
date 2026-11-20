@@ -631,20 +631,22 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 
 ---
 
-## M11 · 核心收口：资源包与最小文档（已精简工程化内容）
+## M11 · AI 友好（Agent-Native）运行时架构与核心闭环
 
-> **2026-11-20 范围裁剪**：砍掉原 M11 中偏外围工程化与包装的内容（cook 导入管线、perf/Tracy/Python 绘图脚本、`.gdbinit` 调试手册、clang-tidy、覆盖率、ImGui 检视器、热重载、陌生人 15 分钟实测流程），只保留**最后一项核心运行时能力（虚拟文件系统打包读取）**与最小 README 同步。
+> **2026-11-20 战略重定位**：
+> 1. 砍掉原 M11 中偏外围包装的工程化项（cook 导入管线、perf/Tracy/绘图脚本、`.gdbinit` 调试手册、clang-tidy、覆盖率、ImGui 检视器、热重载等），`.yrpak` 移入 Stretch（S14）；
+> 2. **确立核心演进方向**：YRuntime 不做面向人工点击的传统 GUI 编辑器，而是发挥 Headless-first、`ClassDB` 反射、`.scn` 文本场景、`MainLoop` 显式安全点与 `RenderSnapshot` 纯数据契约的优势，构建一套**对 AI Agent / 自动化工具原生友好的运行时控制与语义观测架构**。
 
-**目标**：验证 `IFileAccess` 抽象的最后一环——把散文件打成单个包，运行时无需修改上层 loader 即可直接从包中加载资源。
+**前置阶段（进行中）**：
+- [ ] **全库架构走查与断层梳理**：逐层复盘 M0–M10 现有代码（`engine` / `scene` → `object` & `serialize` → `asset` → `render_iface` & `vulkan`），清理历史妥协，理清各层衔接点。
 
-- [ ] 资源打包与读取（`.yrpak`）：打包工具 + `PakFileAccess : IFileAccess` + 运行时 `--pak` 启动支持
-- [ ] 最小文档收口：根 `README.md` 与 `doc/01-architecture.md` 同步当前已完成的核心模块状态
-- [x] ~~资源导入管线雏形（cook）~~：**砍掉（2026-11-20）**，不偏离核心运行时主线
-- [x] ~~`perf` 文档 / Tracy / Python 绘图脚本 / `.gdbinit` 调试手册~~：**砍掉（2026-11-20）**
-- [x] ~~clang-tidy / 覆盖率 / ImGui 检视器 / 热重载~~：**砍掉（2026-11-20）**
+**M11 三大核心支柱（走查后由用户主导架构设计）**：
+- [ ] **支柱 1 · 反射自描述 Schema 与 `.scn` 场景闭环**：打通 M2（`ClassDB`/`PropertyInfo`）、M8（`.scn`）与 M9（`MeshInstanceNode`/`LightNode`/`CameraNode`/资源引用）的断层，使运行时可导出完备的类/属性 Schema，且 `.scn` 能直接表达完整 3D 渲染场景。
+- [ ] **支柱 2 · 帧安全点的命令/事务协议**：激活 `MainLoop` 阶段 2（`flush_messages`），支持外部 Agent/控制器提交结构化操作命令（创建/删除节点、读写属性、加载资源、可控步进 N 帧），在帧安全点统一校验（基于 `ObjectID` + `ClassDB`）与执行，并返回结构化诊断结果。
+- [ ] **支柱 3 · 语义级世界与渲染快照可观测性**：提供无需依赖纯视觉截图的“语义级快照”导出能力（`SceneTree` 层级与世界变换 + `AssetDatabase` 加载/驻留状态 + `RenderSnapshot` 语义摘要与相机视锥可见性诊断），辅以按需帧渲染截图。
 
 **验收标准**
-- `apps/render_demo` / `apps/runtime_headless` 可通过 `--pak` 从单个包文件加载资源运行；
+- 外部控制器/Agent 可在无 GUI 条件下：查询引擎 Schema → 通过命令协议或 `.scn` 构建/修改含网格与灯光的 3D 场景 → 确定性步进 N 帧 → 读取语义级快照验证场景与渲染状态（并可按需输出渲染画面）；
 - CI 现有门禁（build + ctest + format + `check_deps.py`）全绿。
 
 ---
@@ -666,6 +668,7 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 | S11 | 网络：确定性锁步或状态同步（用 headless simulation 做 demo） | M4 | ★★★ | 会倒逼"确定性"设计 |
 | S12 | Windows 移植 | M7 | ★★ | 工程体检 |
 | S13 | work stealing（原 M10-c）：每线程本地双端队列 + 随机偷取，此时才深入 memory order | M10-b | ★★★★★ | 2026-11-16 从 M10 移出；等依赖图稳定且 benchmark 暴露真实粒度/争用问题再做 |
+| S14 | `.yrpak` 资源打包工具 + `PakFileAccess`（原 M11-1） | M9 | ★★★ | 2026-11-20 移入 Stretch，优先聚焦 Agent-Native 运行时主线 |
 
 ---
 

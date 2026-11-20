@@ -20,28 +20,37 @@
 | **M8 序列化** | ✅ 已完成 / 收口（2026-10-31）—— M8a 文本；M8b 引用/连接；M8c headless `--scene` 加载与 1000 节点 benchmark；364 tests |
 | **M9 资源系统** | ✅ 已完成（M9.2b streaming + M9.5 PBR/多光源/阴影 + M9.5d-0 异步纹理解码基准） |
 | **M10 任务系统** | ✅ 已完成（线程池、TaskHandle、主线程帮忙、依赖图、`parallel_for`、JobStats、资产 worker 化） |
-| **M11 核心收口** | 🔨 外围工程化内容已砍掉，只做最后一项核心能力：资源打包与 `PakFileAccess` 读取 |
+| **M11 AI 友好（Agent-Native）运行时架构** | 🔨 **当前主线**：先完成全库架构走查，再构建自描述反射/场景闭环 + 帧安全点命令协议 + 语义快照可观测性 |
 
-**远期方向一句话**（现在不要跳过去）：M0–M10 全部核心模块已完成 ✅ → **当前：M11-1 资源打包与 `PakFileAccess` 读取（任务卡 `doc/tasks/m11-1-yr-pack.md`）**。
+**远期方向一句话**（现在不要跳过去）：M0–M10 基础架构已完成 ✅ → **当前阶段 A：全库代码走查与架构梳理** → **阶段 B：M11 AI 友好（Agent-Native）运行时架构（总纲见 `doc/tasks/m11-agent-native-runtime.md`）**。
 
 进度**只在两处维护**：根 `README.md` 的里程碑表（对外）+ `02-roadmap.md` 的 checkbox（对内）。
 别的地方不要重复记录，否则一定会漂移。
 
 ---
 
-## 2. 下一步：M11-1 资源打包与读取（外围工程化已砍掉）
+## 2. 下一步：全库架构走查 → M11 AI 友好（Agent-Native）运行时架构
 
-**已完成背景**：
-- M9 / M9.5 / M10 及资产 worker 异步纹理解码均已完成并验证（568/568 tests，Sponza 基准见 [`m9-5d-0-sponza-benchmark.md`](m9-5d-0-sponza-benchmark.md)）。
-- 原 M11 中的外围工程化与包装项（cook 导入管线、perf/Tracy/绘图脚本、`.gdbinit` 手册、clang-tidy、覆盖率、ImGui、热重载、15 分钟陌生人实测流程）**全部砍掉**，专注于核心运行时功能。
+**背景与战略重定位（2026-11-20）**：
+- M0–M10 基础模块及资产 worker 异步解码均已完成（568/568 tests）；
+- 砍掉原 M11 中偏外围包装与低学习价值的工程项（cook 管线、perf/Tracy/绘图脚本、`.gdbinit` 手册、clang-tidy、覆盖率、ImGui 编辑器等）；
+- **确立核心深度方向**：YRuntime 不做面向人工点击的 GUI 编辑器，而是发挥 Headless-first、`ClassDB` 反射、`.scn` 文本场景、`MainLoop` 显式安全点与 `RenderSnapshot` 纯数据契约的优势，演进为 **AI 友好（Agent-Native）的游戏运行时架构**。
 
-**当前执行模式（2026-11-20 调整，见 `AGENTS.md` §3）**：
-1. **AI 只指明大致推进方向与问题边界**（不预设头文件模板、结构体字段或二进制格式）；
+**两阶段推进计划**：
+1. **阶段 A（当前进行中）：全库架构走查与断层梳理**
+   - 用户逐层走查代码（已完成 `engine` / `scene`，继续走查 `object` / `serialize` / `asset` / `render_iface`），彻底掌握现有设计并清理历史断层；
+2. **阶段 B（后续深度专题）：M11 AI 友好运行时三大支柱**
+   - **支柱 1**：补齐 `ClassDB` 自描述 Schema 与 `.scn` 对渲染/资源节点的完整表达（打通 M2 + M8 + M9 断层）；
+   - **支柱 2**：帧安全点的结构化命令/事务协议（激活 `MainLoop` 阶段 2 `flush_messages`）；
+   - **支柱 3**：语义级世界与渲染快照可观测性（导出 `SceneTree` + `AssetDatabase` + `RenderSnapshot` 语义摘要 + 确定性步进控制）。
+
+**当前协作模式（见 `AGENTS.md` §3）**：
+1. **AI 只指明大致推进方向与问题边界**（不预设头文件模板、结构体字段或协议格式）；
 2. **用户主导讨论架构方案**（与 AI 探讨取舍，由用户拍板）；
 3. **用户编写大部分架构代码**（头文件、核心数据结构、类接口与主干骨架）；
 4. **AI 填充实现细节与周边代码**（具体实现细节、CLI/CMake 接线、单元测试）。
 
-当前任务见 [`doc/tasks/m11-1-yr-pack.md`](tasks/m11-1-yr-pack.md)。
+总纲任务卡见 [`doc/tasks/m11-agent-native-runtime.md`](tasks/m11-agent-native-runtime.md)。
 
 ### M7 复盘题（已收口，供面试自测）
 
