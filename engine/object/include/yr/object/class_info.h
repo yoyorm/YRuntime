@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <span>
 
 #include <yr/core/string_id.h>
@@ -11,12 +12,12 @@ namespace yr::obj {
 
   // 单个类的静态元数据。
   //
-  // properties_ 指向静态 PropertyInfo 数组，该数组必须比 ClassInfo 活得更久；factory 返回裸
-  // 指针，所有权交给调用方（未来是 Ref）。
+  // properties_ 指向静态 PropertyInfo 数组，该数组必须比 ClassInfo 活得更久；工厂返回
+  // unique_ptr，创建完成即确定唯一所有者。
   class ClassInfo {
   public:
-    // 按类创建实例的工厂。返回裸 Object*（check_deps 禁裸 new，注册方用 make_unique/make_ref 实现）。
-    using Factory = Object* (*)();
+    // 按类创建实例的工厂。调用方接管返回值；需要 Ref/裸指针时显式 release。
+    using Factory = std::unique_ptr<Object> (*)();
 
     constexpr ClassInfo(yr::core::StringId name, const ClassInfo* parent, std::span<const PropertyInfo> properties,
                         Factory factoryFn = nullptr) noexcept

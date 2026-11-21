@@ -29,7 +29,7 @@ namespace yr::scene {
   }
 
   const obj::ClassInfo& lightNodeClassInfo() noexcept {
-    auto factory = []() -> obj::Object* { return std::make_unique<LightNode>().release(); };
+    auto factory = []() -> std::unique_ptr<obj::Object> { return std::make_unique<LightNode>(); };
     static const obj::ClassInfo info(core::globalStringInterner().intern("LightNode"), &nodeClassInfo(), {}, factory);
     return info;
   }

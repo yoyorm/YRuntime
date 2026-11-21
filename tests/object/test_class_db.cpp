@@ -31,7 +31,7 @@ namespace {
 
   const ClassInfo& dogInfo() {
     static const ClassInfo info(
-        n("Dog"), &animalInfo(), {}, +[]() -> Object* { return std::make_unique<Dog>().release(); });
+        n("Dog"), &animalInfo(), {}, +[]() -> std::unique_ptr<Object> { return std::make_unique<Dog>(); });
     return info;
   }
 
@@ -85,13 +85,13 @@ TEST_CASE("class db: instantiate 有工厂才创建，未注册/抽象返回 nul
   db.registerClass(dogInfo());
   db.registerClass(abstractInfo());
 
-  const std::unique_ptr<Object> dog(db.instantiate(n("Dog")));
+  const std::unique_ptr<Object> dog = db.instantiate(n("Dog"));
   REQUIRE(dog != nullptr);
 
-  const std::unique_ptr<Object> unknown(db.instantiate(n("Nope")));
+  const std::unique_ptr<Object> unknown = db.instantiate(n("Nope"));
   CHECK(unknown == nullptr);
 
-  const std::unique_ptr<Object> abstract(db.instantiate(n("AbstractAnimal")));
+  const std::unique_ptr<Object> abstract = db.instantiate(n("AbstractAnimal"));
   CHECK(abstract == nullptr);
 }
 

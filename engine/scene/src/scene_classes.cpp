@@ -23,7 +23,7 @@ namespace yr::scene {
       using namespace yr::obj;
 
       // 让 Node 可实例化并暴露 position 属性：
-      auto factory = []() -> Object* { return std::make_unique<Node>().release(); };
+      auto factory = []() -> std::unique_ptr<Object> { return std::make_unique<Node>(); };
       static const PropertyInfo kProperties[] = {
           PropertyInfo{
               .name = core::globalStringInterner().intern("position"),

@@ -16,10 +16,10 @@ namespace yr::obj {
     return it == classes_.end() ? nullptr : it->second;
   }
 
-  Object* ClassDB::instantiate(yr::core::StringId name) const {
+  std::unique_ptr<Object> ClassDB::instantiate(yr::core::StringId name) const {
     const ClassInfo* info = getClass(name);
     if (info == nullptr || info->factory() == nullptr) {
-      return nullptr; // 未注册 / 抽象类：返回 nullptr，由调用方决策（将来记 WARN 日志）
+      return {};
     }
     return info->factory()();
   }

@@ -112,7 +112,7 @@
 ## ClassInfo（`obj::ClassInfo`）
 
 - **职责**：单个类的静态元数据；提供工厂、属性查找与继承查询。
-- **所有权 / 生命周期**：`name_` 是驻留 `StringId`；`properties_` 是指向**静态 `PropertyInfo` 数组**的 span，该数组必须比 `ClassInfo` 活得更久（手工注册用函数内 static，避开 SIOF）。`factory` 返回裸指针，所有权 / 回收交给调用方（未来是 `Ref`）。
+- **所有权 / 生命周期**：`name_` 是驻留 `StringId`；`properties_` 是指向**静态 `PropertyInfo` 数组**的 span，该数组必须比 `ClassInfo` 活得更久（手工注册用函数内 static，避开 SIOF）。`factory` 返回 `std::unique_ptr<Object>`，创建完成即确定唯一所有者；需要 `Ref`/裸指针的调用方显式 `release()` 转移。
 - **公开 API**：
 
   | 签名 | 语义 / 契约 | 失败模式 |
@@ -120,7 +120,7 @@
   | `name() const` | 类名 | — |
   | `parent() const` | 基类 `ClassInfo*`，根为 `nullptr` | — |
   | `properties() const` | **仅本类**属性表，不含继承 | — |
-  | `factory() const` | 创建实例；`nullptr` = 抽象类 | — |
+  | `factory() const` | 创建实例并交还 `unique_ptr<Object>`；工厂为空 = 抽象类 | — |
   | `findProperty(StringId) const` | 本类优先，未命中递归 `parent_`；派生类可遮蔽基类同名属性 | 找不到返回 `nullptr` |
   | `isA(const ClassInfo* base) const` | 沿 `parent_` 逐级比指针 | — |
   | `get_property(const Object*, StringId, Variant&) const` | 读属性到 `out` | 属性不存在 / 无 getter → `false` |
@@ -142,7 +142,7 @@
   | `registerClass(const ClassInfo&)` | 登记类 | `freeze` 之后 / 名字重复 → Debug assert |
   | `freeze() / isFrozen() noexcept` | 冻结：此后禁止注册 | — |
   | `getClass(StringId) const` | 按类名查 | 未注册返回 `nullptr` |
-  | `instantiate(StringId) const` | 按类名创建实例 | 未注册 / 抽象类 → `nullptr`（所有权归调用方） |
+  | `instantiate(StringId) const` | 按类名创建实例，返回空 `unique_ptr` 表示失败 | 未注册 / 抽象类 → 空指针 |
   | `allClasses() const` | 所有已注册类名 | — |
   | `inheritorsOf(StringId) const` | 继承自该类的类名（不含自身） | 未注册返回空 |
   | `globalClassDB()` | 进程级默认注册表 | — |

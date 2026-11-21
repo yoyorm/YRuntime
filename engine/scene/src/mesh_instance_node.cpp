@@ -9,7 +9,7 @@
 namespace yr::scene {
 
   const obj::ClassInfo& meshInstanceNodeClassInfo() noexcept {
-    auto factory = []() -> obj::Object* { return std::make_unique<MeshInstanceNode>().release(); };
+    auto factory = []() -> std::unique_ptr<obj::Object> { return std::make_unique<MeshInstanceNode>(); };
     static const obj::ClassInfo info(core::globalStringInterner().intern("MeshInstanceNode"), &nodeClassInfo(), {},
                                      factory);
     return info;

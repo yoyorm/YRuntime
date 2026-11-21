@@ -25,7 +25,7 @@ namespace yr::scene {
     raw.reserve(nodes.size());
 
     for (const PackedNode& packed : nodes) {
-      std::unique_ptr<obj::Object> owned(classes.instantiate(packed.type));
+      std::unique_ptr<obj::Object> owned = classes.instantiate(packed.type);
       if (!owned)
         return nullptr; // 未注册
       const obj::ClassInfo* const info = owned->classInfo();

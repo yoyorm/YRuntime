@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <unordered_map>
 #include <vector>
 
@@ -33,8 +34,8 @@ namespace yr::obj {
     // 按类名查 ClassInfo；未注册返回 nullptr。
     [[nodiscard]] const ClassInfo* getClass(yr::core::StringId name) const noexcept;
 
-    // 按类名创建实例；未注册或无工厂（抽象类）返回 nullptr。所有权交给调用方（未来是 Ref）。
-    [[nodiscard]] Object* instantiate(yr::core::StringId name) const;
+    // 按类名创建实例；未注册或无工厂（抽象类）返回空指针。
+    [[nodiscard]] std::unique_ptr<Object> instantiate(yr::core::StringId name) const;
 
     // 所有已注册的类名。
     [[nodiscard]] std::vector<yr::core::StringId> allClasses() const;
