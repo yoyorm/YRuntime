@@ -20,7 +20,7 @@ namespace yr::scene {
 
   struct SceneProperty {
     core::StringId name;
-    obj::Variant value;
+    SceneValue value;
   };
 
   // 场景的纯数据表示：解析阶段不创建 Node。

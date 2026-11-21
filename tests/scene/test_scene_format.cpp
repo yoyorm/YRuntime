@@ -13,8 +13,10 @@
 #include <yr/object/class_db.h>
 #include <yr/object/class_info.h>
 #include <yr/object/object.h>
+#include <yr/object/object_db.h>
 #include <yr/object/property_info.h>
 #include <yr/object/variant.h>
+#include <yr/scene/mesh_instance_node.h>
 #include <yr/scene/node.h>
 #include <yr/scene/packed_scene.h>
 #include <yr/scene/scene_classes.h>
@@ -27,8 +29,10 @@ namespace {
   using yr::core::StringId;
   using yr::math::Vec3;
   using yr::obj::ClassDB;
+  using yr::scene::MeshInstanceNode;
   using yr::scene::Node;
   using yr::scene::PackedScene;
+  using yr::scene::ReferenceKind;
   using yr::scene::SceneDiagnostic;
   using yr::scene::SceneLoadResult;
   using yr::scene::SceneReader;
@@ -117,6 +121,30 @@ namespace {
     return &badEncodeClass();
   }
 
+  class RefHolderNode final : public Node {
+  public:
+    [[nodiscard]] const yr::obj::ClassInfo* classInfo() const noexcept override;
+  };
+
+  const yr::obj::ClassInfo& refHolderClass() {
+    static const yr::obj::PropertyInfo props[] = {
+        {.name = intern("mesh"),
+         .type = yr::obj::Variant::Type::kObjectID,
+         .flags = static_cast<std::uint32_t>(yr::obj::kSerialized),
+         .class_hint = intern("Mesh")},
+        {.name = intern("material"),
+         .type = yr::obj::Variant::Type::kObjectID,
+         .flags = static_cast<std::uint32_t>(yr::obj::kSerialized),
+         .class_hint = intern("Material")},
+    };
+    static const yr::obj::ClassInfo info(intern("RefHolder"), &yr::scene::nodeClassInfo(), props, nullptr);
+    return info;
+  }
+
+  const yr::obj::ClassInfo* RefHolderNode::classInfo() const noexcept {
+    return &refHolderClass();
+  }
+
   constexpr std::string_view kManualScene = "[scene]\n"
                                             "\n"
                                             "[node name=\"Root\" type=\"Node\"]\n"
@@ -152,7 +180,7 @@ TEST_CASE("scene format: hand-written 6-line .scn loads", "[scene][scene_format]
   CHECK(result.scene.nodes[1].parent_path == ".");
   CHECK(result.scene.nodes[1].parent_index == 0);
   REQUIRE(result.scene.nodes[1].properties.size() == 1);
-  CHECK(result.scene.nodes[1].properties[0].value.as<Vec3>() == Vec3{0.0F, 1.0F, 0.0F});
+  CHECK(result.scene.nodes[1].properties[0].value.value.as<Vec3>() == Vec3{0.0F, 1.0F, 0.0F});
 }
 
 TEST_CASE("scene format: save -> load -> save is byte-identical", "[scene][scene_format][roundtrip]") {
@@ -280,6 +308,96 @@ TEST_CASE("scene writer: serialized property that fails encoding is rejected", "
   CHECK_FALSE(result.ok);
   CHECK(result.text.empty());
   CHECK(result.error.find("编码失败") != std::string::npos);
+}
+
+TEST_CASE("scene format: node resource references resolve and round-trip", "[scene][scene_format][reference]") {
+  ClassDB db;
+  db.registerClass(yr::scene::nodeClassInfo());
+  db.registerClass(refHolderClass());
+  const SceneReader reader(db);
+
+  constexpr std::string_view text = "[scene]\n\n"
+                                    "[ext_resource type=\"Mesh\" id=\"cube\" path=\"res://models/cube.glb\"]\n\n"
+                                    "[sub_resource type=\"Material\" id=\"red\"]\n"
+                                    "baseColorFactor = Vector3(1, 0, 0)\n\n"
+                                    "[node name=\"Root\" type=\"RefHolder\"]\n"
+                                    "mesh = ExtResource(\"cube\")\n"
+                                    "material = SubResource(\"red\")\n";
+
+  const SceneLoadResult first = reader.read(text);
+  REQUIRE(first.ok());
+  REQUIRE(first.scene.nodes.size() == 1);
+  REQUIRE(first.scene.nodes[0].properties.size() == 2);
+
+  const auto& meshProperty = first.scene.nodes[0].properties[0];
+  REQUIRE(meshProperty.value.isReference());
+  CHECK(meshProperty.value.reference.kind == ReferenceKind::kExtResource);
+  CHECK(meshProperty.value.reference.id == "cube");
+  CHECK(meshProperty.value.reference.index == 0);
+
+  const auto& materialProperty = first.scene.nodes[0].properties[1];
+  REQUIRE(materialProperty.value.isReference());
+  CHECK(materialProperty.value.reference.kind == ReferenceKind::kSubResource);
+  CHECK(materialProperty.value.reference.id == "red");
+  CHECK(materialProperty.value.reference.index == 0);
+
+  const SceneWriteResult written = SceneWriter::write(first.scene);
+  REQUIRE(written.ok);
+
+  const SceneLoadResult second = reader.read(written.text);
+  REQUIRE(second.ok());
+  REQUIRE(second.scene.nodes.size() == 1);
+  REQUIRE(second.scene.nodes[0].properties.size() == 2);
+  CHECK(second.scene.nodes[0].properties[0].value.reference.id == "cube");
+  CHECK(second.scene.nodes[0].properties[1].value.reference.id == "red");
+
+  const SceneWriteResult rewritten = SceneWriter::write(second.scene);
+  REQUIRE(rewritten.ok);
+  CHECK(rewritten.text == written.text);
+}
+
+TEST_CASE("scene format: instantiate creates BoxMesh and Material sub-resources",
+          "[scene][scene_format][instantiate]") {
+  const SceneLoadResult result = load("[scene]\n"
+                                      "[sub_resource type=\"BoxMesh\" id=\"cube\"]\n"
+                                      "[sub_resource type=\"Material\" id=\"red\"]\n"
+                                      "baseColorFactor = Vector3(1, 0, 0)\n"
+                                      "[node name=\"Root\" type=\"Node\"]\n"
+                                      "[node name=\"Box\" type=\"MeshInstanceNode\" parent=\".\"]\n"
+                                      "mesh = SubResource(\"cube\")\n"
+                                      "material = SubResource(\"red\")\n");
+  REQUIRE(result.ok());
+
+  const std::unique_ptr<Node> root = result.scene.instantiate(classes());
+  REQUIRE(root != nullptr);
+  REQUIRE(root->childCount() == 1);
+
+  const auto* const box = dynamic_cast<const MeshInstanceNode*>(root->childAt(0));
+  REQUIRE(box != nullptr);
+  REQUIRE(box->mesh().valid());
+  CHECK(box->mesh()->vertices.size() == 24);
+  CHECK(box->mesh()->indices.size() == 36);
+  CHECK(box->mesh()->uid().valid());
+  CHECK(box->mesh()->state() == yr::asset::LoadState::kReady);
+
+  REQUIRE(box->material().valid());
+  CHECK(box->material()->baseColorFactor == Vec3{1.0F, 0.0F, 0.0F});
+  CHECK(box->material()->uid().valid());
+  CHECK(box->material()->state() == yr::asset::LoadState::kReady);
+}
+
+TEST_CASE("scene format: instantiate fails atomically when a reference has the wrong type",
+          "[scene][scene_format][instantiate][failure]") {
+  const SceneLoadResult result = load("[scene]\n"
+                                      "[sub_resource type=\"BoxMesh\" id=\"cube\"]\n"
+                                      "[node name=\"Root\" type=\"MeshInstanceNode\"]\n"
+                                      "material = SubResource(\"cube\")\n");
+  REQUIRE(result.ok());
+
+  const std::size_t before = yr::obj::globalObjectDB().aliveCount();
+  const std::unique_ptr<Node> root = result.scene.instantiate(classes());
+  CHECK(root == nullptr);
+  CHECK(yr::obj::globalObjectDB().aliveCount() == before);
 }
 
 TEST_CASE("scene format: instantiate preserves names, positions and parents", "[scene][scene_format]") {

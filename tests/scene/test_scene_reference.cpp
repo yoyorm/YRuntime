@@ -217,12 +217,12 @@ TEST_CASE("scene reference: connection before node is an error", "[scene][refere
   CHECK(hasErrorContaining(result, "node 之后"));
 }
 
-TEST_CASE("scene reference: node properties cannot use reference syntax", "[scene][reference]") {
+TEST_CASE("scene reference: non-resource node properties reject reference syntax", "[scene][reference]") {
   const SceneLoadResult result = load("[scene]\n"
                                       "[node name=\"Root\" type=\"Node\"]\n"
                                       "position = ExtResource(\"x\")\n");
   CHECK_FALSE(result.ok());
-  CHECK(hasErrorContaining(result, "node 属性暂不支持引用"));
+  CHECK(hasErrorContaining(result, "不接受资源引用"));
 }
 
 TEST_CASE("scene reference: malformed reference syntax is an error", "[scene][reference]") {

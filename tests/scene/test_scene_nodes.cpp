@@ -117,7 +117,11 @@ TEST_CASE("MeshInstanceNode metadata derives from Node", "[scene][mesh_instance]
   REQUIRE(node.classInfo() != nullptr);
   CHECK(node.classInfo()->name().view() == "MeshInstanceNode");
   CHECK(node.classInfo()->parent() == &yr::scene::nodeClassInfo());
-  CHECK(node.classInfo()->properties().empty());
+  REQUIRE(node.classInfo()->properties().size() == 2);
+  CHECK(node.classInfo()->properties()[0].name.view() == "mesh");
+  CHECK(node.classInfo()->properties()[0].class_hint.view() == "Mesh");
+  CHECK(node.classInfo()->properties()[1].name.view() == "material");
+  CHECK(node.classInfo()->properties()[1].class_hint.view() == "Material");
 }
 
 TEST_CASE("MeshInstanceNode references retain and release resources", "[scene][mesh_instance][ref]") {

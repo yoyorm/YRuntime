@@ -37,6 +37,7 @@ namespace yr::scene {
   // - 值可以是普通 Variant，或 ExtResource("id") / SubResource("id")；括号内允许空格。
   // - 不存在的引用 id、自引用、sub_resource 环 → error（由 resolveReferences 报）。
   // - 属性行只属于当前 sub_resource；下一个 section 出现即结束。
+  // - 第一版支持的 type：Material（baseColorFactor）、BoxMesh（单位立方体，无属性）。
   //
   // [node]：
   //   [node name="Root" type="Node"]
@@ -47,7 +48,8 @@ namespace yr::scene {
   // - 父必须在子之前出现（前序）；不写 index；同级顺序 = 文件顺序。
   // - 父路径不存在 / 父在子后 / 父环 / 同级重名 / 未知 type → error。
   // - 属性行规则：findProperty 解析；未知属性 warning；重复属性 error；
-  //   只读属性 warning + 跳过。node 属性值不允许引用语法 → error。
+  //   只读属性 warning + 跳过。class_hint 为空的属性不允许引用语法 → error；
+  //   class_hint 非空时允许 ExtResource("id") / SubResource("id")，由 resolveReferences 回填 index。
   //
   // [connection]：
   //   [connection from="Player" to="Hat" signal="hit" method="on_hit"]
@@ -60,7 +62,7 @@ namespace yr::scene {
   // - 字符串转义 \" \\ \n \t \r；不允许跨行；UTF-8 原样保存。
   // - double 用 max_digits10=17、float 用 max_digits10=9 保存，确保 round-trip。
   // - 拒绝 NaN/Inf；Vector3 分量按 double 解析后转 float；不接受尾逗号。
-  // - 引用只存在于 sub_resource 属性，不进入 Variant。
+  // - 引用可出现在 node / sub_resource 属性，不进入 Variant；node 引用要求属性 class_hint 非空。
   //
   // 保存规范形式：scene → ext → sub → node（前序）→ connection；section 间空行；
   // node 属性：Node 树版本按 ClassInfo 顺序（基类在前），IR 版本保持存储顺序

@@ -52,33 +52,41 @@ namespace yr::scene {
     }
 
     // 2. 回填引用 index；不存在的 id 立即报 error。
+    const auto bindReference = [&](SceneReference& reference) {
+      if (!reference.isReference()) {
+        return;
+      }
+
+      if (reference.kind == ReferenceKind::kExtResource) {
+        const auto found = extById.find(reference.id);
+        if (found == extById.end()) {
+          addDiagnostic(result, SceneDiagnostic::Severity::kError, sourceLine(reference), sourceColumn(reference),
+                        "ext_resource 引用不存在：'" + reference.id + "'");
+        } else {
+          reference.index = found->second;
+        }
+      } else if (reference.kind == ReferenceKind::kSubResource) {
+        const auto found = subById.find(reference.id);
+        if (found == subById.end()) {
+          addDiagnostic(result, SceneDiagnostic::Severity::kError, sourceLine(reference), sourceColumn(reference),
+                        "sub_resource 引用不存在：'" + reference.id + "'");
+        } else {
+          reference.index = found->second;
+        }
+      } else {
+        addDiagnostic(result, SceneDiagnostic::Severity::kError, sourceLine(reference), sourceColumn(reference),
+                      "未知的引用类型");
+      }
+    };
+
     for (PackedSubResource& subResource : scene.sub_resources) {
       for (PackedSubResourceProperty& property : subResource.properties) {
-        SceneReference& reference = property.value.reference;
-        if (!reference.isReference()) {
-          continue;
-        }
-
-        if (reference.kind == ReferenceKind::kExtResource) {
-          const auto found = extById.find(reference.id);
-          if (found == extById.end()) {
-            addDiagnostic(result, SceneDiagnostic::Severity::kError, sourceLine(reference), sourceColumn(reference),
-                          "ext_resource 引用不存在：'" + reference.id + "'");
-          } else {
-            reference.index = found->second;
-          }
-        } else if (reference.kind == ReferenceKind::kSubResource) {
-          const auto found = subById.find(reference.id);
-          if (found == subById.end()) {
-            addDiagnostic(result, SceneDiagnostic::Severity::kError, sourceLine(reference), sourceColumn(reference),
-                          "sub_resource 引用不存在：'" + reference.id + "'");
-          } else {
-            reference.index = found->second;
-          }
-        } else {
-          addDiagnostic(result, SceneDiagnostic::Severity::kError, sourceLine(reference), sourceColumn(reference),
-                        "未知的引用类型");
-        }
+        bindReference(property.value.reference);
+      }
+    }
+    for (PackedNode& node : scene.nodes) {
+      for (SceneProperty& property : node.properties) {
+        bindReference(property.value.reference);
       }
     }
 

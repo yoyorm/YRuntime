@@ -29,12 +29,16 @@
 #include <yr/math/mat4.h>
 #include <yr/math/transform.h>
 #include <yr/math/vec3.h>
+#include <yr/object/class_db.h>
 #include <yr/render/snapshot.h>
 #include <yr/render/snapshot_io.h>
 #include <yr/render/vk/vulkan_backend.h>
 #include <yr/scene/light_node.h>
 #include <yr/scene/mesh_instance_node.h>
 #include <yr/scene/node.h>
+#include <yr/scene/scene_classes.h>
+#include <yr/scene/scene_diagnostic.h>
+#include <yr/scene/scene_reader.h>
 #include <yr/scene/scene_tree.h>
 
 namespace {
@@ -219,12 +223,14 @@ namespace {
     std::string dumpSnapshot;
     std::string replaySnapshot;
     std::string gltfPath = "res://models/ToyCar/ToyCar.gltf";
+    std::string scenePath;
     std::string assetRoot = YR_ASSET_ROOT;
     std::string tracePath;
     bool asyncTextures = false;
     bool streamAssets = false;
     bool skipTextures = false;
     std::uint32_t textureMaxDim = 1024; // 纹理解码后最大边长（0 = 不限制）
+    bool hasGltf = false;
     bool hasCamera = false;
     bool hasTarget = false;
     yr::math::Vec3 cameraEye{};
@@ -269,10 +275,11 @@ namespace {
   void printUsage(std::FILE* stream, const char* program) {
     std::fprintf(stream,
                  "usage: %s [--frames N] [--drop-at N] [--dump-snapshot PATH] [--replay-snapshot PATH]\n"
-                 "          [--gltf RES_PATH] [--asset-root PATH] [--stream-assets] [--skip-textures]\n"
+                 "          [--gltf RES_PATH] [--scene PATH] [--asset-root PATH] [--stream-assets] [--skip-textures]\n"
                  "          [--async-textures] [--trace PATH] [--camera X,Y,Z] [--target X,Y,Z] [--no-shadow]\n"
                  "          [--texture-max-dim N]\n"
                  "  --gltf RES_PATH          glTF scene to load (default res://models/ToyCar/ToyCar.gltf)\n"
+                 "  --scene PATH             .scn scene to load (mutually exclusive with --gltf)\n"
                  "  --asset-root PATH        filesystem root for res:// (default YR_ASSET_ROOT)\n"
                  "  --stream-assets          defer both meshes and textures\n"
                  "  --skip-textures          create no textures (geometry stress test)\n"
@@ -330,6 +337,12 @@ namespace {
           return false;
         }
         options.gltfPath = argv[++i];
+        options.hasGltf = true;
+      } else if (arg == "--scene") {
+        if (i + 1 >= argc) {
+          return false;
+        }
+        options.scenePath = argv[++i];
       } else if (arg == "--asset-root") {
         if (i + 1 >= argc) {
           return false;
@@ -376,7 +389,11 @@ namespace {
       }
     }
     // dump 与 replay 语义互斥：一次运行不可能既产生又消费同一帧。
-    return options.dumpSnapshot.empty() || options.replaySnapshot.empty();
+    if (!options.dumpSnapshot.empty() && !options.replaySnapshot.empty()) {
+      return false;
+    }
+    // --scene 与显式 --gltf 互斥；未指定 --gltf 时允许 --scene。
+    return options.scenePath.empty() || !options.hasGltf;
   }
 
   // replay 路径只依赖快照与后端：不建 SceneTree / EventBus / MainLoop / ObjectDB。
@@ -602,7 +619,38 @@ int main(int argc, char** argv) {
   std::unique_ptr<yr::scene::Node> root;
   std::vector<yr::asset::AssetUID> pendingTextureUids;
   double sceneLoadMs = 0.0;
-  {
+  if (!options.scenePath.empty()) {
+    yr::scene::register_scene_classes();
+
+    std::ifstream sceneStream(options.scenePath, std::ios::binary);
+    if (!sceneStream) {
+      YR_LOG_ERROR("render_demo", "scene 打开失败：" + options.scenePath);
+      backend.shutdown();
+      return 1;
+    }
+
+    const yr::scene::SceneReader reader(yr::obj::globalClassDB());
+    const yr::scene::SceneLoadResult loaded = reader.read(sceneStream);
+    for (const yr::scene::SceneDiagnostic& diagnostic : loaded.diagnostics) {
+      const char* severity = diagnostic.severity == yr::scene::SceneDiagnostic::Severity::kError ? "error" : "warning";
+      std::fprintf(stderr, "%s:%d:%d: %s: %s\n", options.scenePath.c_str(), diagnostic.line, diagnostic.column,
+                   severity, diagnostic.message.c_str());
+    }
+    if (loaded.hasErrors()) {
+      backend.shutdown();
+      return 1;
+    }
+
+    root = loaded.scene.instantiate(yr::obj::globalClassDB());
+    if (root == nullptr) {
+      YR_LOG_ERROR("render_demo", "scene 实例化失败：" + options.scenePath);
+      backend.shutdown();
+      return 1;
+    }
+
+    sceneLoadMs = elapsedMs(loadStart, std::chrono::steady_clock::now());
+    YR_LOG_INFO("render_demo", "scene_loaded path=" + options.scenePath + " type=scn load_ms=" + formatMs(sceneLoadMs));
+  } else {
     yr::asset::GltfLoadOptions loadOptions;
     loadOptions.deferTextures = options.asyncTextures || options.streamAssets;
     loadOptions.deferMeshes = options.streamAssets;

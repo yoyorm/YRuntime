@@ -857,9 +857,35 @@ namespace yr::scene {
               errorAt(parsed.name_start, "重复属性：'" + std::string(parsed.name) + "'");
               return result;
             }
+            const core::StringId propertyId = interner.intern(parsed.name);
+            const obj::PropertyInfo* const property = currentInfo->findProperty(propertyId);
+            if (property == nullptr) {
+              warningAt(parsed.name_start, "未知属性 '" + std::string(parsed.name) + "'，跳过");
+              break;
+            }
+            if ((property->flags & obj::kReadOnly) != 0) {
+              warningAt(parsed.name_start, "只读属性 '" + std::string(parsed.name) + "'，跳过");
+              break;
+            }
+
             if (looksLikeReference(parsed.value)) {
-              errorAt(parsed.value_start, "node 属性暂不支持引用");
-              return result;
+              if (property->class_hint.view().empty()) {
+                errorAt(parsed.value_start, "属性 '" + std::string(parsed.name) + "' 不接受资源引用");
+                return result;
+              }
+              const ParsedReference reference = parseReference(parsed.value);
+              if (!reference.ok) {
+                errorAt(parsed.value_start + reference.error_offset, reference.error);
+                return result;
+              }
+              SceneValue value;
+              value.reference.kind = reference.kind;
+              value.reference.id = reference.id;
+              value.reference.index = kInvalidIndex;
+              value.reference.source_line = lineNumber;
+              value.reference.source_column = static_cast<int>(columnOffset + parsed.value_start + 1);
+              result.scene.nodes[currentNode].properties.push_back(SceneProperty{propertyId, std::move(value)});
+              break;
             }
 
             const yr::ser::VariantDecodeResult decoded = yr::ser::VariantCodec::decode(parsed.value);
@@ -871,19 +897,11 @@ namespace yr::scene {
               errorAt(parsed.value_start + decoded.consumed, "值后存在多余字符");
               return result;
             }
-
-            const core::StringId propertyId = interner.intern(parsed.name);
-            const obj::PropertyInfo* const property = currentInfo->findProperty(propertyId);
-            if (property == nullptr) {
-              warningAt(parsed.name_start, "未知属性 '" + std::string(parsed.name) + "'，跳过");
-            } else if ((property->flags & obj::kReadOnly) != 0) {
-              warningAt(parsed.name_start, "只读属性 '" + std::string(parsed.name) + "'，跳过");
-            } else if (decoded.value.type() != property->type) {
+            if (decoded.value.type() != property->type) {
               errorAt(parsed.value_start, "属性类型不匹配：'" + std::string(parsed.name) + "'");
               return result;
-            } else {
-              result.scene.nodes[currentNode].properties.push_back(SceneProperty{propertyId, decoded.value});
             }
+            result.scene.nodes[currentNode].properties.push_back(SceneProperty{propertyId, SceneValue{decoded.value}});
             break;
           }
           case SectionKind::kSubResource: {

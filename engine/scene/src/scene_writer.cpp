@@ -108,12 +108,15 @@ namespace yr::scene {
           return false;
         }
         const yr::obj::Variant value = property->getter(&node);
+        if (value.isNil()) {
+          continue; // 可选资源引用为空时不写该属性
+        }
         const yr::ser::VariantEncodeResult encoded = yr::ser::VariantCodec::encode(value);
         if (!encoded.ok) {
           error = label + ": serialized 属性 '" + propertyName + "' 编码失败：" + encoded.error;
           return false;
         }
-        packed.properties.push_back(SceneProperty{property->name, value});
+        packed.properties.push_back(SceneProperty{property->name, SceneValue{value}});
       }
 
       const std::size_t index = scene.nodes.size();
@@ -148,33 +151,32 @@ namespace yr::scene {
     }
 
     [[nodiscard]] bool validateReference(const PackedScene& scene, const SceneReference& reference,
-                                         const std::string& ownerId, const std::string& propertyName,
+                                         std::string_view ownerLabel, const std::string& propertyName,
                                          std::string& error) {
+      const std::string prefix = std::string(ownerLabel) + " 属性 '" + propertyName + "'";
       if (reference.kind == ReferenceKind::kExtResource) {
         if (reference.index >= scene.ext_resources.size()) {
-          error = "sub_resource '" + ownerId + "' 属性 '" + propertyName + "' 的 ext_resource 引用 index 越界";
+          error = prefix + " 的 ext_resource 引用 index 越界";
           return false;
         }
         if (scene.ext_resources[reference.index].id != reference.id) {
-          error =
-              "sub_resource '" + ownerId + "' 属性 '" + propertyName + "' 的 reference.id 与 ext_resource 表项不一致";
+          error = prefix + " 的 reference.id 与 ext_resource 表项不一致";
           return false;
         }
         return true;
       }
       if (reference.kind == ReferenceKind::kSubResource) {
         if (reference.index >= scene.sub_resources.size()) {
-          error = "sub_resource '" + ownerId + "' 属性 '" + propertyName + "' 的 sub_resource 引用 index 越界";
+          error = prefix + " 的 sub_resource 引用 index 越界";
           return false;
         }
         if (scene.sub_resources[reference.index].id != reference.id) {
-          error =
-              "sub_resource '" + ownerId + "' 属性 '" + propertyName + "' 的 reference.id 与 sub_resource 表项不一致";
+          error = prefix + " 的 reference.id 与 sub_resource 表项不一致";
           return false;
         }
         return true;
       }
-      error = "sub_resource '" + ownerId + "' 属性 '" + propertyName + "' 含未知引用类型";
+      error = prefix + " 含未知引用类型";
       return false;
     }
 
@@ -226,7 +228,8 @@ namespace yr::scene {
             return false;
           }
           if (property.value.isReference()) {
-            if (!validateReference(scene, property.value.reference, resource.id, propertyName, error)) {
+            if (!validateReference(scene, property.value.reference, "sub_resource '" + resource.id + "'", propertyName,
+                                   error)) {
               return false;
             }
           } else {
@@ -289,7 +292,13 @@ namespace yr::scene {
             error = label + " 重复属性：'" + propertyName + "'";
             return false;
           }
-          const yr::ser::VariantEncodeResult encoded = yr::ser::VariantCodec::encode(property.value);
+          if (property.value.isReference()) {
+            if (!validateReference(scene, property.value.reference, label, propertyName, error)) {
+              return false;
+            }
+            continue;
+          }
+          const yr::ser::VariantEncodeResult encoded = yr::ser::VariantCodec::encode(property.value.value);
           if (!encoded.ok) {
             error = label + " 属性 '" + propertyName + "' 编码失败：" + encoded.error;
             return false;
@@ -403,11 +412,22 @@ namespace yr::scene {
       out << "]\n";
 
       for (const SceneProperty& property : node.properties) {
-        const yr::ser::VariantEncodeResult encoded = yr::ser::VariantCodec::encode(property.value);
-        if (!encoded.ok) {
-          return SceneWriteResult{false, {}, "node 属性编码失败：" + encoded.error};
+        out << property.name.view() << " = ";
+        if (property.value.isReference()) {
+          const SceneReference& reference = property.value.reference;
+          if (reference.kind == ReferenceKind::kExtResource) {
+            out << "ExtResource(" << quoted(scene.ext_resources[reference.index].id) << ")";
+          } else {
+            out << "SubResource(" << quoted(scene.sub_resources[reference.index].id) << ")";
+          }
+        } else {
+          const yr::ser::VariantEncodeResult encoded = yr::ser::VariantCodec::encode(property.value.value);
+          if (!encoded.ok) {
+            return SceneWriteResult{false, {}, "node 属性编码失败：" + encoded.error};
+          }
+          out << encoded.text;
         }
-        out << property.name.view() << " = " << encoded.text << '\n';
+        out << '\n';
       }
     }
 
