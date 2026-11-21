@@ -36,6 +36,7 @@ add_subdirectory(engine/event)
 add_subdirectory(engine/serialize)
 add_subdirectory(engine/scene)
 add_subdirectory(engine/render)
+add_subdirectory(engine/input)
 add_subdirectory(engine/engine)
 
 # 可运行物（apps 允许依赖任何层）

@@ -28,6 +28,7 @@ target_include_directories(yr_test_support INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}
 target_link_libraries(yr_test_support INTERFACE Catch2::Catch2WithMain)
 
 add_subdirectory(core)
+add_subdirectory(input)
 add_subdirectory(math)
 add_subdirectory(job)
 add_subdirectory(object)

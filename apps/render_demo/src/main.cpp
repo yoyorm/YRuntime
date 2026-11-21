@@ -26,6 +26,7 @@
 #include <yr/engine/clock.h>
 #include <yr/engine/main_loop.h>
 #include <yr/event/event_bus.h>
+#include <yr/input/input_router.h>
 #include <yr/math/mat4.h>
 #include <yr/math/transform.h>
 #include <yr/math/vec3.h>
@@ -40,6 +41,8 @@
 #include <yr/scene/scene_diagnostic.h>
 #include <yr/scene/scene_reader.h>
 #include <yr/scene/scene_tree.h>
+
+#include "glfw_input_source.h"
 
 namespace {
 
@@ -127,12 +130,12 @@ namespace {
     return 0;
   }
 
-  // host 驱动 MainLoop：阶段 1 泵窗口事件，WASD 小幅平移场景根；关闭窗口转成 requestQuit。
+  // host 驱动 MainLoop：阶段 1 由 InputRouter 泵输入；关闭窗口转成 requestQuit。
   class DemoLoop final : public yr::engine::MainLoop {
   public:
     DemoLoop(yr::scene::SceneTree& tree, yr::evt::EventBus& events, yr::render::VulkanBackend& backend,
-             yr::scene::Node& movable, std::string dumpPath)
-        : MainLoop(tree, events), backend_(backend), movable_(movable), dumpPath_(std::move(dumpPath)) {}
+             std::string dumpPath)
+        : MainLoop(tree, events), backend_(backend), dumpPath_(std::move(dumpPath)) {}
 
     [[nodiscard]] bool dumpFailed() const noexcept { return dumpFailed_; }
 
@@ -155,28 +158,10 @@ namespace {
     }
 
     void pollInput() override {
-      backend_.pollEvents();
+      MainLoop::pollInput();
       if (backend_.shouldClose()) {
         requestQuit();
-        return;
       }
-
-      const float dx = (backend_.isKeyDown(yr::render::Key::D) ? 1.0F : 0.0F) -
-                       (backend_.isKeyDown(yr::render::Key::A) ? 1.0F : 0.0F);
-      const float dy = (backend_.isKeyDown(yr::render::Key::W) ? 1.0F : 0.0F) -
-                       (backend_.isKeyDown(yr::render::Key::S) ? 1.0F : 0.0F);
-      if (dx == 0.0F && dy == 0.0F) {
-        return; // 无按键不改位置，避免无谓的 transform 失效
-      }
-
-      // 长帧（拖窗口 / 断点）会把位移放大成瞬移，clamp dt 到 100ms。
-      const float dt = std::clamp(static_cast<float>(delta()), 0.0F, 0.1F);
-      constexpr float kSpeed = 0.02F; // units/s
-      const yr::math::Vec3& current = movable_.position();
-      yr::math::Vec3 next = current + yr::math::Vec3{dx, dy, 0.0F} * (kSpeed * dt);
-      next.x = std::clamp(next.x, -0.05F, 0.05F);
-      next.y = std::clamp(next.y, -0.05F, 0.05F);
-      movable_.setPosition(next);
     }
 
     // 只 dump 首个进入 present 阶段的快照：颜色按 ObjectID 取，重放同一份数据才能逐像素一致。
@@ -206,8 +191,6 @@ namespace {
 
   private:
     yr::render::VulkanBackend& backend_;
-    // 非拥有：树由 main 持有，且比 loop 活得更久。
-    yr::scene::Node& movable_;
     std::string dumpPath_;
     bool dumped_ = false;
     bool dumpFailed_ = false;
@@ -694,7 +677,6 @@ int main(int argc, char** argv) {
   }
 
   yr::scene::SceneTree tree;
-  yr::scene::Node* const movable = root.get();
   if (!tree.setRoot(std::move(root))) {
     YR_LOG_ERROR("render_demo", "场景构建失败");
     backend.shutdown();
@@ -742,9 +724,13 @@ int main(int argc, char** argv) {
   camera.view = toTransform(yr::math::Mat4::lookAt(eye, target, yr::math::Vec3{0.0F, 1.0F, 0.0F}));
 
   yr::evt::EventBus events;
-  DemoLoop loop(tree, events, backend, *movable, options.dumpSnapshot);
+  yr::input::InputRouter inputRouter;
+  inputRouter.addSource(std::make_unique<yr::demo::GlfwInputSource>(backend));
+
+  DemoLoop loop(tree, events, backend, options.dumpSnapshot);
   loop.setBackend(&backend);      // 阶段 11 调 present
   loop.setAssetDatabase(&assets); // 阶段 12 调 collectGarbage
+  loop.setInputRouter(&inputRouter);
   loop.setCamera(camera);
   // 不传 shadow 时 MainLoop 默认 disabled；--no-shadow 让 Sponza 性能测试跳过阴影。
   if (!options.noShadow) {
@@ -831,7 +817,7 @@ int main(int argc, char** argv) {
   backendStats.released_assets = releasedAssets;
   const yr::engine::FrameStats& stats = loop.stats();
 
-  // 循环结束后先释放场景，再让 DB 收掉仅剩自己持有的资源；DemoLoop 析构不访问 movable。
+  // 循环结束后先释放场景，再让 DB 收掉仅剩自己持有的资源。
   (void)tree.clearRoot();
   const yr::asset::GcStats finalGc = assets.collectGarbage();
   const yr::asset::AssetStats finalAssets = assets.stats();

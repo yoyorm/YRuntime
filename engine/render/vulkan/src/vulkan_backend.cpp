@@ -84,6 +84,159 @@ namespace yr::render {
 
   } // namespace
 
+  namespace {
+
+    struct InputContext {
+      InputCallbacks callbacks;
+    };
+
+    [[nodiscard]] int toGlfwKey(Key key) noexcept {
+      switch (key) {
+      case Key::W:
+        return GLFW_KEY_W;
+      case Key::A:
+        return GLFW_KEY_A;
+      case Key::S:
+        return GLFW_KEY_S;
+      case Key::D:
+        return GLFW_KEY_D;
+      case Key::Left:
+        return GLFW_KEY_LEFT;
+      case Key::Right:
+        return GLFW_KEY_RIGHT;
+      case Key::Up:
+        return GLFW_KEY_UP;
+      case Key::Down:
+        return GLFW_KEY_DOWN;
+      case Key::Space:
+        return GLFW_KEY_SPACE;
+      case Key::Escape:
+        return GLFW_KEY_ESCAPE;
+      case Key::Enter:
+        return GLFW_KEY_ENTER;
+      case Key::Unknown:
+        return GLFW_KEY_UNKNOWN;
+      }
+      return GLFW_KEY_UNKNOWN;
+    }
+
+    [[nodiscard]] Key toProjectKey(int key) noexcept {
+      switch (key) {
+      case GLFW_KEY_W:
+        return Key::W;
+      case GLFW_KEY_A:
+        return Key::A;
+      case GLFW_KEY_S:
+        return Key::S;
+      case GLFW_KEY_D:
+        return Key::D;
+      case GLFW_KEY_LEFT:
+        return Key::Left;
+      case GLFW_KEY_RIGHT:
+        return Key::Right;
+      case GLFW_KEY_UP:
+        return Key::Up;
+      case GLFW_KEY_DOWN:
+        return Key::Down;
+      case GLFW_KEY_SPACE:
+        return Key::Space;
+      case GLFW_KEY_ESCAPE:
+        return Key::Escape;
+      case GLFW_KEY_ENTER:
+        return Key::Enter;
+      default:
+        return Key::Unknown;
+      }
+    }
+
+    [[nodiscard]] KeyAction toKeyAction(int action) noexcept {
+      switch (action) {
+      case GLFW_RELEASE:
+        return KeyAction::kRelease;
+      case GLFW_REPEAT:
+        return KeyAction::kRepeat;
+      case GLFW_PRESS:
+      default:
+        return KeyAction::kPress;
+      }
+    }
+
+    [[nodiscard]] KeyMods toKeyMods(int mods) noexcept {
+      KeyMods out = 0;
+      if ((mods & GLFW_MOD_SHIFT) != 0) {
+        out |= static_cast<KeyMods>(KeyMod::kShift);
+      }
+      if ((mods & GLFW_MOD_CONTROL) != 0) {
+        out |= static_cast<KeyMods>(KeyMod::kControl);
+      }
+      if ((mods & GLFW_MOD_ALT) != 0) {
+        out |= static_cast<KeyMods>(KeyMod::kAlt);
+      }
+      if ((mods & GLFW_MOD_SUPER) != 0) {
+        out |= static_cast<KeyMods>(KeyMod::kSuper);
+      }
+      return out;
+    }
+
+    [[nodiscard]] MouseButton toMouseButton(int button) noexcept {
+      switch (button) {
+      case GLFW_MOUSE_BUTTON_LEFT:
+        return MouseButton::kLeft;
+      case GLFW_MOUSE_BUTTON_RIGHT:
+        return MouseButton::kRight;
+      case GLFW_MOUSE_BUTTON_MIDDLE:
+        return MouseButton::kMiddle;
+      default:
+        return MouseButton::kOther;
+      }
+    }
+
+    void keyThunk(GLFWwindow* window, int key, int /*scancode*/, int action, int mods) {
+      auto* context = static_cast<InputContext*>(glfwGetWindowUserPointer(window));
+      if (context == nullptr || !context->callbacks.key) {
+        return;
+      }
+      const Key projectKey = toProjectKey(key);
+      if (projectKey == Key::Unknown) {
+        return;
+      }
+      context->callbacks.key(projectKey, toKeyAction(action), toKeyMods(mods));
+    }
+
+    void mouseButtonThunk(GLFWwindow* window, int button, int action, int mods) {
+      auto* context = static_cast<InputContext*>(glfwGetWindowUserPointer(window));
+      if (context == nullptr || !context->callbacks.mouseButton) {
+        return;
+      }
+      double x = 0.0;
+      double y = 0.0;
+      glfwGetCursorPos(window, &x, &y);
+      context->callbacks.mouseButton(toMouseButton(button), toKeyAction(action), toKeyMods(mods), x, y);
+    }
+
+    void cursorPosThunk(GLFWwindow* window, double x, double y) {
+      auto* context = static_cast<InputContext*>(glfwGetWindowUserPointer(window));
+      if (context != nullptr && context->callbacks.cursorPos) {
+        context->callbacks.cursorPos(x, y);
+      }
+    }
+
+    void scrollThunk(GLFWwindow* window, double dx, double dy) {
+      auto* context = static_cast<InputContext*>(glfwGetWindowUserPointer(window));
+      if (context != nullptr && context->callbacks.scroll) {
+        context->callbacks.scroll(dx, dy);
+      }
+    }
+
+    void characterThunk(GLFWwindow* window, unsigned int codepoint) {
+      auto* context = static_cast<InputContext*>(glfwGetWindowUserPointer(window));
+      if (context != nullptr && context->callbacks.character) {
+        context->callbacks.character(static_cast<char32_t>(codepoint));
+      }
+    }
+
+  } // namespace
+
   struct VulkanBackend::Impl {
     struct GpuMesh {
       ::vk::raii::DeviceMemory memory{nullptr};
@@ -115,6 +268,10 @@ namespace yr::render {
       ::vk::raii::Buffer buffer{nullptr};
       void* mapped = nullptr;
     };
+
+    // 输入上下文先于 window 声明：窗口先销毁，user pointer 不会悬垂到 window 生命周期之后。
+    InputContext input;
+    bool inputInstalled = false;
 
     // 声明顺序遵循依赖：window → instance → surface → device → swapchain/depth → pipeline → command/sync.
     std::optional<vk::Window> window;
@@ -632,10 +789,29 @@ namespace yr::render {
       const vk::DebugStats debugStats = instance->debugStats();
       lastValidationErrors = debugStats.errors;
       instance.reset();
+      if (window.has_value()) {
+        glfwSetWindowUserPointer(window->nativeHandle(), nullptr);
+      }
+      input.callbacks = {};
+      inputInstalled = false;
       window.reset();
       stats = BackendStats{};
       YR_LOG_INFO("render.vk.backend", "shutdown validation_errors=" + std::to_string(debugStats.errors) +
                                            " validation_warnings=" + std::to_string(debugStats.warnings));
+    }
+
+    void installInputCallbacks() {
+      if (!window.has_value() || inputInstalled) {
+        return;
+      }
+      GLFWwindow* const handle = window->nativeHandle();
+      glfwSetWindowUserPointer(handle, &input);
+      glfwSetKeyCallback(handle, &keyThunk);
+      glfwSetMouseButtonCallback(handle, &mouseButtonThunk);
+      glfwSetCursorPosCallback(handle, &cursorPosThunk);
+      glfwSetScrollCallback(handle, &scrollThunk);
+      glfwSetCharCallback(handle, &characterThunk);
+      inputInstalled = true;
     }
 
     bool tryRecreate() {
@@ -933,6 +1109,7 @@ namespace yr::render {
   bool VulkanBackend::initialize(const BackendConfig& /*config*/) {
     try {
       impl_->window.emplace();
+      impl_->installInputCallbacks();
       impl_->instance.emplace();
       impl_->surface.emplace(*impl_->instance, *impl_->window);
       impl_->device.emplace(*impl_->instance, *impl_->surface);
@@ -1031,22 +1208,16 @@ namespace yr::render {
     if (!impl_->window.has_value()) {
       return false;
     }
-    int glfwKey = GLFW_KEY_UNKNOWN;
-    switch (key) {
-    case Key::W:
-      glfwKey = GLFW_KEY_W;
-      break;
-    case Key::A:
-      glfwKey = GLFW_KEY_A;
-      break;
-    case Key::S:
-      glfwKey = GLFW_KEY_S;
-      break;
-    case Key::D:
-      glfwKey = GLFW_KEY_D;
-      break;
+    const int glfwKey = toGlfwKey(key);
+    if (glfwKey == GLFW_KEY_UNKNOWN) {
+      return false;
     }
     return glfwGetKey(impl_->window->nativeHandle(), glfwKey) == GLFW_PRESS;
+  }
+
+  void VulkanBackend::setInputCallbacks(InputCallbacks callbacks) {
+    impl_->input.callbacks = std::move(callbacks);
+    impl_->installInputCallbacks();
   }
 
   std::uint32_t VulkanBackend::validationErrorCount() const noexcept {

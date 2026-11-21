@@ -4,6 +4,7 @@
 #include <yr/core/log.h>
 #include <yr/engine/main_loop.h>
 #include <yr/event/event_bus.h>
+#include <yr/input/input_router.h>
 #include <yr/scene/scene_tree.h>
 
 namespace yr::engine {
@@ -71,7 +72,9 @@ namespace yr::engine {
   }
 
   void MainLoop::pollInput() {
-    // TODO: 平台输入 → InputEvent；headless 从脚本/命令注入。
+    if (inputRouter_ != nullptr) {
+      inputRouter_->beginFrame();
+    }
   }
 
   void MainLoop::flushMessages() {

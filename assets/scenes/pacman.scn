@@ -1,0 +1,214 @@
+[scene]
+
+[sub_resource type="BoxMesh" id="cube"]
+
+[sub_resource type="Material" id="wall"]
+baseColorFactor = Vector3(0.15, 0.25, 0.8)
+
+[sub_resource type="Material" id="pellet"]
+baseColorFactor = Vector3(1.0, 0.85, 0.2)
+
+[sub_resource type="Material" id="player"]
+baseColorFactor = Vector3(1.0, 0.55, 0.1)
+
+[node name="Pacman" type="Node"]
+
+[node name="Wall_Top_-4" type="MeshInstanceNode" parent="."]
+position = Vector3(-4, 0, -3)
+mesh = SubResource("cube")
+material = SubResource("wall")
+
+[node name="Wall_Bottom_-4" type="MeshInstanceNode" parent="."]
+position = Vector3(-4, 0, 3)
+mesh = SubResource("cube")
+material = SubResource("wall")
+
+[node name="Wall_Top_-3" type="MeshInstanceNode" parent="."]
+position = Vector3(-3, 0, -3)
+mesh = SubResource("cube")
+material = SubResource("wall")
+
+[node name="Wall_Bottom_-3" type="MeshInstanceNode" parent="."]
+position = Vector3(-3, 0, 3)
+mesh = SubResource("cube")
+material = SubResource("wall")
+
+[node name="Wall_Top_-2" type="MeshInstanceNode" parent="."]
+position = Vector3(-2, 0, -3)
+mesh = SubResource("cube")
+material = SubResource("wall")
+
+[node name="Wall_Bottom_-2" type="MeshInstanceNode" parent="."]
+position = Vector3(-2, 0, 3)
+mesh = SubResource("cube")
+material = SubResource("wall")
+
+[node name="Wall_Top_-1" type="MeshInstanceNode" parent="."]
+position = Vector3(-1, 0, -3)
+mesh = SubResource("cube")
+material = SubResource("wall")
+
+[node name="Wall_Bottom_-1" type="MeshInstanceNode" parent="."]
+position = Vector3(-1, 0, 3)
+mesh = SubResource("cube")
+material = SubResource("wall")
+
+[node name="Wall_Top_0" type="MeshInstanceNode" parent="."]
+position = Vector3(0, 0, -3)
+mesh = SubResource("cube")
+material = SubResource("wall")
+
+[node name="Wall_Bottom_0" type="MeshInstanceNode" parent="."]
+position = Vector3(0, 0, 3)
+mesh = SubResource("cube")
+material = SubResource("wall")
+
+[node name="Wall_Top_1" type="MeshInstanceNode" parent="."]
+position = Vector3(1, 0, -3)
+mesh = SubResource("cube")
+material = SubResource("wall")
+
+[node name="Wall_Bottom_1" type="MeshInstanceNode" parent="."]
+position = Vector3(1, 0, 3)
+mesh = SubResource("cube")
+material = SubResource("wall")
+
+[node name="Wall_Top_2" type="MeshInstanceNode" parent="."]
+position = Vector3(2, 0, -3)
+mesh = SubResource("cube")
+material = SubResource("wall")
+
+[node name="Wall_Bottom_2" type="MeshInstanceNode" parent="."]
+position = Vector3(2, 0, 3)
+mesh = SubResource("cube")
+material = SubResource("wall")
+
+[node name="Wall_Top_3" type="MeshInstanceNode" parent="."]
+position = Vector3(3, 0, -3)
+mesh = SubResource("cube")
+material = SubResource("wall")
+
+[node name="Wall_Bottom_3" type="MeshInstanceNode" parent="."]
+position = Vector3(3, 0, 3)
+mesh = SubResource("cube")
+material = SubResource("wall")
+
+[node name="Wall_Top_4" type="MeshInstanceNode" parent="."]
+position = Vector3(4, 0, -3)
+mesh = SubResource("cube")
+material = SubResource("wall")
+
+[node name="Wall_Bottom_4" type="MeshInstanceNode" parent="."]
+position = Vector3(4, 0, 3)
+mesh = SubResource("cube")
+material = SubResource("wall")
+
+[node name="Wall_Left_-2" type="MeshInstanceNode" parent="."]
+position = Vector3(-4, 0, -2)
+mesh = SubResource("cube")
+material = SubResource("wall")
+
+[node name="Wall_Right_-2" type="MeshInstanceNode" parent="."]
+position = Vector3(4, 0, -2)
+mesh = SubResource("cube")
+material = SubResource("wall")
+
+[node name="Wall_Left_-1" type="MeshInstanceNode" parent="."]
+position = Vector3(-4, 0, -1)
+mesh = SubResource("cube")
+material = SubResource("wall")
+
+[node name="Wall_Right_-1" type="MeshInstanceNode" parent="."]
+position = Vector3(4, 0, -1)
+mesh = SubResource("cube")
+material = SubResource("wall")
+
+[node name="Wall_Left_0" type="MeshInstanceNode" parent="."]
+position = Vector3(-4, 0, 0)
+mesh = SubResource("cube")
+material = SubResource("wall")
+
+[node name="Wall_Right_0" type="MeshInstanceNode" parent="."]
+position = Vector3(4, 0, 0)
+mesh = SubResource("cube")
+material = SubResource("wall")
+
+[node name="Wall_Left_1" type="MeshInstanceNode" parent="."]
+position = Vector3(-4, 0, 1)
+mesh = SubResource("cube")
+material = SubResource("wall")
+
+[node name="Wall_Right_1" type="MeshInstanceNode" parent="."]
+position = Vector3(4, 0, 1)
+mesh = SubResource("cube")
+material = SubResource("wall")
+
+[node name="Wall_Left_2" type="MeshInstanceNode" parent="."]
+position = Vector3(-4, 0, 2)
+mesh = SubResource("cube")
+material = SubResource("wall")
+
+[node name="Wall_Right_2" type="MeshInstanceNode" parent="."]
+position = Vector3(4, 0, 2)
+mesh = SubResource("cube")
+material = SubResource("wall")
+
+[node name="Wall_InnerBar_-2" type="MeshInstanceNode" parent="."]
+position = Vector3(-2, 0, 0)
+mesh = SubResource("cube")
+material = SubResource("wall")
+
+[node name="Wall_InnerBar_-1" type="MeshInstanceNode" parent="."]
+position = Vector3(-1, 0, 0)
+mesh = SubResource("cube")
+material = SubResource("wall")
+
+[node name="Wall_InnerBar_1" type="MeshInstanceNode" parent="."]
+position = Vector3(1, 0, 0)
+mesh = SubResource("cube")
+material = SubResource("wall")
+
+[node name="Wall_InnerBar_2" type="MeshInstanceNode" parent="."]
+position = Vector3(2, 0, 0)
+mesh = SubResource("cube")
+material = SubResource("wall")
+
+[node name="Wall_Pillar_North" type="MeshInstanceNode" parent="."]
+position = Vector3(0, 0, -1)
+mesh = SubResource("cube")
+material = SubResource("wall")
+
+[node name="Wall_Pillar_South" type="MeshInstanceNode" parent="."]
+position = Vector3(0, 0, 1)
+mesh = SubResource("cube")
+material = SubResource("wall")
+
+[node name="Pellet_0" type="MeshInstanceNode" parent="."]
+position = Vector3(-2, 0, -2)
+mesh = SubResource("cube")
+material = SubResource("pellet")
+
+[node name="Pellet_1" type="MeshInstanceNode" parent="."]
+position = Vector3(0, 0, -2)
+mesh = SubResource("cube")
+material = SubResource("pellet")
+
+[node name="Pellet_2" type="MeshInstanceNode" parent="."]
+position = Vector3(2, 0, -2)
+mesh = SubResource("cube")
+material = SubResource("pellet")
+
+[node name="Pellet_3" type="MeshInstanceNode" parent="."]
+position = Vector3(-2, 0, 2)
+mesh = SubResource("cube")
+material = SubResource("pellet")
+
+[node name="Pellet_4" type="MeshInstanceNode" parent="."]
+position = Vector3(2, 0, 2)
+mesh = SubResource("cube")
+material = SubResource("pellet")
+
+[node name="Player" type="MeshInstanceNode" parent="."]
+position = Vector3(0, 0, 2)
+mesh = SubResource("cube")
+material = SubResource("player")
