@@ -1,7 +1,7 @@
 # YRuntime — Agent Context
 
 > 这个文件是**跨会话的上下文锚点**。新会话先读它，再读 `doc/START-HERE.md` 与当前任务卡；聊天记录不是权威。
-> 最近更新：2026-11-20
+> 最近更新：2026-11-21（D35）
 
 ## 1. 项目一句话
 
@@ -15,12 +15,22 @@ YRuntime 是一个 C++20 游戏运行时：Object/SceneTree/EventBus/MainLoop + 
 阶段 A（当前正在进行）：全库架构走查与断层梳理（用户逐层 review 代码与注释）
   - 已走查：engine / scene（SceneTree、Node、MainLoop 等）
   - 待走查：object & serialize（反射/Variant/.scn） → asset（异步资源流） → render_iface & vulkan
-阶段 B（走查完成后的核心方向）：M11 · AI 友好（Agent-Native）运行时架构
+
+阶段 B（走查完成后的核心方向）：M11 · AI 友好（Agent-Native）运行时架构（D35）
   - 总纲任务卡：doc/tasks/m11-agent-native-runtime.md
-  - 三大支柱：
-    1. 完备的反射自描述 Schema 与 .scn 场景闭环（打通 M2 + M8 + M9 断层）
-    2. 帧安全点的命令/事务协议（激活 MainLoop 阶段 2 flush_messages）
-    3. 语义级世界与渲染快照可观测性（SceneTree + AssetStats + RenderSnapshot 语义摘要 + 确定性步进）
+  - 三层递进，不可跳跃：
+    B-1 交互基础底座（能读能写）
+      1. 完备 ClassDB 自描述 Schema + .scn 3D 场景闭环（打通 M2 + M8 + M9 断层）
+      2. 帧安全点命令/事务协议（激活 MainLoop 阶段 2 flush_messages）
+      3. 基础语义快照查询（SceneTree + AssetStats + RenderSnapshot 摘要 + 确定性步进）
+    B-2 正交参数化行为节点 + “C++ 脊髓反射 / AI 大脑皮层”双层决策（能编排、能分层决策）
+      1. 反射三元组 (TargetNode, PropertyName, VariantValue)：逻辑降维成反射数据
+      2. When / Continuous / Then 三类正交原语，靠 .scn [connection] 组合，拒绝 N×M×K 预制体
+      3. 高频 C++ 反射弧（60FPS）+ 帧安全点外部 AI 皮层（稀疏介入）
+    B-3 高级 AI 命令生态（能解释、能实验）
+      1. 跨层因果诊断（为什么没显示 / 为什么慢）
+      2. 可回滚确定性沙盒（checkpoint / step(N) / diff / restore）
+  - 明确不做：GUI 编辑器、重型脚本 VM、每帧调用大模型
 ```
 
 ## 3. 核心工作方式（用户主导架构，AI 填充细节）
@@ -52,7 +62,7 @@ YRuntime 是一个 C++20 游戏运行时：Object/SceneTree/EventBus/MainLoop + 
 - 只有 `engine/render/vulkan/` 可以 include Vulkan / GLFW。
 - `yr_render_iface` 只依赖 core/std；快照是纯值 POD + vector，不持有 scene/asset 指针。
 - Snapshot 当前为 **v3**（四贴图 + lights + shadow）；`doc/layers/render.md` 是字节格式权威。
-- 决策记录在 `doc/06-decisions.md`（D28–D34 与 M9/M9.5 直接相关）。
+- 决策记录在 `doc/06-decisions.md`（D28–D34 与 M9/M9.5 直接相关；D35 为 M11 Agent-Native 架构）。
 
 ## 6. 构建与验证
 

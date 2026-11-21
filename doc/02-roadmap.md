@@ -636,17 +636,32 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 > **2026-11-20 战略重定位**：
 > 1. 砍掉原 M11 中偏外围包装的工程化项（cook 导入管线、perf/Tracy/绘图脚本、`.gdbinit` 调试手册、clang-tidy、覆盖率、ImGui 检视器、热重载等），`.yrpak` 移入 Stretch（S14）；
 > 2. **确立核心演进方向**：YRuntime 不做面向人工点击的传统 GUI 编辑器，而是发挥 Headless-first、`ClassDB` 反射、`.scn` 文本场景、`MainLoop` 显式安全点与 `RenderSnapshot` 纯数据契约的优势，构建一套**对 AI Agent / 自动化工具原生友好的运行时控制与语义观测架构**。
+>
+> **2026-11-21（D35）分层决策**：M11 拆为三层递进，不可跳跃——**B-1 交互基础底座**（能读能写）→ **B-2 正交参数化行为节点 + “C++ 脊髓反射 / AI 大脑皮层”双层决策**（能编排、能分层决策）→ **B-3 因果诊断与确定性沙盒**（能解释、能实验）。明确不建 GUI 编辑器、不引入重型脚本 VM。总纲见 `doc/tasks/m11-agent-native-runtime.md`。
 
 **前置阶段（进行中）**：
 - [ ] **全库架构走查与断层梳理**：逐层复盘 M0–M10 现有代码（`engine` / `scene` → `object` & `serialize` → `asset` → `render_iface` & `vulkan`），清理历史妥协，理清各层衔接点。
 
-**M11 三大核心支柱（走查后由用户主导架构设计）**：
+**阶段 B-1 · AI 交互基础底座（走查后由用户主导架构设计）**：
 - [ ] **支柱 1 · 反射自描述 Schema 与 `.scn` 场景闭环**：打通 M2（`ClassDB`/`PropertyInfo`）、M8（`.scn`）与 M9（`MeshInstanceNode`/`LightNode`/`CameraNode`/资源引用）的断层，使运行时可导出完备的类/属性 Schema，且 `.scn` 能直接表达完整 3D 渲染场景。
 - [ ] **支柱 2 · 帧安全点的命令/事务协议**：激活 `MainLoop` 阶段 2（`flush_messages`），支持外部 Agent/控制器提交结构化操作命令（创建/删除节点、读写属性、加载资源、可控步进 N 帧），在帧安全点统一校验（基于 `ObjectID` + `ClassDB`）与执行，并返回结构化诊断结果。
-- [ ] **支柱 3 · 语义级世界与渲染快照可观测性**：提供无需依赖纯视觉截图的“语义级快照”导出能力（`SceneTree` 层级与世界变换 + `AssetDatabase` 加载/驻留状态 + `RenderSnapshot` 语义摘要与相机视锥可见性诊断），辅以按需帧渲染截图。
+- [ ] **支柱 3 · 基础语义快照查询**：导出 `SceneTree` 层级与世界变换 + `AssetDatabase` 加载/驻留状态 + `RenderSnapshot` 语义摘要，让外部无需截图即可知道“世界现在有什么”；深度归因留给 B-3。
+
+**阶段 B-2 · 正交参数化行为节点 + 双层决策架构**：
+- [ ] **反射三元组 `(TargetNode, PropertyName, VariantValue)`**：让任意注册属性天然可被通用条件判断器（`== / != / > / <`）与通用属性动作器（`Set / Add / Tween`）操作，行为编排不再依赖硬编码 C++ 回调。
+- [ ] **正交原语 · When**：`TimerNode` / `ProximityTriggerNode` / `PropertyWatcherNode`，只检测并发信号。
+- [ ] **正交原语 · Continuous**：`OrbitNode` / `OscillatorNode` / `FollowNode`，每帧 `onUpdate(dt)`，参数全反射。
+- [ ] **正交原语 · Then**：`PropertyActionNode` / `PropertyTweenNode`（含改写其他行为节点的 `enabled`）、`SpawnerNode` / `DestroyerNode`；组合走 `.scn` `[connection]` + `EventBus`，拒绝 N×M×K 预制体。
+- [ ] **双层运行模型**：高频层 = 60FPS C++ 脊髓反射弧（离线也可确定性运行）；低频层 = 帧安全点把事件 + 语义快照推给外部 AI 大脑皮层，AI 命令回落到阶段 2 校验执行。
+
+**阶段 B-3 · 高级 AI 命令生态**：
+- [ ] **跨层因果诊断**：Mesh AABB + 世界矩阵 + 相机视锥 + `AssetDatabase` 状态 + `RenderSnapshot` 解释“为什么没显示”，并关联 `FrameStats`/`JobStats`/`AssetStats` 做性能归因，输出结构化原因与证据。
+- [ ] **可回滚确定性实验沙盒**：基于确定性 tick + 序列化提供 `checkpoint` / `step(N)` / `diff` / `restore`，支撑 AI“假设—快进—对比—回滚”的闭环实验。
 
 **验收标准**
 - 外部控制器/Agent 可在无 GUI 条件下：查询引擎 Schema → 通过命令协议或 `.scn` 构建/修改含网格与灯光的 3D 场景 → 确定性步进 N 帧 → 读取语义级快照验证场景与渲染状态（并可按需输出渲染画面）；
+- B-2：仅靠 `.scn` 连线即可组合出“定时开灯 + 靠近触发 + 绕轨运动 + 属性渐变”，AI 可在同一次运行中改连线或改参数而无需重启/重编译；
+- B-3：能对“看不见的物体”给出有序原因链，并在同一 checkpoint 上快进对比后回滚；
 - CI 现有门禁（build + ctest + format + `check_deps.py`）全绿。
 
 ---

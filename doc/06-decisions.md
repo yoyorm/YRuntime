@@ -44,6 +44,7 @@
 | D32 | M9.2a：单 LoaderWorker + 主线程 pump + glTF 纹理 defer | **已确认** | M9.2a |
 | D33 | M9.2b：显式 mesh job + 主线程预算安装 + Sponza 外部路径 | **已确认** | M9.2b |
 | D34 | M9.5：四贴图 Cook-Torrance + 多光源 + 单方向光阴影 | **已确认** | M9.5 |
+| D35 | M11：Agent-Native 运行时架构与“C++ 脊髓反射 + AI 大脑皮层”双层交互模型 | **已确认** | M11 |
 
 ---
 
@@ -797,6 +798,50 @@ CI 首次运行时 `apt-get install libcatch2-dev` 退出码 100，job 失败。
 **什么情况下改回来**：Sponza 纹理必须进入最终 demo → 先做 worker 解码或 1K 缓存；shadow 成为帧时间瓶颈 → 降低 map 尺寸/只给 ToyCar；需要资产自带灯光 → 补 `KHR_lights_punctual`；需要透明玻璃 → 设计排序与 blend。
 
 **复盘**（2026-11-13）：debug-vk 504/504、ASan 504/504、format/deps 通过。ToyCar 3 items / 108,936 triangles / validation 0；Sponza `--skip-textures` 405 items / 3,747,018 triangles / validation 0。ToyCar PBR+3 光源+阴影在 Xephyr 下 p50≈29.2ms/p95≈42.5ms；Sponza 室内相机（no-shadow）p50≈43.6–58ms，开阴影约 69.5–107ms（Xephyr 波动）。截图 `doc/media/m9.5-toycar.png`、`doc/media/m9.5-sponza.png`，数据见 `doc/m9-5-pbr-report.md`。
+
+---
+
+## D35 · M11：Agent-Native 运行时架构与“C++ 脊髓反射 + AI 大脑皮层”双层交互模型
+**状态**：已确认 · **里程碑**：M11
+
+**背景**：M0–M10 已完成，YRuntime 是可 headless 确定性步进、带反射与文本场景、渲染走纯数据快照的运行时，但**没有任何面向外部 AI Agent 的控制面与观测面**。传统 AI 接引擎的方式是截图 + 模拟键鼠：反馈慢、状态不准、失败不可解释，而且无法在帧内安全地改世界。另一方面，做传统 GUI 编辑器工作量大、与“Agent-Native”目标相反，且仍需人来点击；嵌入脚本 VM 则会把复杂度转嫁给解释器、GC、绑定层与调试器。
+
+YRuntime 真正独有的四块基础恰好是这条路的地基：`MainLoop::tick(fixedDelta)` 的确定性、`ClassDB`/`PropertyInfo`/`Variant` 的反射、`.scn` 的可读可写文本场景、`RenderSnapshot` 的纯数据契约。问题因此变成：**如何在不建 GUI 编辑器、不引入重型脚本 VM 的前提下，让外部 AI 实时、安全、可解释地改变运行中的世界。**
+
+**决策**：
+1. **不建 GUI 编辑器**（ImGui 可编辑检视器留 Stretch S8）；M11 主线是 Agent-Native 的控制协议与语义观测体系。
+2. **不引入重型脚本 VM**（Lua/bytecode 留 Stretch S1）。表达能力来自“反射属性 + 正交行为节点 + 连线”，而不是脚本语言。
+3. **三层递进，不可跳跃**：
+   - **B-1 交互基础底座**：完备 `ClassDB` 自描述 Schema + `.scn` 3D 场景闭环 + `MainLoop` 阶段 2（`flush_messages`）帧安全点命令协议 + 基础语义快照查询；
+   - **B-2 正交参数化行为节点 + 双层决策架构**；
+   - **B-3 高级 AI 命令生态**：跨层因果诊断 + 可回滚确定性实验沙盒。
+4. **反射三元组作为唯一操作单位**：`(TargetNode, PropertyName, VariantValue)`。`TargetNode` 用 `ObjectID`（走 generation 校验），`PropertyName` 在 `ClassInfo` 属性表解析，`VariantValue` 由 setter 适配器校验。由此任何注册属性天然可被通用条件判断器（`== / != / > / <`）与通用属性动作器（`Set / Add / Tween`）操作；引擎不必知道具体对象是什么。
+5. **正交三段式原语 + `.scn` `[connection]` 组合，拒绝 $N \times M \times K$ 预制体**：
+   - 触发器/传感器（When）：`TimerNode`、`ProximityTriggerNode`、`PropertyWatcherNode`，只检测并发信号；
+   - 连续运动控制器（Continuous）：`OrbitNode`、`OscillatorNode`、`FollowNode`，每帧 `onUpdate(dt)` 驱动变换，参数全反射；
+   - 通用响应器/动作器（Then）：`PropertyActionNode` / `PropertyTweenNode`（可改写任意目标节点任意属性，含其他行为节点的 `enabled`）、`SpawnerNode` / `DestroyerNode`（复用 `PackedScene::instantiate` 与 `queueFree`）。
+   - 组合自由度来自连线数量而非类数量；连线是可序列化、可 diff、可由 AI 生成的文本。
+6. **双层运行模型**：
+   - **高频层（60FPS，C++ 节点 = 脊髓反射弧）**：连续运动、平滑插值、高频距离/计时检测、确定性反射联动；完全进程内闭合，AI 不在线也照常运行；
+   - **低频/事件决策层（暂停于 `MainLoop` 帧安全点，外部 AI = 大脑皮层）**：关键触发器触发时，把事件 + 当前语义快照推送给外部 Agent，由 AI 推理并下发命令（改结构 / 改参数 / 重连线），在阶段 2 `flush_messages` 统一校验执行。
+   - 让静态编译的 C++ 引擎获得**由外部 AI 实时改变内部运行分支**的能力，同时不引入 VM、不做代码热重载、不让 AI 看到帧内半成品状态。
+   - 决策层**稀疏介入**：只有脊髓层无法处理的新情况才上抬到皮层，绝不每帧调用大模型。
+7. **B-3 的两项能力**：
+   - 跨层因果诊断：Mesh AABB + 世界矩阵 + 相机视锥 + `AssetDatabase` 状态 + `RenderSnapshot` 回答“为什么没显示”，并关联 `FrameStats`/`JobStats`/`AssetStats` 做性能归因，输出结构化原因枚举与证据字段；
+   - 确定性沙盒：基于确定性 tick + 序列化提供 `checkpoint` / `step(N)` / `diff` / `restore`，支持 AI“假设—快进—对比—回滚”的闭环实验。
+8. **命令与结构修改仍收敛到安全点**（承接 D10）：AI 的命令不直接改世界，一律在阶段 2 执行；失败返回结构化原因与修复提示，不 assert、不崩溃。
+
+**备选与否决理由**：
+- *传统 GUI 编辑器*：工作量大、与 Agent-Native 目标相反，且仍以人工点击为中心；否决。
+- *嵌入 Lua / 自研 bytecode VM*：引入解释器、GC、绑定层与调试器，且把复杂度转嫁给运行时；M11 要验证的是反射 + 协议本身，脚本留 S1。
+- *为每种交互写 C++ 预制体（N×M×K）*：组合爆炸，每加一个变体都要改 C++、属性表、序列化与测试，AI 无法在运行时自行组合；否决。
+- *每个 tick 都调用大模型*：延迟高、破坏确定性与离线可运行性；否决。
+- *让 AI 写 C++ 并热重载*：编译延迟 + 崩溃风险，热重载本身是 Stretch S7；否决。
+- *先做 B-3 再做 B-2*：诊断与沙盒没有结构化行为图与可控制接口可依，只能对着不存在的消费者造协议；否决。
+
+**后果**：+ 引擎保持静态编译、无 VM、可离线确定性运行；+ 表达能力以组合方式扩展，而不是类数量线性膨胀；+ AI 介入点稀疏可控、失败可解释；+ 与既有反射/序列化/快照/安全点架构同构，不新增层依赖；− 行为表达能力受限于已注册原语与属性，复杂逻辑仍需新增 C++ 原语；− 需要严格定义 `Variant` 的比较与插值语义，否则通用条件器/动作器会出现类型歧义；− “何时上抬到皮层”需要策略与实测，否则退化为“每帧问 AI”或“从不问 AI”；− 沙盒的序列化成本与浮点确定性边界需要显式声明。
+
+**什么情况下改回来**：若正交原语在实际场景中反复出现“必须写新 C++ 节点才能表达”的模式，说明原语粒度不对，应先补原语类别而不是引入脚本 VM；若 AI 决策延迟导致交互不可用，则把决策层下沉为“C++ 规则 + 离线 AI 批处理”，而非提高调用频率；若沙盒序列化成本过高，则只保留 `checkpoint`/`restore` 子集，砍掉 `diff`。
 
 ---
 
