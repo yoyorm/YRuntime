@@ -60,14 +60,14 @@
 | 游戏循环与时间管理 | M4 | 固定步长 vs 可变步长的取舍？spiral of death 怎么防？插值渲染怎么做？ | 《Game Engine Architecture》(GEA) 第 8 章；Glenn Fiedler "Fix Your Timestep" |
 | 对象模型：GameObject/Component 的三种流派 | M2, M4 | 继承树 / 组件组合 / ECS 各自的适用场景与代价？ | GEA 第 22 章（原文按版本可能不同，找"Gameplay Systems"章）；Scott Bilas "Data-Driven Game Object System" (GDC 2002)；EnTT wiki "ECS back and forth" |
 | 属性系统与反射 | M2 | 反射能换来什么？代价是什么（编译时间、二进制体积、调试难度）？ | Godot `class_db.h`；Unreal UPROPERTY 文档 |
-| 序列化与资产管线 | M8, M9, M11 | 为什么引擎需要"导入/cook"这一步？为什么不能直接读源文件？ | GEA 资产管理章；Godot `resource_loader.cpp`、`file_access_pack.h` |
+| 序列化与资产管线 | M8, M9 | 为什么引擎需要"导入/cook"这一步？为什么不能直接读源文件？ | GEA 资产管理章；Godot `resource_loader.cpp`、`file_access_pack.h` |
 | 资源生命周期与流式加载 | M9 | 引用计数 vs GC vs 显式卸载？异步加载为什么必须回主线程收尾？ | Godot `resource_loader.cpp`（ThreadLoadTask）；UE 的 Async Loading |
 | 事件/消息/信号 | M3 | 立即派发 vs 队列派发的差别？为什么引擎两者都要？ | Godot `message_queue.h`；GEA 事件系统章 |
 | 并发架构（游戏线程/渲染线程/工作线程） | M10, M5, M7 | 引擎为什么普遍是"单线程逻辑 + 并行数据 + 独立渲染"？边界怎么画？ | GEA 并发章；Godot `server_wrap_mt_common.h`；《Multiplayer Game Programming》(选) |
 | 场景图与层级变换 | M4 | 脏标记怎么传播？为什么很多引擎缓存世界矩阵？ | Godot `node.cpp` 的 transform propagation；Yo_Renderer roadmap §1.2 |
 | Server 模式与渲染解耦 | M5, M7 | 为什么 Godot 把渲染/物理/音频都做成 Server + RID？ | Godot `servers/`；Frostbite FrameGraph (GDC 2017)；Unreal RDG 文档 |
-| 构建系统与模块化 | M0, M11 | 为什么大引擎构建系统那么复杂？SCsub/CMake 各解决什么？ | Godot `SConstruct`+`methods.py`；UE 的 UBT 概念文档 |
-| 调试与剖析 | M11 | 没有 profiler 时怎么定位性能问题？ | `perf` 文档；Tracy 文档；GEA 调试章 |
+| 构建系统与模块化 | M0 | 为什么大引擎构建系统那么复杂？SCsub/CMake 各解决什么？ | Godot `SConstruct`+`methods.py`；UE 的 UBT 概念文档 |
+| 调试与剖析 | Stretch | 没有 profiler 时怎么定位性能问题？ | `perf` 文档；Tracy 文档；GEA 调试章 |
 
 **主线教材**：《Game Engine Architecture》Jason Gregory（第 3 版）。
 **读法**：不要顺序通读。按里程碑跳读——M1 读内存/容器章，M2 读对象模型章，M4 读游戏循环章，M9 读资源章，M10 读并发章。
@@ -102,9 +102,9 @@
 |---|---|
 | 《Crafting Interpreters》（免费在线） | S1 脚本 VM |
 | Frostbite "FrameGraph" GDC 2017 | S6 |
-| 《Professional CMake》 | M0/M11 构建系统深入 |
+| 《Professional CMake》 | M0 / S14 构建系统深入 |
 | 《Game Programming Patterns》(Robert Nystrom，免费在线) | 模式速查（Component/Event Queue/Object Pool/Service Locator 与本项目直接相关） |
-| Tracy Profiler 文档 | M11 |
+| Tracy Profiler 文档 | S10 |
 | 《Computer Systems: A Programmer's Perspective》 | 你已在读（CS-APP 目录）；cache/链接/虚拟内存章节与 M1/M10 直接相关 |
 
 ---
@@ -132,7 +132,7 @@
 | E13 | memory_order relaxed vs acquire/release vs seq_cst | M10 | x86 上差别有多大？为什么 ARM 上不一样（查资料回答）？ |
 | E14 | 快照抽取（RenderExtract）耗时 vs 场景规模 | M5 | 1k/10k 节点下 extract 占一帧多少比例？ |
 | E15 | 视锥剔除串行 vs 并行（job） | M7 | 收益与开销平衡点 |
-| E16 | `.yrpak` vs 散文件加载 | M11 | 冷启动时间对比（打包的真实收益） |
+| E16 | `.yrpak` vs 散文件加载 | S14 | 冷启动时间对比（打包的真实收益） |
 
 > **规则**：每个实验必须有**方法描述**（硬件、编译选项、迭代次数、是否预热、如何防止被优化掉），
 > 否则数据无意义。用 `perf stat` / `hyperfine` / Catch2 `BENCHMARK` 都可以，但要在报告里写清用了什么。
@@ -219,4 +219,4 @@
 | M8 | 递归下降解析基本写法；结构体对齐与填充；版本兼容策略 |
 | M9 | 回调 vs future；引用计数语义；IO 抽象与依赖注入 |
 | M10 | **《C++ Concurrency in Action》第 5 章（内存模型）+ 第 9/10 章**；条件变量 predicate |
-| M11 | 打包格式基本概念（读 Godot `file_access_pack.h`） |
+| S14 | 打包格式基本概念（读 Godot `file_access_pack.h`） |

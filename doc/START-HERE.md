@@ -20,31 +20,32 @@
 | **M8 序列化** | ✅ 已完成 / 收口（2026-10-31）—— M8a 文本；M8b 引用/连接；M8c headless `--scene` 加载与 1000 节点 benchmark；364 tests |
 | **M9 资源系统** | ✅ 已完成（M9.2b streaming + M9.5 PBR/多光源/阴影 + M9.5d-0 异步纹理解码基准） |
 | **M10 任务系统** | ✅ 已完成（线程池、TaskHandle、主线程帮忙、依赖图、`parallel_for`、JobStats、资产 worker 化） |
-| **M11 AI 友好（Agent-Native）运行时架构** | 🔨 **当前主线**：先完成全库架构走查，再按 B-1 交互底座 → B-2 正交行为节点与双层决策 → B-3 因果诊断与确定性沙盒 递进（D35） |
+| **M11 AI 搭建并验证一个可玩场景** | 🔨 **当前主线**：先完成全库架构走查，再打通「AI 写 `pacman.scn` → headless 自测 → 打开即玩」的最小闭环 |
 
-**远期方向一句话**（现在不要跳过去）：M0–M10 基础架构已完成 ✅ → **当前阶段 A：全库代码走查与架构梳理** → **阶段 B：M11 AI 友好（Agent-Native）运行时架构（总纲见 `doc/tasks/m11-agent-native-runtime.md`）**。
+**远期方向一句话**（现在不要跳过去）：M0–M10 基础架构已完成 ✅ → **当前阶段 A：全库代码走查与架构梳理** → **阶段 B：M11 最小可玩场景闭环（总纲见 `doc/tasks/m11-agent-native-runtime.md`）**。
 
 进度**只在两处维护**：根 `README.md` 的里程碑表（对外）+ `02-roadmap.md` 的 checkbox（对内）。
 别的地方不要重复记录，否则一定会漂移。
 
 ---
 
-## 2. 下一步：全库架构走查 → M11 AI 友好（Agent-Native）运行时架构
+## 2. 下一步：全库架构走查 → AI 搭建并验证一个可玩场景
 
-**背景与战略重定位（2026-11-20）**：
+**背景与战略重定位（2026-11-20 / 11-21 收敛）**：
 - M0–M10 基础模块及资产 worker 异步解码均已完成（568/568 tests）；
 - 砍掉原 M11 中偏外围包装与低学习价值的工程项（cook 管线、perf/Tracy/绘图脚本、`.gdbinit` 手册、clang-tidy、覆盖率、ImGui 编辑器等）；
-- **确立核心深度方向**：YRuntime 不做面向人工点击的 GUI 编辑器，而是发挥 Headless-first、`ClassDB` 反射、`.scn` 文本场景、`MainLoop` 显式安全点与 `RenderSnapshot` 纯数据契约的优势，演进为 **AI 友好（Agent-Native）的游戏运行时架构**。
+- **确立核心深度方向**：YRuntime 不做面向人工点击的 GUI 编辑器，而是发挥 Headless-first、`ClassDB` 反射、`.scn` 文本场景与 `RenderSnapshot` 纯数据契约的优势，让 **AI 自己搭出一个可玩场景并自测**；
+- **终点收敛**：不再按「读写底座 → 行为节点 → 因果诊断」横向铺层，只做一条能演示的竖线——**AI 写 `pacman.scn` → headless 确定性自测 → `yr_render_demo --scene` 打开即玩**。
 
 **两阶段推进计划**：
 1. **阶段 A（当前进行中）：全库架构走查与断层梳理**
    - 用户逐层走查代码（已完成 `engine` / `scene`，继续走查 `object` / `serialize` / `asset` / `render_iface`），彻底掌握现有设计并清理历史断层；
-2. **阶段 B（后续深度专题）：M11 AI 友好运行时，三层递进（D35）**
-   - **B-1 交互基础底座**：完备 `ClassDB` 自描述 Schema + `.scn` 3D 场景闭环 + 帧安全点命令协议（激活 `MainLoop` 阶段 2 `flush_messages`）+ 基础语义快照查询；
-   - **B-2 正交参数化行为节点 + 双层决策**：用反射三元组把代码逻辑降维成反射数据；When / Continuous / Then 三类正交原语靠 `.scn` `[connection]` 组合；**60FPS C++ 脊髓反射弧 + 帧安全点 AI 大脑皮层**双层运行；
-   - **B-3 高级 AI 命令生态**：跨层因果诊断（为什么没显示 / 为什么慢）+ 可回滚确定性沙盒（`checkpoint` / `step(N)` / `diff` / `restore`）。
-
-   明确不做：GUI 编辑器、重型脚本 VM、每帧调用大模型。
+2. **阶段 B（后续）：最小场景闭环，四块积木按依赖排序**
+   - **`.scn` 运行时闭环**：节点注册进 `ClassDB`、`[sub_resource]` 实例化、`[connection]` 接线、内置 `cube.glb`；
+   - **输入即状态**：GLFW 与 headless 注入写同一属性；
+   - **网格化移动与阻挡**：查下一格，不做 AABB 穿透解算；
+   - **触发 → 计分 → `queueFree`**：复用 `[connection]` 与延迟删除；
+   - **明确不做**：GUI 编辑器、脚本 VM、每帧调用大模型、实时回放/沙盒/因果诊断。
 
 **当前协作模式（见 `AGENTS.md` §3）**：
 1. **AI 只指明大致推进方向与问题边界**（不预设头文件模板、结构体字段或协议格式）；

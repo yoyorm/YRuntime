@@ -143,12 +143,12 @@ git log -p -S "flush_transform_notifications" -- scene/main/scene_tree.cpp | hea
 | Vulkan 驱动组织 | `drivers/vulkan/`（`rendering_device_driver_vulkan.*`、`vulkan_context.*`） | ★★ | RenderingDevice（RHI 层）与 RenderingServer（高层）如何分层？对照我 Yo_Renderer 的 `rhi/`+`render/` 分层 |
 | 快照式渲染数据 | `servers/rendering/rendering_server_globals.h`、`scene/3d/visual_instance_3d.h` | ★★ | Godot 的场景→渲染数据同步是"推"还是"拉"？与我的 RenderSnapshot 方案对比 |
 
-### M11 · 构建系统、模块、打包、测试、剖析
+### 工具链与打包（Stretch 参考）
 | 主题 | 文件 | 程度 | 要回答的问题 |
 |---|---|---|---|
 | 构建系统 | `SConstruct`、`methods.py`、`core/SCsub`、`scene/SCsub`、`platform/linuxbsd/SCsub` | ★★ | SCons 的"每目录一个 SCsub"模型 vs 我的"每层一个 CMakeLists"？代码生成（`*.gen.cpp`）在构建里怎么插入？ |
 | 模块机制 | `modules/`（挑一个小模块如 `modules/hdr/`、`modules/bmp/` 看 `SCsub` + `register_types.cpp`）、根 `modules/register_module_types.h` | ★★ | 一个模块需要提供哪些钩子才能被引擎"发现"？对照我的分层 target 设计 |
-| 打包格式 | `core/io/file_access_pack.h` + `.cpp`、`file_access_patched.h` | ★★★ | PCK 的头部/文件表/对齐/版本怎么设计？patch 包如何叠加？（`yr_pack` 直接对照这个做） |
+| 打包格式 | `core/io/file_access_pack.h` + `.cpp`、`file_access_patched.h` | ★★★ | PCK 的头部/文件表/对齐/版本怎么设计？patch 包如何叠加？（S14 的 `yr_pack` 对照这个） |
 | 配置系统 | `core/config/project_settings.h` + `.cpp`、`core/io/config_file.h` | ★★ | 项目设置的默认值/覆盖/命令行优先级如何组织？对照我的 `EngineConfig` |
 | 测试框架 | `tests/test_main.cpp`、`tests/test_macros.h`、`tests/create_test.py`、`tests/core/io/test_logger.cpp` | ★★ | Godot 用 doctest 的组织方式？测试如何避免依赖真实文件系统？值得抄的 fixture 设计？ |
 | 剖析 | `core/debugger/engine_profiler.h`、`core/profiling/`（`ls core/profiling`）、`core/debugger/` | ★★ | 内建 profiler 的采样点如何埋？数据如何送到编辑器？（S10 stretch 参考） |
@@ -186,7 +186,7 @@ git log -p -S "<某段代码>" -- <文件> | head -100            # 找引入这
 | RenderingDevice / Vulkan 驱动重构 | RHI 层抽象如何在真实项目中演化（对你 M6/M7 直接有用） |
 | `WorkerThreadPool` 的引入与调整 | 引擎级线程池的设计权衡 |
 | Typed Dictionary / Variant 类型系统演进 | 动态类型系统的工程代价（你本机 `GodotDev/typed_dict_review.markdown` 已经在跟这条线） |
-| 构建系统（SCons → 是否换 CMake 的长期讨论） | 大型 C++ 项目构建系统的真实痛点，对你 M0/M11 有用 |
+| 构建系统（SCons → 是否换 CMake 的长期讨论） | 大型 C++ 项目构建系统的真实痛点，对你 M0 / S14 有用 |
 
 **怎么用**：当你对某个设计产生"我觉得这样不好"的判断时，先搜有没有人提过同样的问题。
 思考路径是 ① 我原本的判断 → ② 社区的实际讨论与结论 → ③ 我的判断要不要修正 → ④ 对 YRuntime 的影响。

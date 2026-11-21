@@ -78,9 +78,9 @@
 | M8 | 手写 `.scn` + save→load→save round-trip + 引用/连接 + headless 加载（M8 完成） | 截图 + 格式规范（写进 `engine/scene/include/yr/scene/scene_format.h` 头注释） | `doc/media/` |
 | M9 | 慢 IO 下异步加载不卡帧（E10）+ AssetHandle→GPU 桥接 | 帧时间曲线图（Python 画） | `benchmarks/README.md` |
 | M9.0c | ToyCar walking skeleton：完整 TRS + MeshInstanceNode + snapshot 上传/释放 + baseColor Blinn-Phong | PNG | doc/media/m9c-toycar.png |
-| M9.5 | PBR 主体：四贴图 Cook-Torrance + LightNode 多光源 + 单方向光 shadow + alpha mask；Sponza 几何室内压力场景；4K 纹理 worker 解码待 M9.5d-0 | PNG + 数据报告 | `doc/media/m9.5-toycar.png`、`doc/media/m9.5-sponza.png`、`doc/m9-5-pbr-report.md` |
+| M9.5 | PBR 主体：四贴图 Cook-Torrance + LightNode 多光源 + 单方向光 shadow + alpha mask；Sponza 几何室内压力场景；4K 纹理 worker 异步解码（M9.5d-0） | PNG + 数据报告 | `doc/media/m9.5-toycar.png`、`doc/media/m9.5-sponza.png`、`doc/m9-5-pbr-report.md` |
 | M10 | 并行加速比曲线 + false sharing 实测（E11/E12） | 数据表 + 图 | `benchmarks/README.md` |
-| M11 | `.yrpak` 打包 + 完整文档（覆盖率徽章可选） | README + CI | 根目录 |
+| M11 | AI 搭建的 `pacman.scn`：同一份文件 headless 自测通过、Vulkan 打开可玩 | 终端输出 + GIF + 架构图 | `doc/media/` |
 
 > **M7 收口（2026-10-24）**：600s soak / 34113 帧 / validation 0；extract p50 1.5us；present p50 17.2ms（FIFO 下含 fence/present 等待）；dump/replay 506B / AE=0；resize 960×540 ↔ 1280×720 通过。双/三缓冲按 D22 推迟，等真实异步消费者。
 
@@ -213,7 +213,7 @@
   **不要复制 Godot 代码**（哪怕它是 MIT，也要注明出处；最好只借鉴思路，自己写）。
 - [ ] 资源素材：M6/M7 的模型/贴图沿用 Yo_Renderer 的（已确认授权）并注明来源；其余示例资源自己写或用 CC0 素材。
 - [ ] 仓库整洁：无 build 产物、无大二进制、无 `.vscode` 个人配置（或只留 `settings.json`/`launch.json` 模板）、无空目录。
-- [ ] README 有"如何在 15 分钟内跑起来"，并**找一个真实的人实测一次**（`02-roadmap.md` M11 验收项）。
+- [ ] README 有"如何在 15 分钟内跑起来"，并**找一个真实的人实测一次**（收口项，不属于任何里程碑）。
 
 ---
 
@@ -226,7 +226,7 @@
 | 每 2~3 个 M | 想写博客就写（§4）；**写不出来说明还没懂，不是欠债** |
 | M5 完成 | 渲染契约 dump/replay 可用 → 博客素材；更新简历条目初稿 |
 | M7 完成 | **首个主要视觉作品节点**：画面由 Runtime 驱动 → 架构图定稿、README 重写 |
-| M11 完成 | 打磨：文档一致性、README 实测、简历终稿、§5 题库能自问自答 |
+| M11 完成 | 场景闭环验收：AI 自测通过 + Vulkan 可玩；文档一致性、简历终稿 |
 
 **关于公开**：仓库从第一天就 public，这样 commit 历史是自然形成的资产，不需要额外"留证"。
 但注意——**公开是顺带的，不是目的**。不要为了"看起来像 8 个月的工作量"去凑 commit 数量；

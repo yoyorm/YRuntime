@@ -24,7 +24,7 @@
 | M9 | 资源系统 | 2~3 | `yr_asset` | 异步加载不卡帧 + AssetHandle→GPU 资源桥接 | ★★★★ |
 | M9.5 | 基础 PBR 内容 | 2~3 | `yr_render_vulkan`（扩展） | ToyCar PBR + 平行光/点光 + 单张阴影 | ★★★★★ |
 | M10 | 任务系统 | 3~4 | `yr_job` | 并行 vs 串行 benchmark + TSan 干净报告 | ★★★★ |
-| M11 | 工具链与打磨 | 2~4 | `tools/yr_pack` | `.yrpak` 打包 + 覆盖率 | ★★★ |
+| M11 | AI 搭建可玩场景 | 3~5 | 复用既有 app | AI 写 `pacman.scn` → headless 自测 → `yr_render_demo --scene` 打开即玩 | ★★★★★ |
 
 **总计 ≈ 28~41 周**（约 7~10 个月）。假期按 3 倍速折算；M9.5 为 2026-10-23 新增（D21）。
 
@@ -345,7 +345,7 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 - 未接线阶段 1/2/4/5/10/11/12 仍是空钩子（`poll_input` / `flush_messages` / `pump_assets` / `pre_physics` / `extract_render` / `present` / `collect_garbage`）。
 - `MessageQueue` 推迟（依赖方法绑定 + 阶段 2 安全点）；`onPhysicsUpdate` 未加（无消费者）；`Object::notification` 编号体系未引入。
 - `NodePath`、名字唯一性、`get_node(path)`、独立 headless 平台层未做。
-- Transform 仅平移；CSV 仅 total + physics 步数（完整每阶段列与绘图归 M11）。
+- Transform 仅平移；CSV 仅 total + physics 步数（完整每阶段列与绘图归 Stretch（S10））。
 
 **下一步（历史）**：M5 / M6 已完成，当前进度见 `START-HERE.md`。
 
@@ -558,7 +558,7 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 **产出物**：`AssetStats` 输出（驻留数/命中率/加载字节）。
 **学习点**：异步状态机、future/promise vs 回调、引用计数与 GC 的边界、内容寻址、IO 抽象与依赖注入（测试友好设计）。
 **常见坑**：① 在工作线程构造 Object → 违反 §6 铁律（M10 要特别小心）；② GC 时机与 `Ref` 临时对象（一个表达式里的临时 `Ref` 会让 refcount 短暂 >1，导致该帧不卸载 —— 这是正常行为，别"修"它）；③ 加载失败后 in-flight 条目没清理 → 永久卡住；④ 场景递归加载的深度与栈溢出。
-**Godot 对照**：`core/io/resource.h`、`core/io/resource_loader.h/.cpp`（**精读 `ThreadLoadTask` 结构与 `load_threaded_request`/`load_threaded_get_status`，这是 M9+M10 的最佳参考**）、`core/io/resource_uid.h/.cpp`、`core/io/file_access.h` + `file_access_memory.h`（内存 FS）、`file_access_pack.h`（PCK，M11 用）、`tests/core/io/test_resource.cpp` + `test_resource_uid.cpp`。
+**Godot 对照**：`core/io/resource.h`、`core/io/resource_loader.h/.cpp`（**精读 `ThreadLoadTask` 结构与 `load_threaded_request`/`load_threaded_get_status`，这是 M9+M10 的最佳参考**）、`core/io/resource_uid.h/.cpp`、`core/io/file_access.h` + `file_access_memory.h`（内存 FS）、`file_access_pack.h`（PCK，S14 用）、`tests/core/io/test_resource.cpp` + `test_resource_uid.cpp`。
 **降级方案**：不做 UID（只用 path）；GC 只做手动 `evict`；异步只做"入队 + pump 执行"不做真线程。
 
 ---
@@ -599,7 +599,7 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 > ② **M10 已全部收口（2026-11-19）**：M10-a 线程池 / TaskHandle / 主线程帮忙、M10-b 依赖图 + `parallel_for`、JobStats、TSan 正式 preset、`bench_jobs`（E11）、确定性回归全部完成。内存序权威整理在 `doc/layers/job.md` §8（用户 review 决定不回填头文件）；`on_main_thread` 审计推迟到 asset worker 迁移。
 > ③ M10-c work stealing **明确不做**，移入 Stretch（S13）；Transform 层级并行刷新**推迟**——当前没有真实消费者（D26 原则）。
 > ④ M10 收口后，M9.5d-0（Sponza 4K 纹理）与"AssetDatabase IO/解码搬 worker"**合并执行**，作为任务系统的第一批真实消费者，验证 §6 铁律。
-> ⑤ 其后 M11 只做包装收口子集（README 实测 / 架构图 / 展示数据），`yr_pack` 为机动项；其余 Stretch 项冻结，不提升。
+> ⑤ 其后进入 M11：不再做打包/工具链收口，只收敛出「AI 写 `pacman.scn` → headless 自测 → 打开即玩」的最小闭环；`yr_pack` 与其余 Stretch 项冻结，不提升。
 
 - [x] **M10-a 线程池**：`yr/job/job_system.h`：N 个 worker + `MtQueue`（吸收 yo_lib `yo_mtqueue.h` 并重构：加 `try_pop`、`stop()` 幂等、避免 busy wait）+ `submit` + `wait_all` + 优雅停机（2026-11-16 完成）
 - [x] `TaskHandle`：`ready()` / `wait()`（2026-11-16 完成）
@@ -631,38 +631,28 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 
 ---
 
-## M11 · AI 友好（Agent-Native）运行时架构与核心闭环
+## M11 · AI 搭建并验证一个可玩场景
 
-> **2026-11-20 战略重定位**：
-> 1. 砍掉原 M11 中偏外围包装的工程化项（cook 导入管线、perf/Tracy/绘图脚本、`.gdbinit` 调试手册、clang-tidy、覆盖率、ImGui 检视器、热重载等），`.yrpak` 移入 Stretch（S14）；
-> 2. **确立核心演进方向**：YRuntime 不做面向人工点击的传统 GUI 编辑器，而是发挥 Headless-first、`ClassDB` 反射、`.scn` 文本场景、`MainLoop` 显式安全点与 `RenderSnapshot` 纯数据契约的优势，构建一套**对 AI Agent / 自动化工具原生友好的运行时控制与语义观测架构**。
+> **2026-11-20 战略重定位**：砍掉原 M11 中偏外围包装的工程化项（cook 导入管线、perf/Tracy/绘图脚本、`.gdbinit` 调试手册、clang-tidy、覆盖率、ImGui 检视器、热重载等），`.yrpak` 移入 Stretch（S14）；确立核心方向为 **Agent-Native 运行时**。
 >
-> **2026-11-21（D35）分层决策**：M11 拆为三层递进，不可跳跃——**B-1 交互基础底座**（能读能写）→ **B-2 正交参数化行为节点 + “C++ 脊髓反射 / AI 大脑皮层”双层决策**（能编排、能分层决策）→ **B-3 因果诊断与确定性沙盒**（能解释、能实验）。明确不建 GUI 编辑器、不引入重型脚本 VM。总纲见 `doc/tasks/m11-agent-native-runtime.md`。
+> **2026-11-21 收敛**：不做「读写底座 → 行为节点 → 因果诊断」的横向铺层，只做一条能演示的竖线。终点：**AI 只读文本写出 `pacman.scn` → headless 确定性自测 → `yr_render_demo --scene` 打开即玩**。详见 `doc/tasks/m11-agent-native-runtime.md` 与 `06-decisions.md` D35。
 
-**前置阶段（进行中）**：
-- [ ] **全库架构走查与断层梳理**：逐层复盘 M0–M10 现有代码（`engine` / `scene` → `object` & `serialize` → `asset` → `render_iface` & `vulkan`），清理历史妥协，理清各层衔接点。
+**前置（进行中）**：
+- [ ] 全库架构走查：逐层复盘 M0–M10（`engine` / `scene` → `object` & `serialize` → `asset` → `render_iface` & `vulkan`），理清各层衔接点。
 
-**阶段 B-1 · AI 交互基础底座（走查后由用户主导架构设计）**：
-- [ ] **支柱 1 · 反射自描述 Schema 与 `.scn` 场景闭环**：打通 M2（`ClassDB`/`PropertyInfo`）、M8（`.scn`）与 M9（`MeshInstanceNode`/`LightNode`/`CameraNode`/资源引用）的断层，使运行时可导出完备的类/属性 Schema，且 `.scn` 能直接表达完整 3D 渲染场景。
-- [ ] **支柱 2 · 帧安全点的命令/事务协议**：激活 `MainLoop` 阶段 2（`flush_messages`），支持外部 Agent/控制器提交结构化操作命令（创建/删除节点、读写属性、加载资源、可控步进 N 帧），在帧安全点统一校验（基于 `ObjectID` + `ClassDB`）与执行，并返回结构化诊断结果。
-- [ ] **支柱 3 · 基础语义快照查询**：导出 `SceneTree` 层级与世界变换 + `AssetDatabase` 加载/驻留状态 + `RenderSnapshot` 语义摘要，让外部无需截图即可知道“世界现在有什么”；深度归因留给 B-3。
-
-**阶段 B-2 · 正交参数化行为节点 + 双层决策架构**：
-- [ ] **反射三元组 `(TargetNode, PropertyName, VariantValue)`**：让任意注册属性天然可被通用条件判断器（`== / != / > / <`）与通用属性动作器（`Set / Add / Tween`）操作，行为编排不再依赖硬编码 C++ 回调。
-- [ ] **正交原语 · When**：`TimerNode` / `ProximityTriggerNode` / `PropertyWatcherNode`，只检测并发信号。
-- [ ] **正交原语 · Continuous**：`OrbitNode` / `OscillatorNode` / `FollowNode`，每帧 `onUpdate(dt)`，参数全反射。
-- [ ] **正交原语 · Then**：`PropertyActionNode` / `PropertyTweenNode`（含改写其他行为节点的 `enabled`）、`SpawnerNode` / `DestroyerNode`；组合走 `.scn` `[connection]` + `EventBus`，拒绝 N×M×K 预制体。
-- [ ] **双层运行模型**：高频层 = 60FPS C++ 脊髓反射弧（离线也可确定性运行）；低频层 = 帧安全点把事件 + 语义快照推给外部 AI 大脑皮层，AI 命令回落到阶段 2 校验执行。
-
-**阶段 B-3 · 高级 AI 命令生态**：
-- [ ] **跨层因果诊断**：Mesh AABB + 世界矩阵 + 相机视锥 + `AssetDatabase` 状态 + `RenderSnapshot` 解释“为什么没显示”，并关联 `FrameStats`/`JobStats`/`AssetStats` 做性能归因，输出结构化原因与证据。
-- [ ] **可回滚确定性实验沙盒**：基于确定性 tick + 序列化提供 `checkpoint` / `step(N)` / `diff` / `restore`，支撑 AI“假设—快进—对比—回滚”的闭环实验。
+**四块积木（顺序即依赖）**：
+- [ ] **`.scn` 运行时闭环**：`MeshInstanceNode` / `LightNode` / `CameraNode` 注册进 `ClassDB`；`[sub_resource]` 实例化；`[connection]` 接线（当前只有解析与序列化）；内置 `cube.glb`。
+- [ ] **输入即状态**：GLFW 与 headless 注入写同一属性，禁止两条输入路径。
+- [ ] **网格化移动与阻挡**：移动吸附整数格，撞墙 = 查下一格；不做 AABB 穿透解算。
+- [ ] **触发 → 计分 → `queueFree`**：`[connection]` 把重叠信号接到属性动作与延迟删除；豆子下一帧从画面消失。
 
 **验收标准**
-- 外部控制器/Agent 可在无 GUI 条件下：查询引擎 Schema → 通过命令协议或 `.scn` 构建/修改含网格与灯光的 3D 场景 → 确定性步进 N 帧 → 读取语义级快照验证场景与渲染状态（并可按需输出渲染画面）；
-- B-2：仅靠 `.scn` 连线即可组合出“定时开灯 + 靠近触发 + 绕轨运动 + 属性渐变”，AI 可在同一次运行中改连线或改参数而无需重启/重编译；
-- B-3：能对“看不见的物体”给出有序原因链，并在同一 checkpoint 上快进对比后回滚；
-- CI 现有门禁（build + ctest + format + `check_deps.py`）全绿。
+- 一份 `pacman.scn`：headless 30 帧后 `score=1, pellets=4`，重复运行结果一致；
+- 同一份文件用 `yr_render_demo --scene` 打开可玩；
+- AI 在不看截图、不点按钮的前提下完成上述闭环；
+- CI 门禁（build + ctest + format + `check_deps.py`）全绿。
+
+**明确不做**：实时回放、帧间 diff、`checkpoint`/`restore` 沙盒、运行时挂起等待 AI、物理引擎、跨层性能归因、GUI 编辑器、脚本 VM。
 
 ---
 
@@ -676,14 +666,14 @@ M1 的核心学习目标已经完成大半。剩余 `ObjectID` 只做值类型�
 | S4 | `IPhysicsBackend` + 玩具 AABB/扫掠实现 + 固定步长插值 | M4 | ★★★ | 理解"物理作为 Server" |
 | S5 | 独立渲染线程 + command queue | M7 | ★★★★ | 对照 `server_wrap_mt_common.h` |
 | S6 | 迷你 Frame Graph（pass 声明读写 → 自动 barrier） | M7 | ★★★★★ | Yo_Renderer roadmap §1.3 的延续 |
-| S7 | 热重载（场景/资源/代码） | M11 | ★★★ | 演示效果极佳 |
-| S8 | ImGui 编辑器（Hierarchy/Inspector 可编辑 + undo/redo） | M11 | ★★★ | 对照 `core/object/undo_redo.h` |
+| S7 | 热重载（场景/资源/代码） | M8 | ★★★ | 演示效果极佳 |
+| S8 | ImGui 编辑器（Hierarchy/Inspector 可编辑 + undo/redo） | M7 | ★★★ | 对照 `core/object/undo_redo.h` |
 | S9 | 内存：自定义 allocator / pool / 分配统计 | M1 | ★★★ | 对照 `core/os/memory.h` |
 | S10 | Profiler：内建采样 profiler + 火焰图导出 | M4 | ★★★★ | 对照 `core/debugger/engine_profiler.h` |
 | S11 | 网络：确定性锁步或状态同步（用 headless simulation 做 demo） | M4 | ★★★ | 会倒逼"确定性"设计 |
 | S12 | Windows 移植 | M7 | ★★ | 工程体检 |
 | S13 | work stealing（原 M10-c）：每线程本地双端队列 + 随机偷取，此时才深入 memory order | M10-b | ★★★★★ | 2026-11-16 从 M10 移出；等依赖图稳定且 benchmark 暴露真实粒度/争用问题再做 |
-| S14 | `.yrpak` 资源打包工具 + `PakFileAccess`（原 M11-1） | M9 | ★★★ | 2026-11-20 移入 Stretch，优先聚焦 Agent-Native 运行时主线 |
+| S14 | `.yrpak` 资源打包工具 + `PakFileAccess`（原 M11 打包项） | M9 | ★★★ | 2026-11-20 移入 Stretch，优先聚焦 Agent-Native 运行时主线 |
 
 ---
 

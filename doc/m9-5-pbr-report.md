@@ -212,7 +212,7 @@ items=405 / triangles=3,747,018 / validation 0
 1. M9.5d-0：worker 纹理解码 + 下采样 + 背压（或 1K Sponza 缓存）；
 2. Sponza 室内点光调参，决定 shadow 是否默认开；
 3. 之后进入 M10 任务系统，替换 LoaderWorker/解码为 JobSystem；
-4. 补 mipmap/light culling（可放到 M11 或 Stretch）。
+4. 补 mipmap/light culling（可放到 Stretch）。
 
 ---
 

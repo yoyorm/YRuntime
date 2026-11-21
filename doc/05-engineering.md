@@ -28,13 +28,13 @@
 | glslc | ✅ | 2023.8 | Vulkan shader 编译（M6-4b 起，CMake 构建期调用） |
 | Vulkan SDK | ✅ | `/home/yoyorm/SDK/Vulkan/1.4.357.1/x86_64`；另有 GLFW3（`/usr/include/GLFW`）与系统 `libvulkan.so.1.4.313` | **无需 shell 环境变量**（2026-10-20 复查）。apt 装 `vulkan-validationlayers` + `glslc` 后**无需 `VK_ADD_LAYER_PATH`**（层进系统搜索路径）；CMake **自动探测** `~/SDK/Vulkan/*/x86_64`（**无需 `VULKAN_SDK` 环境变量**，取版本最大者，`engine/render/vulkan/CMakeLists.txt` 另有一次 loader hint 回退，仍找不到才 `FATAL_ERROR`）；**运行期无需 `LD_LIBRARY_PATH`**（CMake 已把指向 SDK loader 的 RUNPATH 写进 `yr_render_demo`）。本机布局非标准：loader 在 `x86_64/lib/VulkanLoader/lib`（**不在** `$VULKAN_SDK/lib`）。`libvulkan-dev` **装不了**：它依赖 `libvulkan1=1.3.275`，与本机 LunarG 1.4.313 冲突，强装会卸掉 8 个 i386 图形包 |
 | Python | ✅ | 3.12.3 | `tools/check_deps.py` 等脚本用 |
-| **clang-tidy** | ❌ 未装 | — | **可选**：`sudo apt install clang-tidy`。被推了三次（M0→M1→M11），说明学习价值低 → 不痛就不装（R6） |
+| **clang-tidy** | ❌ 未装 | — | **可选**：`sudo apt install clang-tidy`。被推了三次，说明学习价值低 → 不痛就不装（R6） |
 | **valgrind** | ❌ 未装 | — | `sudo apt install valgrind` —— 可选，ASan 已覆盖大部分场景；M9/M10 查内存时序问题时可能想要 |
 | **ccache** | ❌ 未装 | — | `sudo apt install ccache` —— 安排在 **Day 5**（做 CI 缓存时才知道它省了多少）。CMake 侧用 `find_program` 探测，装了就用、没装不报错 |
 | clangd | ✅ **已接入** | apt 安装 | 根目录 `compile_commands.json` 用 `tools/link_compile_commands.sh debug-vk` 指向**开了 Vulkan 后端**的 DB（`build/debug-vk/`，含全部 target + vulkan TU 的 `-isystem`；`debug`/`release`/`asan` 的 DB 里 0 条 vulkan 条目）；`.vscode/settings.json` 里已禁用 C/C++ 扩展的 IntelliSense 避免冲突 |
-| doxygen / graphviz | ❌ 未装 | — | 可选（M11 生成调用图/依赖图） |
-| Tracy | ❌ 未装 | — | M11 可选，用 git submodule |
-| gcovr / lcov | ❓ 待查 | — | **可选**，M11 想看覆盖率时再装：`sudo apt install python3-pip gcovr`。只统计，不做门禁 |
+| doxygen / graphviz | ❌ 未装 | — | 可选（Stretch 生成调用图/依赖图） |
+| Tracy | ❌ 未装 | — | S10 可选，用 git submodule |
+| gcovr / lcov | ❓ 待查 | — | **可选**，想看覆盖率时再装：`sudo apt install python3-pip gcovr`。只统计，不做门禁 |
 
 **硬件**：12 线程 CPU / 31GB RAM / 磁盘剩余 240GB；GPU = **NVIDIA RTX 5060**（驱动报 Vulkan 1.4.351，`/usr/share/vulkan/icd.d/nvidia_icd.json`）+ **llvmpipe**（`lvp_icd.json`）兜底。
 → 对 M10 的意义：`JobSystem` 默认 `worker_count = 11`，benchmark 时记录这个值；
@@ -90,7 +90,7 @@
 ### 2.3 编译选项基线
 ```
 -Wall -Wextra -Wpedantic -Wshadow -Wnon-virtual-dtor -Wold-style-cast
--Wcast-align -Wunused -Woverloaded-virtual -Wconversion=off（先关，M11 再考虑开）
+-Wcast-align -Wunused -Woverloaded-virtual -Wconversion=off（先关，不痛不开）
 -fvisibility=hidden（为将来 shared lib 留路，对照 yo_lib 的 yo_export.h）
 ```
 `-Werror` **只在 CI preset**：本地开 `-Werror` 会让人在无关警告上卡住，反而降低开发速度。
@@ -264,7 +264,7 @@ handler 目前非线程安全，约定在启动线程前设置（M10 修）。
 | cache / 分支统计 | `perf stat` | `perf stat -e cache-misses,cache-references,instructions,branches ./...` |
 | 帧内阶段耗时 | 内建 `FrameStats` | `--stats-csv out.csv` + Python 绘图（M4 起） |
 | 微基准 | Catch2 `BENCHMARK` 或独立 `benchmarks/` | 结果写进 `benchmarks/README.md` |
-| 连续剖析（可选） | Tracy（M11） | submodule + `YR_PROFILE_SCOPE("...")` 宏（关闭时零开销） |
+| 连续剖析（可选） | Tracy（S10） | submodule + `YR_PROFILE_SCOPE("...")` 宏（关闭时零开销） |
 
 **benchmark 纪律**（否则数据无意义）：
 ① release 构建；② 预热 ≥3 次；③ 至少 5 次取中位数并记录方差；④ 用 `benchmark::DoNotOptimize` 或输出结果防止被优化掉；
@@ -345,7 +345,7 @@ handler 目前非线程安全，约定在启动线程前设置（M10 修）。
 | `tsan` | 单独 job（M10 起启用） | push + PR |
 | `format` | `./tools/check_format.sh`（自有代码，排除 `third_party/`） | push + PR |
 | `lint` | `tools/check_deps.py`（反向依赖 + 禁用符号）；clang-tidy 可选 | push + PR |
-| `coverage` | gcovr → 上传 + 徽章（M11，**可选**：只统计、不做门禁） | push to master |
+| `coverage` | gcovr → 上传 + 徽章（**可选**：只统计、不做门禁） | push to master |
 | `sandbox` | 构建 `apps/runtime_headless` + 跑 headless 10000 帧 simulation + `NullBackend` 快照 dump/replay（M5 起；Vulkan 路径不在无 GPU runner 跑） | push + PR |
 
 要求：**CI 必须能在无 GPU、无窗口、无网络的 runner 上全绿**（这就是 headless-first 的红利）。
@@ -384,7 +384,7 @@ CI 门禁用 `./tools/check_format.sh`（Day 5 的 `format` job）：只检查�
 ## 13. 资源与 assets 目录规范
 
 ```
-assets_src/        # 源资源（可编辑格式：.png/.gltf/.md 等）——M11 引入
+assets_src/        # 源资源（可编辑格式：.png/.gltf/.md 等）——可选，暂无消费者
 assets/            # 运行时资源（.scn/.yrres/.json/.txt）——M8 起
 build/<preset>/assets/   # 构建时拷贝（或 yr_pack 产物 .yrpak）
 ```

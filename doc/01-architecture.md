@@ -233,7 +233,7 @@ class ClassDB {                                       // 进程级注册表（�
 // 注册宏（**只允许这三个宏**，宏工程是本项目最大的调试黑洞，必须克制）
 #define YR_CLASS(Type, Parent)          /* 生成 klass()、静态 ClassInfo、自动注册器 */
 #define YR_PROPERTY(Type, name, member) /* 追加 PropertyInfo + get/set 成员指针适配 */
-#define YR_BIND_METHOD(...)             /* 可选，M11 stretch：方法绑定 */
+#define YR_BIND_METHOD(...)             /* 可选，Stretch S2：方法绑定 */
 ```
 
 **属性存取用"成员指针 + 类型擦除"**：`PropertyInfo` 里存 `Variant (Object::*)()` 之类的适配 lambda，
@@ -491,7 +491,7 @@ class IResourceFormatLoader {                                  // 按扩展名�
   virtual Ref<Resource> load(PathView, IFileAccess&) = 0;
 };
 class IFileAccess { /* 抽象文件 IO：磁盘实现 + 内存实现（测试用，见 P5） */ };
-class PakFileAccess : public IFileAccess { /* 从 .yrpak 读，M11 */ };
+class PakFileAccess : public IFileAccess { /* 从 .yrpak 读，S14 */ };
 ```
 
 **异步加载的关键约束（血泪点，务必写进 `AssetDatabase` 的头文件注释）**：
@@ -530,7 +530,7 @@ struct SceneDiagnostic;
 | **引用**：场景里两个节点指向同一个资源，存两份还是存一份？ | 引入 **node index 表**（对照 Godot `.tscn` 的 `[node name=... parent=...]` + `ExtResource(id)` / `SubResource(id)`）。外部资源存路径/UID，内嵌子资源存 ID，节点间引用存 node index。 |
 | **循环引用**：A 引用 B，B 引用 A | 两遍法：第一遍写所有对象并分配 ID，第二遍写引用（只写 ID）。Godot `.tscn` 就是这个结构 |
 
-> **格式策略（D25）**：场景源格式只做文本 `.scn`；二进制/JSON 导出不进当前计划，等 M9/M11 有 cooked/runtime 消费者再做。
+> **格式策略（D25）**：场景源格式只做文本 `.scn`；二进制/JSON 导出不进当前计划，等 S14 有真实消费者再做。
 
 > **版本策略（D24）**：当前 `.scn` 不做文本版本号与迁移链；未知字段 warning + 跳过、缺失属性用默认值。等出现外部存档/已发布资产再引入。
 
@@ -804,7 +804,7 @@ sequenceDiagram
 | M8 | + `yr_serialize` | 文本 + PackedScene + 场景存读档 |
 | M9 | + `yr_asset` | Resource/AssetDatabase/异步加载 + AssetHandle→GPU 桥接 |
 | M10 | + `yr_job` | JobSystem，回填到 asset/transform |
-| M11 | + `tools/yr_pack` | 打包与工具链打磨 |
+| M11 | —（复用既有 app） | AI 搭建的场景闭环 |
 
 > `yr_job` 名义上排在 M10，但 **M9 的异步加载会先逼出一个最简版本**（单线程 IO + 回调）。
 > 这是正常的：先写"错的但能跑的"，再重构。记得在 `06-decisions.md` 记录这次演进。

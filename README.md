@@ -44,8 +44,9 @@ Runtime，再以 renderer-neutral 的渲染契约把游戏状态接到渲染后�
 | M6 最小 Vulkan Bootstrap | 完成 | 窗口 + 清屏 + 硬编码三角形；N 帧在飞 |
 | M7 Snapshot 驱动画面 | 完成 | MainLoop 接线 + DrawItem/Camera + WASD + dump/replay + 帧统计；双/三缓冲按 D22 推迟 |
 | M8 序列化 | 完成 | M8a `.scn` 文本；M8b 引用/连接；M8c headless `--scene` 加载 + 1000 节点 benchmark |
-| M9 资源系统 | 完成（主体） | M9.2b streaming + M9.5 PBR/多光源/阴影；Sponza 4K 纹理待 M9.5d-0 |
-| M9.5+ 基础 PBR / 任务 / 工具链 | 进行中 | M9.5 主体完成；M10/M11 未开始 |
+| M9 资源系统 | 完成（主体） | M9.2b streaming + M9.5 PBR/多光源/阴影 + M9.5d-0 异步纹理解码基准 |
+| M10 任务系统 | 完成 | 线程池 / TaskHandle / 主线程帮忙 / 依赖图 / `parallel_for` / JobStats |
+| M11 AI 搭建可玩场景 | 进行中 | 架构走查中；终点：AI 写 `pacman.scn` → headless 自测 → 打开即玩 |
 
 进度同时维护在根 README 与 [`doc/02-roadmap.md`](doc/02-roadmap.md)。
 
