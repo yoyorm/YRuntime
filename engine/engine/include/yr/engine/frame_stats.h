@@ -22,8 +22,7 @@ namespace yr::engine {
   //   - 环形窗口保留最近 windowSize 帧的 total + 按阶段耗时；
   //   - 每 reportInterval 帧打印一行：total 打 p50/p95/max，"已接线阶段"只打 p50；
   //   - 可选 CSV：enableCsv 后立即写 header，之后每帧追加 total + physics 步数。
-  //
-  // 仅持有 std::vector / std::ofstream，无外部指针；析构时若 CSV 仍开启则关闭。
+
   class FrameStats {
   public:
     explicit FrameStats(FrameStatsConfig config = {});
@@ -51,9 +50,7 @@ namespace yr::engine {
     void finish();
 
     [[nodiscard]] std::uint64_t frameCount() const noexcept { return frameCount_; }
-    // 自构造以来所有帧的 physics 步数累计。
     [[nodiscard]] int totalPhysicsSteps() const noexcept { return totalPhysicsSteps_; }
-    // 当前环形窗口内的样本数（<= windowSize）。
     [[nodiscard]] std::size_t windowCount() const noexcept { return sampleCount_; }
     [[nodiscard]] std::size_t windowSize() const noexcept { return windowSize_; }
 

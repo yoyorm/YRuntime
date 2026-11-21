@@ -5,7 +5,6 @@
 namespace yr::engine {
 
   Engine::Engine() noexcept : mainLoop_(sceneTree_, eventBus_) {
-    // 宿主在主线程构造 Engine：从这里开始，“仅主线程”API 的审计生效。
     core::markMainThread();
   }
 

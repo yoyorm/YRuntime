@@ -20,7 +20,6 @@ namespace yr::obj {
 
     [[nodiscard]] yr::core::ObjectID id() const noexcept { return id_; }
 
-    // 未注册的普通 Object 返回 nullptr；引擎类覆写并返回静态 ClassInfo。
     [[nodiscard]] virtual const ClassInfo* classInfo() const noexcept { return nullptr; }
 
   private:

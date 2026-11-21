@@ -50,7 +50,6 @@ namespace yr::asset {
   public:
     explicit AsyncLoader(ILoadBackend& backend);
 
-    // colorSpace/maxDimension 只在真正提交时写入 Entry；kLoading/kReady 的重复请求沿用首次设置。
     [[nodiscard]] AssetUID requestLoad(std::string_view resPath, ResourceKind kind = ResourceKind::kUnknown,
                                        TextureColorSpace colorSpace = TextureColorSpace::kSrgb,
                                        std::uint32_t maxDimension = 0);
@@ -61,10 +60,10 @@ namespace yr::asset {
     // 最多消费 maxCompleted 个完成项；成功项状态置 kReady，失败项置 kFailed。
     [[nodiscard]] std::vector<LoadCompletion> pump(std::size_t maxCompleted = 1);
 
-    // 资源被 evict/GC 后调用，清掉旧 UID 的状态；下次 request 会重新提交。
+    // 清掉旧 UID 的状态
     void forget(AssetUID uid);
 
-    // 安装 Resource 失败时调用（状态已 kReady 但 cache 未建立）。
+    // 安装 Resource 失败时调用
     void markFailed(AssetUID uid, std::string error);
 
     void reset();

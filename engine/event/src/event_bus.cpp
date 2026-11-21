@@ -12,7 +12,7 @@ namespace yr::evt {
     if (it != subscribers_.end()) {
       for (Entry& entry : it->second) {
         if (entry.id == sub.id_) {
-          entry.active = false; // 只标记，不立刻删除；物理清理见 cleanupInactive()
+          entry.active = false; // 只标记，不立刻删除
           break;
         }
       }
@@ -23,8 +23,6 @@ namespace yr::evt {
   }
 
   void EventBus::cleanupInactive() {
-    // 到达这里说明 publishDepth_ 已归零，栈上无 publish 正在遍历，可安全 erase。
-    // 暂不追踪 dirty type：扫描全部类型，空分表保留。
     for (auto& table : subscribers_) {
       std::erase_if(table.second, [](const Entry& entry) { return !entry.active; });
     }
@@ -36,7 +34,6 @@ namespace yr::evt {
       return;
     }
 
-    // RAII 恢复 flushing_
     struct FlushGuard {
       bool& flag;
       explicit FlushGuard(bool& value) noexcept : flag(value) { flag = true; }

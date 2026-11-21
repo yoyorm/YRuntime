@@ -18,7 +18,6 @@ namespace yr::engine {
   }
 
   MainLoop::MainLoop(scene::SceneTree& tree, evt::EventBus& events) noexcept : sceneTree_(tree), eventBus_(events) {
-    // 只报告真正接线的阶段；空钩子（1/2/4/5）与通常为 0ns 的 GC 省略，避免日志噪音。
     stats_.setPhaseReported(Phase::kBeginFrame, true);
     stats_.setPhaseReported(Phase::kFlushEvents, true);
     stats_.setPhaseReported(Phase::kPhysicsSteps, true);
@@ -61,7 +60,7 @@ namespace yr::engine {
     phaseDurations_[static_cast<std::size_t>(Phase::kPresent)] = phaseTimer_.restart();
     collectGarbage();
     phaseDurations_[static_cast<std::size_t>(Phase::kCollectGarbage)] = phaseTimer_.restart();
-    endFrame(); // 阶段 13 自己计时并汇总入环
+    endFrame();
   }
 
   void MainLoop::beginFrame() {
@@ -95,7 +94,7 @@ namespace yr::engine {
   }
 
   void MainLoop::physicsSteps() {
-    // 固定步长：累加器每攒够一步就派发一次；上限防止一帧卡太久追赶不完（spiral of death）。
+    // 累加器攒够一步就派发；上限防止一帧卡太久追赶不完
     int steps = 0;
     while (accumulator_ >= kPhysicsStep && steps < kMaxPhysicsSteps) {
       onPhysicsStep(kPhysicsStep);
@@ -117,42 +116,37 @@ namespace yr::engine {
   }
 
   void MainLoop::processPhase() {
-    // 阶段 7：派发 onUpdate；SceneTree 接口收 float，显式收窄。
     sceneTree_.process(static_cast<float>(gameDelta_));
   }
 
   void MainLoop::postProcess() {
-    sceneTree_.refreshTransforms(); // 安全点：刷新 Transform 层级缓存
+    sceneTree_.refreshTransforms();
   }
 
   void MainLoop::applyStructure() {
-    sceneTree_.flushDeletions(); // 唯一结构修改点：执行本帧的延迟删除
+    sceneTree_.flushDeletions();
   }
 
   void MainLoop::extractRender() {
-    // 阶段 10：取当前帧 0-based 序号并抽取场景与资源增量；frame_index 由本阶段写入。
     snapshot_.frame_index = frameIndex();
     renderExtract_.setShadow(shadow_);
     renderExtract_.extract(sceneTree_, camera_, snapshot_);
   }
 
   void MainLoop::present() {
-    // 阶段 11：未装配后端时 no-op（headless 默认路径）。
     if (backend_ != nullptr) {
       backend_->present(snapshot_);
     }
   }
 
   void MainLoop::collectGarbage() {
-    // 阶段 12：卸载仅剩 DB 持有的资源；GPU 延迟销毁仍由后端在 present 内处理。
+    // 卸载仅剩 DB 持有的资源；GPU 延迟销毁后端在 present 处理
     if (assetDatabase_ != nullptr) {
       (void)assetDatabase_->collectGarbage();
     }
   }
 
   void MainLoop::endFrame() {
-    // 汇总点：先量本阶段自身耗时，再把整帧与各阶段数据交给 FrameStats 入环 / 报告 / 写 CSV。
-    // TODO: 日志 flush。
     const core::Duration endFrameCost = phaseTimer_.elapsed();
     phaseDurations_[static_cast<std::size_t>(Phase::kEndFrame)] = endFrameCost;
     stats_.recordFrame(frameTimer_.elapsed(), phaseDurations_, physicsStepsFrame_);

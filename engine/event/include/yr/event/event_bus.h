@@ -1,6 +1,5 @@
 #pragma once
 
-// TODO: MessageQueue（延迟调用）
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -14,7 +13,7 @@
 
 namespace yr::evt {
 
-  // 类型化同步事件总线，按 type_index 分区做类型擦除；仅主线程。
+  // 类型化同步事件总线，按 type_index 分区做类型擦除；仅主线程
   // 分表用 deque 存放 Entry：publish 回调中订阅同类型不会移动正在执行的 std::function。
   // 详细语义（深度上限、inactive 清理、post/flush 双缓冲）见 doc/layers/event.md。
   class EventBus {
@@ -73,7 +72,7 @@ namespace yr::evt {
 
     void unsubscribe(Subscription& sub) noexcept;
 
-    // 入队事件，不立即派发；下一次 flush() 时按 post 顺序（跨类型）派发。
+    // 入队事件，不立即派发；下一次 flush() 时按 post 顺序派发。
     template <typename E> void post(E&& event) {
       using EventType = std::decay_t<E>;
       auto& queue = writeQueueIs0_ ? pendings0_ : pendings1_;
@@ -106,20 +105,19 @@ namespace yr::evt {
       E event;
     };
 
-    // 物理删除所有分表里 active == false 的 Entry。只在 publishDepth_ 归零（栈上无任何
-    // publish）时调用，否则 erase 会使外层 publish 正在遍历的分表失效。保留空分表。
+    // publish 后清理
     void cleanupInactive();
 
     std::unordered_map<std::type_index, std::deque<Entry>> subscribers_;
     std::uint32_t nextId_ = 1;
 
-    // 总线级同步 publish 调用栈深度（不按事件类型分开）；用于把 inactive 清理推迟到最外层。
     std::size_t publishDepth_ = 0;
 
-    // 双缓冲待派发队列：writeQueueIs0_ 明确表示"post 当前写入哪个队列"：
+    // 双缓冲待派发队列：writeQueueIs0_ 明确表示当前写入哪个队列
+    bool writeQueueIs0_ = true;
     std::deque<std::unique_ptr<PendingEvent>> pendings0_;
     std::deque<std::unique_ptr<PendingEvent>> pendings1_;
-    bool writeQueueIs0_ = true;
+
     bool flushing_ = false;
   };
 

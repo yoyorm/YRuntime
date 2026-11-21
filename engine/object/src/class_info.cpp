@@ -2,7 +2,7 @@
 
 namespace yr::obj {
 
-  // 查找本类优先，未命中则沿 parent_ 递归。
+  // 查找本类优先，未命中则沿 parent_ 递归
   const PropertyInfo* ClassInfo::findProperty(yr::core::StringId name) const noexcept {
     for (const PropertyInfo& p : properties_) {
       if (p.name == name)
@@ -11,8 +11,8 @@ namespace yr::obj {
     return parent_ ? parent_->findProperty(name) : nullptr;
   }
 
-  // 从 this 沿 parent_ 递归，命中 base 返回 true。
   bool ClassInfo::isA(const ClassInfo* base) const noexcept {
+    // 从 this 沿 parent_ 递归
     for (const ClassInfo* c = this; c != nullptr; c = c->parent_) {
       if (c == base)
         return true;

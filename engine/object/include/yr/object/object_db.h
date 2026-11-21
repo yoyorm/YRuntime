@@ -11,8 +11,7 @@ namespace yr::obj {
   class Object;
 
   // 全局、非拥有的 ObjectID -> Object* 索引。
-  // 只按 ID 随机访问，因此保留空 slot 并用 freelist 复用，不维护稠密遍历顺序。
-  // 当前仅允许主线程访问；调用方必须在 Object 内存失效前注销。
+  // 仅允许主线程访问；调用方必须在 Object 内存失效前注销
   class ObjectDB {
   public:
     ~ObjectDB() = default;

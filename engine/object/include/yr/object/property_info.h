@@ -20,9 +20,9 @@ namespace yr::obj {
   using PropertyGetter = Variant (*)(const Object*);
   using PropertySetter = bool (*)(Object*, const Variant&);
 
-  // 单个属性的元数据, 每个类一份。
+  // 单个属性的元数据
   struct PropertyInfo {
-    yr::core::StringId name;                   // 属性名（驻留字符串，比较 O(1)）
+    yr::core::StringId name;                   // 属性名
     Variant::Type type = Variant::Type::kNull; // 该属性的 Variant 类型，set 前用于校验
     std::uint32_t flags = kNone;               // PropertyFlags 位或
     yr::core::StringId class_hint{};           // 对象类型属性的目标类名；其余属性留空

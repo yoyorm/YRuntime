@@ -41,12 +41,10 @@ namespace yr::asset {
     std::size_t passes = 0;
   };
 
-  // 已加载资源的 UID -> 强引用缓存，负责驻留统计与 fixpoint GC。
-  // 仅允许主线程使用：ObjectDB、RefCounted 的释放路径和本类都没有跨线程同步。
-  // 文件读取与纹理解码发生在 JobSystem worker；对象构造与安装仍在调用 pump 的主线程。
+  // 已加载资源的 UID -> 强引用缓存，负责驻留统计与GC。
+  // 仅允许主线程使用,对象构造与安装在主线程。
   class AssetDatabase final {
   public:
-    // jobs 为空时本类自持一个默认 JobSystem；注入时 JobSystem 必须比本类活得更久。
     // byteBudget：JobLoadBackend 完成队列的字节预算；0 表示不限制。
     explicit AssetDatabase(std::string assetRoot, yr::job::JobSystem* jobs = nullptr,
                            std::size_t byteBudget = kDefaultLoadByteBudget);
@@ -60,7 +58,7 @@ namespace yr::asset {
     AssetDatabase(AssetDatabase&&) = delete;
     AssetDatabase& operator=(AssetDatabase&&) = delete;
 
-    // 注册已加载资源。UID 必须有效；同一 UID 只能对应同一对象。
+    // 注册已加载资源
     [[nodiscard]] bool store(obj::Ref<Resource> resource);
 
     [[nodiscard]] bool contains(AssetUID uid) const noexcept;
@@ -86,20 +84,17 @@ namespace yr::asset {
                                        TextureColorSpace colorSpace = TextureColorSpace::kSrgb,
                                        std::uint32_t maxDimension = 1024);
 
-    // 优先查询 cache_，异步结果尚未安装时才回退到 AsyncLoader。
     [[nodiscard]] LoadState state(AssetUID uid) const;
     [[nodiscard]] std::string error(AssetUID uid) const;
 
-    // maxTextureCompletions：本帧最多安装的纹理 completion 数；0 表示本帧完全不工作。
-    // maxMeshVertices：本帧 mesh 顶点预算；0 表示本帧不安装 mesh。至少安装 1 个避免饥饿。
+    // maxTextureCompletions：本帧最多安装的纹理 completion 数；0 表示本帧完全不工作
+    // maxMeshVertices：本帧 mesh 顶点预算；0 表示本帧不安装 mesh
     void pump(std::size_t maxTextureCompletions = kDefaultTextureCompletionsPerPump,
               std::size_t maxMeshVertices = 65536);
 
-    // 只有 refcount()==1（只剩 DB）时才允许；被场景/材质使用时返回 false。
+    // 只有 refcount ==1 时删除
     [[nodiscard]] bool evict(AssetUID uid);
 
-    // 反复收集仅剩 DB 持有的资源，直到一轮没有任何候选。
-    // 当前资源图是 DAG：Material 析构释放贴图后，下一轮才会看到贴图只剩 DB。
     [[nodiscard]] GcStats collectGarbage();
     [[nodiscard]] AssetStats stats() const;
 
@@ -117,7 +112,6 @@ namespace yr::asset {
     void cancelPendingMesh(AssetUID uid);
 
     std::string assetRoot_;
-    // 声明顺序即析构顺序的逆序：async → worker → jobs → access。
     std::unique_ptr<IFileAccess> fileAccess_;
     std::unique_ptr<yr::job::JobSystem> ownedJobs_;
     yr::job::JobSystem* jobs_ = nullptr;
@@ -127,7 +121,7 @@ namespace yr::asset {
     // job 只持有 uid + source，不持有 obj::Ref<Mesh>，避免阻止 evict/GC。
     std::deque<GltfDeferredMesh> pendingMeshes_;
     std::unordered_set<AssetUID> pendingMeshUids_;
-    AssetStats counters_{}; // 只使用 registered/evicted/loads/hits/misses/failed
+    AssetStats counters_{};
   };
 
 } // namespace yr::asset

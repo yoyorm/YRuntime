@@ -8,7 +8,6 @@ namespace yr::evt {
   class EventBus;
 
   // 订阅句柄（RAII）：析构或 reset() 时自动退订。
-  // 非拥有其 EventBus：要求句柄不晚于 EventBus 销毁；避免全局/静态句柄，
   // 必要时在退出前显式 reset()。
   class Subscription {
   public:

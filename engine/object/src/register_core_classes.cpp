@@ -6,8 +6,7 @@
 
 namespace yr::obj {
 
-  // 核心类 Object 的 ClassInfo。函数内 static：首次调用时创建一次，避开 SIOF。
-  // Object 无属性、无工厂（不可直接实例化）。
+  // 核心类 Object 的 ClassInfo
   const ClassInfo& objectClassInfo() noexcept {
     static const ClassInfo info(yr::core::globalStringInterner().intern("Object"), nullptr, {});
     return info;

@@ -8,13 +8,9 @@
 
 namespace yr::obj {
 
-  // M9-0：强引用智能指针。
-  //
-  // 契约：
-  // - Ref<T> 持有时 refcount >= 1；拷贝 ref()，移动偷指针不改变计数。
-  // - 删除时机 = unref() 返回 true；reset()/析构/赋值替换旧值时都必须遵守。
-  // - 转移所有权时先 ref() 新值再释放旧值，保证 a = b 且指向同一对象时不会先减到 0。
-  // - 不支持循环引用；WeakRef 推迟。
+  // 强引用智能指针。
+  // - 不支持循环引用；WeakRef 推迟
+
   template <typename T> class Ref {
     static_assert(std::is_base_of_v<RefCounted, T>, "Ref<T>: T must derive from RefCounted");
 
@@ -43,6 +39,7 @@ namespace yr::obj {
 
     ~Ref() { release(); }
 
+    // 转移所有权时先 ref() 新值再释放旧值
     Ref& operator=(const Ref& other) noexcept {
       if (this != &other) {
         T* const incoming = other.ptr_;
@@ -80,7 +77,6 @@ namespace yr::obj {
     }
 
     // 统一的“放弃当前所有权”路径：unref() 返回 true 才 delete，随后置空。
-    // Ref 自身就是 RAII 所有者；用标准 deleter 表达销毁，避免门禁把裸 delete 当泄漏。
     void release() noexcept {
       T* const old = ptr_;
       ptr_ = nullptr;

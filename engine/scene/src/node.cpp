@@ -91,7 +91,7 @@ namespace yr::scene {
   }
 
   std::unique_ptr<Node> Node::removeChild(Node* child) {
-    // 必须早于任何 tree/parent/children 修改，失败时不改变树结构。
+    // 必须早于任何 tree/parent/children 修改，失败时不改变树结构
     if (propagationDepth_ > 0) {
       YR_ASSERT_MSG(false, "Node::removeChild: cannot modify children while this node's children are being propagated");
       return nullptr;
@@ -111,13 +111,12 @@ namespace yr::scene {
       return nullptr;
     }
 
-    // 先派发 exit 再解除 parent：让回调期间 parent()/isInsideTree() 仍反映旧位置。
+    // 先派发 exit 再解除 parent
     Node* const raw = it->get();
     if (raw->tree_ != nullptr) {
       raw->setTree(nullptr);
     }
 
-    // 先 move 出拥有关系再 erase，避免 erase 后访问已释放的 unique_ptr。
     std::unique_ptr<Node> owned = std::move(*it);
     children_.erase(it);
     owned->parent_ = nullptr;
@@ -149,11 +148,10 @@ namespace yr::scene {
     }
   }
 
-  // 同树重新入树保留原槽也必须标脏，否则旧 global 不是新父链下的正确值。
+  // 清理旧transform数据,申请新数据
   void Node::acquireTransform(SceneTree* tree) {
     YR_ASSERT_MSG(tree != nullptr, "Node::acquireTransform: tree is null");
     if (transformOwner_ != tree) {
-      // 跨树重新挂入：先归还旧树的槽，再在新树分配。
       if (transformHandle_.valid() && transformOwner_ != nullptr) {
         transformOwner_->destroyTransform(transformHandle_);
       }
@@ -189,7 +187,6 @@ namespace yr::scene {
   }
 
   void Node::markTransformDirty() noexcept {
-    // Offline writes update only local data; acquireTransform marks the slot on entry.
     if (transformHandle_.valid() && transformOwner_ != nullptr) {
       TransformData* const data = transformOwner_->transformData(transformHandle_);
       if (data != nullptr) {
@@ -263,11 +260,10 @@ namespace yr::scene {
 
   void Node::queueFree() {
     if (queuedForDeletion_) {
-      return; // 幂等
+      return;
     }
-    // 非树内节点所有权在外部，断言后安全返回，不置标记、不入队。
     YR_ASSERT_MSG(tree_ != nullptr, "Node::queueFree: node is not inside a tree");
-    if (tree_ == nullptr) {
+    if (tree_ == nullptr) { // 所有权在外部
       return;
     }
     queuedForDeletion_ = true;

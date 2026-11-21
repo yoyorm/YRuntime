@@ -8,13 +8,12 @@
 
 namespace yr::scene {
 
-  // Transform 的派生状态：只保存 global 缓存与脏标记。完整 TRS 保存在 Node 中，refresh 时按需合成。
+  // Transform 的派生状态：只保存 global 缓存与脏标记
   struct TransformData {
     math::Mat4 global;
     bool localDirty = true;
   };
 
-  // Node 只持有 Handle，经 SceneTree 转发访问；槽首次入树分配、Node 析构释放、detach 保留。
   class TransformStore {
   public:
     [[nodiscard]] core::Handle<TransformData> create() { return slots_.insert(TransformData{}); }

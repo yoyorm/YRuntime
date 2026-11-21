@@ -187,6 +187,7 @@ namespace yr::asset {
     if (it != cache_.end()) {
       return it->second.resource->state();
     }
+    // 异步结果尚未安装时回退到 AsyncLoader
     return asyncLoader_ != nullptr ? asyncLoader_->state(uid) : LoadState::kUnloaded;
   }
 

@@ -14,7 +14,6 @@
 
 namespace yr::obj {
   class Variant;
-  // 递归容器：必须在 Variant 定义前先声明（不完全类型 alias；需要完整类型处延迟到 .cpp / 模板实例化）。
   using Array = std::vector<Variant>;
   // 保序字典（vector<pair>）：不用 unordered_map 以保证序列化逐字节可复现；StringId 无 operator<，也不能用 map。
   using Dict = std::vector<std::pair<yr::core::StringId, Variant>>;
@@ -104,14 +103,13 @@ namespace yr::obj {
       assign(value);
     }
 
-    // 回到 null；会先释放当前持有的堆对象。
     void reset() noexcept;
 
     [[nodiscard]] bool operator==(const Variant& other) const noexcept;
     [[nodiscard]] bool operator!=(const Variant& other) const noexcept { return !(*this == other); }
 
   private:
-    // 写入值与 tag。构造函数和 set() 共用。先释放旧的活跃成员，避免泄漏与 UB。
+    // 写入值与 tag;构造函数和 set() 共用。先释放旧的活跃成员，避免泄漏与 UB。
     template <typename T>
       requires detail::kSupportedVariantType<T>
     void assign(T value) noexcept {
@@ -161,7 +159,6 @@ namespace yr::obj {
       }
     }
 
-    // 结束当前 type_ 对应的堆成员生命周期,不修改 type_。
     void destroyActive() noexcept {
       switch (type_) {
       case Type::kString:
@@ -178,9 +175,7 @@ namespace yr::obj {
       }
     }
 
-    // 从 o 深拷贝活跃成员；调用前 data_ 没有活跃堆成员。
     void copyFrom(const Variant& o);
-    // 从 o 移动活跃成员
     void moveFrom(Variant& o);
 
     Type type_ = Type::kNull;
