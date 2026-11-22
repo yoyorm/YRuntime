@@ -19,7 +19,7 @@ namespace yr::asset {
   class AssetDatabase;
 }
 namespace yr::input {
-  class InputRouter;
+  class InputSystem;
 }
 
 namespace yr::engine {
@@ -72,8 +72,7 @@ namespace yr::engine {
 
     void setAssetDatabase(asset::AssetDatabase* database) noexcept { assetDatabase_ = database; }
 
-    // 非拥有：装配者拥有 InputRouter 并保证其生命周期长于 MainLoop；nullptr 时阶段 1 no-op。
-    void setInputRouter(input::InputRouter* router) noexcept { inputRouter_ = router; }
+    void setInputSystem(input::InputSystem* system) noexcept { inputSystem_ = system; }
 
     // 当前帧快照，下一次 tick 被覆写
     [[nodiscard]] render::RenderSnapshot& snapshot() noexcept { return snapshot_; }
@@ -133,8 +132,7 @@ namespace yr::engine {
     bool quitRequested_ = false;
 
     asset::AssetDatabase* assetDatabase_ = nullptr;
-    // 输入：非拥有；nullptr 时阶段 1 no-op。
-    input::InputRouter* inputRouter_ = nullptr;
+    input::InputSystem* inputSystem_ = nullptr;
     render::RenderSnapshot snapshot_;
     render::CameraPod camera_{};
     render::ShadowPod shadow_{};

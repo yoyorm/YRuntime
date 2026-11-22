@@ -26,7 +26,7 @@
 #include <yr/engine/clock.h>
 #include <yr/engine/main_loop.h>
 #include <yr/event/event_bus.h>
-#include <yr/input/input_router.h>
+#include <yr/input/input_system.h>
 #include <yr/math/mat4.h>
 #include <yr/math/transform.h>
 #include <yr/math/vec3.h>
@@ -724,13 +724,14 @@ int main(int argc, char** argv) {
   camera.view = toTransform(yr::math::Mat4::lookAt(eye, target, yr::math::Vec3{0.0F, 1.0F, 0.0F}));
 
   yr::evt::EventBus events;
-  yr::input::InputRouter inputRouter;
-  inputRouter.addSource(std::make_unique<yr::demo::GlfwInputSource>(backend));
+  yr::input::InputSystem input;
+  input.setEventBus(&events);
+  input.addSource(std::make_unique<yr::demo::GlfwInputSource>(backend));
 
   DemoLoop loop(tree, events, backend, options.dumpSnapshot);
   loop.setBackend(&backend);      // 阶段 11 调 present
   loop.setAssetDatabase(&assets); // 阶段 12 调 collectGarbage
-  loop.setInputRouter(&inputRouter);
+  loop.setInputSystem(&input);
   loop.setCamera(camera);
   // 不传 shadow 时 MainLoop 默认 disabled；--no-shadow 让 Sponza 性能测试跳过阴影。
   if (!options.noShadow) {

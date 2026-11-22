@@ -1,5 +1,7 @@
 add_executable(YrTests_input
-    test_input_router.cpp)
+    test_input_router.cpp
+    test_input_state.cpp
+    test_input_system.cpp)
 
 target_link_libraries(YrTests_input PRIVATE
     yr::input

@@ -4,7 +4,7 @@
 #include <yr/core/log.h>
 #include <yr/engine/main_loop.h>
 #include <yr/event/event_bus.h>
-#include <yr/input/input_router.h>
+#include <yr/input/input_system.h>
 #include <yr/scene/scene_tree.h>
 
 namespace yr::engine {
@@ -72,8 +72,8 @@ namespace yr::engine {
   }
 
   void MainLoop::pollInput() {
-    if (inputRouter_ != nullptr) {
-      inputRouter_->beginFrame();
+    if (inputSystem_ != nullptr) {
+      inputSystem_->beginFrame();
     }
   }
 
