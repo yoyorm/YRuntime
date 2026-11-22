@@ -37,8 +37,15 @@ namespace yr::scene {
           },
       };
 
-      static const ClassInfo info(core::globalStringInterner().intern("Node"), &objectClassInfo(), kProperties,
-                                  factory);
+      static const MethodInfo kMethods[] = {
+          MethodInfo{
+              .name = core::globalStringInterner().intern("queue_free"),
+              .fn = +[](Object* object, const Variant&) { static_cast<Node*>(object)->queueFree(); },
+          },
+      };
+
+      static const ClassInfo info(core::globalStringInterner().intern("Node"), &objectClassInfo(), kProperties, factory,
+                                  kMethods);
       return info;
     }
 

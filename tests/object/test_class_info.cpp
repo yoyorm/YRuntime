@@ -18,6 +18,7 @@ namespace {
   using yr::obj::Array;
   using yr::obj::ClassInfo;
   using yr::obj::Dict;
+  using yr::obj::MethodInfo;
   using yr::obj::Object;
   using yr::obj::PropertyInfo;
   using yr::obj::Variant;
@@ -158,7 +159,16 @@ namespace {
            return true;
          }},
     };
-    static const ClassInfo info(nameOf("Player"), nullptr, props);
+    static const MethodInfo methods[] = {
+        {.name = nameOf("heal"),
+         .fn =
+             +[](Object* o, const Variant& payload) {
+               auto* const player = static_cast<Player*>(o);
+               const auto amount = payload.tryAs<std::int64_t>();
+               player->hp += amount.value_or(1);
+             }},
+    };
+    static const ClassInfo info(nameOf("Player"), nullptr, props, nullptr, methods);
     return info;
   }
 
@@ -298,6 +308,23 @@ TEST_CASE("class info: 派生类遮蔽基类属性", "[object][class_info]") {
   CHECK(out.as<std::int64_t>() == 20); // 遮蔽版返回 hp*2
   REQUIRE(playerClass().get_property(&warrior, nameOf("hp"), out));
   CHECK(out.as<std::int64_t>() == 10); // 基类版返回原值
+}
+
+TEST_CASE("class info: 方法查找与调用", "[object][class_info]") {
+  Player player;
+  CHECK(playerClass().findMethod(nameOf("heal")) != nullptr);
+  CHECK(playerClass().findMethod(nameOf("missing")) == nullptr);
+
+  CHECK(playerClass().invoke(&player, nameOf("heal"), Variant(static_cast<std::int64_t>(25))));
+  CHECK(player.hp == 125);
+
+  CHECK_FALSE(playerClass().invoke(&player, nameOf("missing"), Variant{}));
+  CHECK(player.hp == 125);
+
+  Warrior warrior;
+  CHECK(warriorClass().findMethod(nameOf("heal")) != nullptr);
+  CHECK(warriorClass().invoke(&warrior, nameOf("heal"), Variant(static_cast<std::int64_t>(5))));
+  CHECK(warrior.hp == 105);
 }
 
 TEST_CASE("class info: isA 沿继承链判断", "[object][class_info]") {

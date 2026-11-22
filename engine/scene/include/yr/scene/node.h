@@ -3,13 +3,16 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <string_view>
 #include <vector>
 
 #include <yr/core/handle.h>
+#include <yr/core/object_id.h>
 #include <yr/core/string_id.h>
 #include <yr/math/transform.h>
 #include <yr/object/object.h>
+#include <yr/object/variant.h>
 
 namespace yr::scene {
 
@@ -59,6 +62,21 @@ namespace yr::scene {
 
     // 延迟删除：只置标记并把 ObjectID 交给 SceneTree
     void queueFree();
+
+    // 节点间组合协议：命名信号 -> 目标节点的方法。
+    struct SignalConnection {
+      core::StringId signal;
+      core::ObjectID target;
+      core::StringId method;
+    };
+
+    // 目标存 ObjectID，发信号时经 ObjectDB 解析；目标销毁后自动跳过。
+    void connect(core::StringId signal, core::ObjectID target, core::StringId method);
+    void emitSignal(core::StringId signal, const obj::Variant& payload = {});
+
+    void onSignal(core::StringId method, const obj::Variant& payload);
+
+    [[nodiscard]] std::span<const SignalConnection> connections() const noexcept { return connections_; }
 
     // 本地 TRS
     [[nodiscard]] const math::Vec3& position() const noexcept { return transform_.position; }
@@ -110,6 +128,10 @@ namespace yr::scene {
     std::uint32_t propagationDepth_ = 0;
 
     bool queuedForDeletion_ = false;
+
+    static constexpr std::uint32_t kMaxSignalDepth = 8;
+    std::vector<SignalConnection> connections_;
+    std::uint32_t signalDepth_ = 0;
 
     core::Handle<TransformData> transformHandle_;
     SceneTree* transformOwner_ = nullptr; // SceneTree 生命周期需要长于 Node

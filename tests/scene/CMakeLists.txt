@@ -8,7 +8,8 @@ add_executable(YrTests_scene
     test_transform.cpp
     test_scene_format.cpp
     test_scene_nodes.cpp
-    test_scene_reference.cpp)
+    test_scene_reference.cpp
+    test_signal.cpp)
 
 target_link_libraries(YrTests_scene PRIVATE
     yr::scene

@@ -11,6 +11,15 @@ namespace yr::obj {
     return parent_ ? parent_->findProperty(name) : nullptr;
   }
 
+  const MethodInfo* ClassInfo::findMethod(yr::core::StringId name) const noexcept {
+    for (const MethodInfo& m : methods_) {
+      if (m.name == name) {
+        return &m;
+      }
+    }
+    return parent_ ? parent_->findMethod(name) : nullptr;
+  }
+
   bool ClassInfo::isA(const ClassInfo* base) const noexcept {
     // 从 this 沿 parent_ 递归
     for (const ClassInfo* c = this; c != nullptr; c = c->parent_) {
@@ -38,6 +47,15 @@ namespace yr::obj {
       return false;
     }
     return p->setter(obj, value); // setter 内部还要再查一次 Variant 类型
+  }
+
+  bool ClassInfo::invoke(Object* obj, yr::core::StringId method, const Variant& payload) const {
+    const MethodInfo* m = findMethod(method);
+    if (m == nullptr || m->fn == nullptr) {
+      return false;
+    }
+    m->fn(obj, payload);
+    return true;
   }
 
 } // namespace yr::obj

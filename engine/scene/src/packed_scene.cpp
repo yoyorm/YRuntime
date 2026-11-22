@@ -199,6 +199,14 @@ namespace yr::scene {
       }
     }
 
+    // 接线：connection.from 的命名信号 -> connection.to 的 onSignal(method)。
+    for (const PackedConnection& connection : connections) {
+      if (connection.from >= raw.size() || connection.to >= raw.size()) {
+        return nullptr;
+      }
+      raw[connection.from]->connect(connection.signal, raw[connection.to]->id(), connection.method);
+    }
+
     return std::move(owners[0]); // root
   }
 

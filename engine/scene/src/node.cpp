@@ -2,6 +2,8 @@
 #include <cstdint>
 #include <yr/core/assert.h>
 #include <yr/core/string_interner.h>
+#include <yr/object/class_info.h>
+#include <yr/object/object_db.h>
 #include <yr/scene/node.h>
 #include <yr/scene/scene_tree.h>
 #include <yr/scene/transform_store.h>
@@ -268,6 +270,47 @@ namespace yr::scene {
     }
     queuedForDeletion_ = true;
     tree_->enqueueDeletion(id());
+  }
+
+  void Node::connect(core::StringId signal, core::ObjectID target, core::StringId method) {
+    connections_.push_back(SignalConnection{signal, target, method});
+  }
+
+  void Node::emitSignal(core::StringId signal, const obj::Variant& payload) {
+    if (signalDepth_ >= kMaxSignalDepth) {
+      YR_ASSERT_MSG(false, "Node::emitSignal: signal recursion depth exceeded");
+      return;
+    }
+
+    struct DepthGuard {
+      std::uint32_t& depth;
+      explicit DepthGuard(std::uint32_t& value) noexcept : depth(value) { ++depth; }
+      ~DepthGuard() { --depth; }
+      DepthGuard(const DepthGuard&) = delete;
+      DepthGuard& operator=(const DepthGuard&) = delete;
+    };
+    const DepthGuard guard(signalDepth_);
+
+    // 复制连接项：onSignal 里可能 connect 新连接，不能持有 vector 迭代器/引用。
+    const std::size_t connectionCount = connections_.size();
+    for (std::size_t index = 0; index < connectionCount; ++index) {
+      const SignalConnection connection = connections_[index];
+      if (connection.signal != signal) {
+        continue;
+      }
+      auto* const target = dynamic_cast<Node*>(obj::globalObjectDB().get(connection.target));
+      if (target == nullptr) {
+        continue; // 目标已销毁：安全跳过
+      }
+      target->onSignal(connection.method, payload);
+    }
+  }
+
+  void Node::onSignal(core::StringId method, const obj::Variant& payload) {
+    const obj::ClassInfo* const info = classInfo();
+    if (info != nullptr) {
+      (void)info->invoke(this, method, payload);
+    }
   }
 
   void Node::onEnterTree() {}

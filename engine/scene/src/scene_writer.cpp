@@ -1,6 +1,7 @@
 #include <yr/scene/scene_writer.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -148,6 +149,50 @@ namespace yr::scene {
         return false;
       }
       return appendNode(root, root.name().view(), kInvalidParent, scene, error);
+    }
+
+    void collectNodeIndices(const Node& node, std::uint64_t& index,
+                            std::unordered_map<std::uint64_t, std::size_t>& indices) {
+      indices.emplace(node.id().raw(), static_cast<std::size_t>(index));
+      ++index;
+      for (std::size_t childIndex = 0; childIndex < node.childCount(); ++childIndex) {
+        if (const Node* const child = node.childAt(childIndex); child != nullptr) {
+          collectNodeIndices(*child, index, indices);
+        }
+      }
+    }
+
+    [[nodiscard]] bool appendConnections(const Node& node,
+                                         const std::unordered_map<std::uint64_t, std::size_t>& indices,
+                                         PackedScene& scene, std::string& error) {
+      const auto source = indices.find(node.id().raw());
+      if (source == indices.end()) {
+        error = "connection 源节点不在场景树中";
+        return false;
+      }
+
+      for (const Node::SignalConnection& connection : node.connections()) {
+        const auto target = indices.find(connection.target.raw());
+        if (target == indices.end()) {
+          error = "节点 '" + std::string(node.name().view()) + "' 的 connection 目标不在同一棵树中";
+          return false;
+        }
+        if (connection.signal.view().empty() || connection.method.view().empty()) {
+          error = "节点 '" + std::string(node.name().view()) + "' 的 connection signal/method 不能为空";
+          return false;
+        }
+        scene.connections.push_back(
+            PackedConnection{source->second, target->second, connection.signal, connection.method});
+      }
+
+      for (std::size_t childIndex = 0; childIndex < node.childCount(); ++childIndex) {
+        if (const Node* const child = node.childAt(childIndex); child != nullptr) {
+          if (!appendConnections(*child, indices, scene, error)) {
+            return false;
+          }
+        }
+      }
+      return true;
     }
 
     [[nodiscard]] bool validateReference(const PackedScene& scene, const SceneReference& reference,
@@ -343,6 +388,14 @@ namespace yr::scene {
     if (!buildScene(root, scene, error)) {
       return SceneWriteResult{false, {}, std::move(error)};
     }
+
+    std::unordered_map<std::uint64_t, std::size_t> indices;
+    std::uint64_t index = 0;
+    collectNodeIndices(root, index, indices);
+    if (!appendConnections(root, indices, scene, error)) {
+      return SceneWriteResult{false, {}, std::move(error)};
+    }
+
     return write(scene);
   }
 

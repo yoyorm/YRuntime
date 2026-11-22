@@ -10,6 +10,13 @@ namespace yr::obj {
 
   class Object;
 
+  using MethodFn = void (*)(Object* object, const Variant& payload);
+
+  struct MethodInfo {
+    yr::core::StringId name;
+    MethodFn fn = nullptr;
+  };
+
   // 单个类的静态元数据。
   // properties_ 指向静态 PropertyInfo 数组，该数组必须比 ClassInfo 活得更久；工厂返回
   // unique_ptr，创建完成即确定唯一所有者。
@@ -19,8 +26,8 @@ namespace yr::obj {
     using Factory = std::unique_ptr<Object> (*)();
 
     constexpr ClassInfo(yr::core::StringId name, const ClassInfo* parent, std::span<const PropertyInfo> properties,
-                        Factory factoryFn = nullptr) noexcept
-        : name_(name), parent_(parent), properties_(properties), factory_(factoryFn) {}
+                        Factory factoryFn = nullptr, std::span<const MethodInfo> methods = {}) noexcept
+        : name_(name), parent_(parent), properties_(properties), methods_(methods), factory_(factoryFn) {}
 
     [[nodiscard]] constexpr yr::core::StringId name() const noexcept { return name_; }
     [[nodiscard]] constexpr const ClassInfo* parent() const noexcept { return parent_; }
@@ -28,11 +35,15 @@ namespace yr::obj {
     // 仅本类的属性表；不含继承属性
     [[nodiscard]] constexpr std::span<const PropertyInfo> properties() const noexcept { return properties_; }
 
+    // 仅本类的方法表；不含继承方法
+    [[nodiscard]] constexpr std::span<const MethodInfo> methods() const noexcept { return methods_; }
+
     // 工厂；nullptr = 抽象类
     [[nodiscard]] constexpr Factory factory() const noexcept { return factory_; }
 
-    // 沿继承链查找属性,未命中则递归 parent_
+    // 沿继承链查找属性/方法,未命中则递归 parent_
     [[nodiscard]] const PropertyInfo* findProperty(yr::core::StringId name) const noexcept;
+    [[nodiscard]] const MethodInfo* findMethod(yr::core::StringId name) const noexcept;
 
     // this 是否就是 base，或派生自 base（沿 parent_ 向上逐级比较指针）。
     [[nodiscard]] bool isA(const ClassInfo* base) const noexcept;
@@ -40,10 +51,14 @@ namespace yr::obj {
     bool get_property(const Object* obj, yr::core::StringId name, Variant& out) const;
     bool set_property(Object* obj, yr::core::StringId name, const Variant& value) const;
 
+    // 调用方法；未知方法返回 false。
+    bool invoke(Object* obj, yr::core::StringId method, const Variant& payload = {}) const;
+
   private:
     yr::core::StringId name_;
     const ClassInfo* parent_ = nullptr;
     std::span<const PropertyInfo> properties_{};
+    std::span<const MethodInfo> methods_{};
     Factory factory_ = nullptr;
   };
 
