@@ -901,7 +901,8 @@ namespace yr::scene {
               errorAt(parsed.value_start, "属性类型不匹配：'" + std::string(parsed.name) + "'");
               return result;
             }
-            result.scene.nodes[currentNode].properties.push_back(SceneProperty{propertyId, SceneValue{decoded.value}});
+            result.scene.nodes[currentNode].properties.push_back(
+                SceneProperty{propertyId, SceneValue{decoded.value, SceneReference{}}});
             break;
           }
           case SectionKind::kSubResource: {

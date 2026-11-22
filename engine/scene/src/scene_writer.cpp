@@ -117,7 +117,7 @@ namespace yr::scene {
           error = label + ": serialized 属性 '" + propertyName + "' 编码失败：" + encoded.error;
           return false;
         }
-        packed.properties.push_back(SceneProperty{property->name, SceneValue{value}});
+        packed.properties.push_back(SceneProperty{property->name, SceneValue{value, SceneReference{}}});
       }
 
       const std::size_t index = scene.nodes.size();
@@ -152,18 +152,21 @@ namespace yr::scene {
     }
 
     void collectNodeIndices(const Node& node, std::uint64_t& index,
-                            std::unordered_map<std::uint64_t, std::size_t>& indices) {
+                            std::unordered_map<std::uint64_t, std::size_t>& indices,
+                            std::unordered_map<std::uint64_t, const Node*>& nodes) {
       indices.emplace(node.id().raw(), static_cast<std::size_t>(index));
+      nodes.emplace(node.id().raw(), &node);
       ++index;
       for (std::size_t childIndex = 0; childIndex < node.childCount(); ++childIndex) {
         if (const Node* const child = node.childAt(childIndex); child != nullptr) {
-          collectNodeIndices(*child, index, indices);
+          collectNodeIndices(*child, index, indices, nodes);
         }
       }
     }
 
     [[nodiscard]] bool appendConnections(const Node& node,
                                          const std::unordered_map<std::uint64_t, std::size_t>& indices,
+                                         const std::unordered_map<std::uint64_t, const Node*>& nodes,
                                          PackedScene& scene, std::string& error) {
       const auto source = indices.find(node.id().raw());
       if (source == indices.end()) {
@@ -181,13 +184,26 @@ namespace yr::scene {
           error = "节点 '" + std::string(node.name().view()) + "' 的 connection signal/method 不能为空";
           return false;
         }
+
+        const auto targetNode = nodes.find(connection.target.raw());
+        if (targetNode == nodes.end()) {
+          error = "节点 '" + std::string(node.name().view()) + "' 的 connection 目标无法解析";
+          return false;
+        }
+        const yr::obj::ClassInfo* const targetInfo = targetNode->second->classInfo();
+        if (targetInfo == nullptr || targetInfo->findMethod(connection.method) == nullptr) {
+          error = "节点 '" + std::string(node.name().view()) + "' 的 connection method 未注册：'" +
+                  std::string(connection.method.view()) + "'";
+          return false;
+        }
+
         scene.connections.push_back(
             PackedConnection{source->second, target->second, connection.signal, connection.method});
       }
 
       for (std::size_t childIndex = 0; childIndex < node.childCount(); ++childIndex) {
         if (const Node* const child = node.childAt(childIndex); child != nullptr) {
-          if (!appendConnections(*child, indices, scene, error)) {
+          if (!appendConnections(*child, indices, nodes, scene, error)) {
             return false;
           }
         }
@@ -390,9 +406,10 @@ namespace yr::scene {
     }
 
     std::unordered_map<std::uint64_t, std::size_t> indices;
+    std::unordered_map<std::uint64_t, const Node*> nodes;
     std::uint64_t index = 0;
-    collectNodeIndices(root, index, indices);
-    if (!appendConnections(root, indices, scene, error)) {
+    collectNodeIndices(root, index, indices, nodes);
+    if (!appendConnections(root, indices, nodes, scene, error)) {
       return SceneWriteResult{false, {}, std::move(error)};
     }
 

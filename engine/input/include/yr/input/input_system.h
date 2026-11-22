@@ -30,10 +30,8 @@ namespace yr::input {
     // 每帧阶段 1 调用一次：清空上一帧、泵 source、更新 state、投递原始事件。
     void beginFrame();
 
-    [[nodiscard]] InputState& state() noexcept { return state_; }
     [[nodiscard]] const InputState& state() const noexcept { return state_; }
 
-    [[nodiscard]] InputRouter& router() noexcept { return router_; }
     [[nodiscard]] const InputRouter& router() const noexcept { return router_; }
 
   private:

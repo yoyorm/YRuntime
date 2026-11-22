@@ -9,6 +9,7 @@
 
 #include <yr/asset/asset_uid.h>
 #include <yr/asset/resource_types.h>
+#include <yr/core/log.h>
 #include <yr/core/string_interner.h>
 #include <yr/math/vec3.h>
 #include <yr/object/class_db.h>
@@ -204,7 +205,16 @@ namespace yr::scene {
       if (connection.from >= raw.size() || connection.to >= raw.size()) {
         return nullptr;
       }
-      raw[connection.from]->connect(connection.signal, raw[connection.to]->id(), connection.method);
+
+      Node* const target = raw[connection.to];
+      const obj::ClassInfo* const targetInfo = target->classInfo();
+      if (targetInfo == nullptr || targetInfo->findMethod(connection.method) == nullptr) {
+        YR_LOG_ERROR("scene", "connection method 未注册：node='" + std::string(target->name().view()) + "' method='" +
+                                  std::string(connection.method.view()) + "'");
+        return nullptr;
+      }
+
+      raw[connection.from]->connect(connection.signal, target->id(), connection.method);
     }
 
     return std::move(owners[0]); // root

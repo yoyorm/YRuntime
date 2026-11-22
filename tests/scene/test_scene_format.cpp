@@ -121,11 +121,6 @@ namespace {
     return &badEncodeClass();
   }
 
-  class RefHolderNode final : public Node {
-  public:
-    [[nodiscard]] const yr::obj::ClassInfo* classInfo() const noexcept override;
-  };
-
   const yr::obj::ClassInfo& refHolderClass() {
     static const yr::obj::PropertyInfo props[] = {
         {.name = intern("mesh"),
@@ -139,10 +134,6 @@ namespace {
     };
     static const yr::obj::ClassInfo info(intern("RefHolder"), &yr::scene::nodeClassInfo(), props, nullptr);
     return info;
-  }
-
-  const yr::obj::ClassInfo* RefHolderNode::classInfo() const noexcept {
-    return &refHolderClass();
   }
 
   constexpr std::string_view kManualScene = "[scene]\n"

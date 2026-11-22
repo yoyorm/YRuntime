@@ -152,6 +152,21 @@ TEST_CASE("signal: PackedScene::instantiate wires connections", "[scene][signal]
   CHECK(target->lastPayload.as<std::int64_t>() == 7);
 }
 
+TEST_CASE("signal: instantiate rejects an unregistered method", "[scene][signal][instantiate]") {
+  ClassDB classes;
+  registerProbeClasses(classes);
+  const SceneReader reader(classes);
+  const SceneLoadResult loaded =
+      reader.read("[scene]\n"
+                  "[node name=\"Root\" type=\"Probe\"]\n"
+                  "[node name=\"Child\" type=\"Probe\" parent=\".\"]\n"
+                  "[connection from=\".\" to=\"Child\" signal=\"hit\" method=\"missing\"]\n");
+  REQUIRE(loaded.ok());
+
+  const std::unique_ptr<yr::scene::Node> root = loaded.scene.instantiate(classes);
+  CHECK(root == nullptr);
+}
+
 TEST_CASE("signal: writer serializes runtime connections", "[scene][signal][writer]") {
   ClassDB classes;
   registerProbeClasses(classes);
@@ -186,6 +201,20 @@ TEST_CASE("signal: writer serializes runtime connections", "[scene][signal][writ
   const SceneWriteResult rewritten = SceneWriter::write(*reconstructed);
   REQUIRE(rewritten.ok);
   CHECK(rewritten.text == written.text);
+}
+
+TEST_CASE("signal: writer rejects an unregistered method", "[scene][signal][writer]") {
+  auto root = std::make_unique<ProbeNode>();
+  root->setName("Root");
+  auto child = std::make_unique<ProbeNode>();
+  child->setName("Child");
+  ProbeNode* const rawChild = child.get();
+  REQUIRE(root->addChild(std::move(child)));
+  root->connect(intern("hit"), rawChild->id(), intern("missing"));
+
+  const SceneWriteResult written = SceneWriter::write(*root);
+  CHECK_FALSE(written.ok);
+  CHECK(written.text.empty());
 }
 
 TEST_CASE("signal: writer rejects a target outside the tree", "[scene][signal][writer]") {
