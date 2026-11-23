@@ -8,6 +8,7 @@ add_executable(YrTests_scene
     test_transform.cpp
     test_scene_format.cpp
     test_scene_nodes.cpp
+    test_camera_node.cpp
     test_scene_reference.cpp
     test_signal.cpp)
 

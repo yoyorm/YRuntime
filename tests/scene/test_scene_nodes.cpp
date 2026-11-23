@@ -5,6 +5,7 @@
 #include <string>
 
 #include <yr/asset/resource_types.h>
+#include <yr/core/string_interner.h>
 #include <yr/math/quat.h>
 #include <yr/math/vec3.h>
 #include <yr/object/class_info.h>
@@ -19,11 +20,20 @@
 using yr::asset::Material;
 using yr::asset::Mesh;
 using yr::math::Vec3;
+using yr::obj::Variant;
 using yr::scene::LightNode;
 using yr::scene::LightType;
 using yr::scene::MeshInstanceNode;
 using yr::scene::Node;
 using yr::scene::SceneTree;
+
+namespace {
+
+  [[nodiscard]] yr::core::StringId intern(const char* text) {
+    return yr::core::globalStringInterner().intern(text);
+  }
+
+} // namespace
 
 TEST_CASE("LightNode defaults are directional white light", "[scene][light]") {
   LightNode light;
@@ -90,7 +100,7 @@ TEST_CASE("LightNode metadata derives from Node", "[scene][light]") {
   REQUIRE(light.classInfo() != nullptr);
   CHECK(light.classInfo()->name().view() == "LightNode");
   CHECK(light.classInfo()->parent() == &yr::scene::nodeClassInfo());
-  CHECK(light.classInfo()->properties().empty());
+  CHECK(light.classInfo()->properties().size() == 5);
 }
 
 TEST_CASE("LightNode participates in the scene hierarchy", "[scene][light]") {
@@ -195,4 +205,31 @@ TEST_CASE("MeshInstanceNode inherits Node TRS and writer rejects retained assets
   CHECK_FALSE(result.ok);
   CHECK(result.text.empty());
   CHECK(result.error.find("MeshInstanceNode") != std::string::npos);
+}
+
+TEST_CASE("LightNode exposes serializable properties", "[scene][light][property]") {
+  LightNode light;
+  const yr::obj::ClassInfo& info = yr::scene::lightNodeClassInfo();
+
+  CHECK(info.set_property(&light, intern("type"), Variant(std::string("point"))));
+  CHECK(info.set_property(&light, intern("color"), Variant(Vec3{0.2F, 0.4F, 0.6F})));
+  CHECK(info.set_property(&light, intern("intensity"), Variant(3.5)));
+  CHECK(info.set_property(&light, intern("range"), Variant(25.0)));
+  CHECK(info.set_property(&light, intern("direction"), Variant(Vec3{0.0F, -2.0F, 0.0F})));
+
+  CHECK(light.type() == LightType::kPoint);
+  CHECK(light.color() == Vec3{0.2F, 0.4F, 0.6F});
+  CHECK(light.intensity() == 3.5F);
+  CHECK(light.range() == 25.0F);
+  CHECK(light.direction() == Vec3{0.0F, -1.0F, 0.0F});
+
+  CHECK_FALSE(info.set_property(&light, intern("type"), Variant(std::string("spot"))));
+  CHECK(light.type() == LightType::kPoint);
+}
+
+TEST_CASE("LightNode type property rejects wrong Variant type", "[scene][light][property]") {
+  LightNode light;
+  const yr::obj::ClassInfo& info = yr::scene::lightNodeClassInfo();
+  CHECK_FALSE(info.set_property(&light, intern("type"), Variant(1.0)));
+  CHECK_FALSE(info.set_property(&light, intern("intensity"), Variant(true)));
 }

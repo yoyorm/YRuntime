@@ -11,6 +11,7 @@
 #include <yr/object/property_info.h>
 #include <yr/object/register_core_classes.h>
 #include <yr/object/variant.h>
+#include <yr/scene/camera_node.h>
 #include <yr/scene/light_node.h>
 #include <yr/scene/mesh_instance_node.h>
 #include <yr/scene/node.h>
@@ -68,6 +69,7 @@ namespace yr::scene {
     obj::globalClassDB().registerClass(nodeClassInfo());
     obj::globalClassDB().registerClass(meshInstanceNodeClassInfo());
     obj::globalClassDB().registerClass(lightNodeClassInfo());
+    obj::globalClassDB().registerClass(cameraNodeClassInfo());
     registered = true;
   }
 

@@ -16,6 +16,8 @@
 #include <yr/object/object_db.h>
 #include <yr/object/property_info.h>
 #include <yr/object/variant.h>
+#include <yr/scene/camera_node.h>
+#include <yr/scene/light_node.h>
 #include <yr/scene/mesh_instance_node.h>
 #include <yr/scene/node.h>
 #include <yr/scene/packed_scene.h>
@@ -29,6 +31,9 @@ namespace {
   using yr::core::StringId;
   using yr::math::Vec3;
   using yr::obj::ClassDB;
+  using yr::scene::CameraNode;
+  using yr::scene::LightNode;
+  using yr::scene::LightType;
   using yr::scene::MeshInstanceNode;
   using yr::scene::Node;
   using yr::scene::PackedScene;
@@ -554,4 +559,44 @@ TEST_CASE("scene format: BOM / CRLF input and istream overload load", "[scene][s
   REQUIRE(result.ok());
   REQUIRE(result.scene.nodes.size() == 1);
   CHECK(result.scene.nodes[0].name == "Root");
+}
+
+TEST_CASE("scene format: CameraNode and LightNode properties from text", "[scene][scene_format][instantiate]") {
+  const SceneLoadResult result = load("[scene]\n"
+                                      "[node name=\"Root\" type=\"Node\"]\n"
+                                      "[node name=\"Camera\" type=\"CameraNode\" parent=\".\"]\n"
+                                      "position = Vector3(1, 2, 3)\n"
+                                      "yaw_degrees = 45.0\n"
+                                      "pitch_degrees = -10.0\n"
+                                      "fov_degrees = 75.0\n"
+                                      "near_plane = 0.5\n"
+                                      "far_plane = 300.0\n"
+                                      "[node name=\"Sun\" type=\"LightNode\" parent=\".\"]\n"
+                                      "type = \"point\"\n"
+                                      "color = Vector3(1.0, 0.5, 0.25)\n"
+                                      "intensity = 4.0\n"
+                                      "range = 20.0\n"
+                                      "direction = Vector3(0, -1, 0)\n");
+  REQUIRE(result.ok());
+
+  const std::unique_ptr<Node> root = result.scene.instantiate(classes());
+  REQUIRE(root != nullptr);
+  REQUIRE(root->childCount() == 2);
+
+  const auto* const camera = dynamic_cast<const CameraNode*>(root->childAt(0));
+  REQUIRE(camera != nullptr);
+  CHECK(camera->position() == Vec3{1.0F, 2.0F, 3.0F});
+  CHECK(camera->yawDegrees() == 45.0F);
+  CHECK(camera->pitchDegrees() == -10.0F);
+  CHECK(camera->fovDegrees() == 75.0F);
+  CHECK(camera->nearPlane() == 0.5F);
+  CHECK(camera->farPlane() == 300.0F);
+
+  const auto* const light = dynamic_cast<const LightNode*>(root->childAt(1));
+  REQUIRE(light != nullptr);
+  CHECK(light->type() == LightType::kPoint);
+  CHECK(light->color() == Vec3{1.0F, 0.5F, 0.25F});
+  CHECK(light->intensity() == 4.0F);
+  CHECK(light->range() == 20.0F);
+  CHECK(light->direction() == Vec3{0.0F, -1.0F, 0.0F});
 }
