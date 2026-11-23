@@ -7,6 +7,7 @@
 #include <yr/core/string_interner.h>
 #include <yr/gameplay/box_collider.h>
 #include <yr/gameplay/counter.h>
+#include <yr/gameplay/fly_motor.h>
 #include <yr/gameplay/gameplay_classes.h>
 #include <yr/gameplay/input_axis.h>
 #include <yr/gameplay/key_trigger.h>
@@ -27,6 +28,7 @@ namespace {
   using yr::core::StringId;
   using yr::gameplay::BoxCollider;
   using yr::gameplay::Counter;
+  using yr::gameplay::FlyMotor;
   using yr::gameplay::InputAxis;
   using yr::gameplay::KeyTrigger;
   using yr::gameplay::MouseLook;
@@ -498,4 +500,55 @@ TEST_CASE("gameplay sun sweep: parent light orbits and looks at center", "[gamep
 TEST_CASE("gameplay sun sweep: non-light parent is a no-op", "[gameplay][sun_sweep]") {
   SunSweep sweep;
   REQUIRE_NOTHROW(sweep.onUpdate(1.0F));
+}
+
+TEST_CASE("gameplay fly motor: movement follows camera yaw", "[gameplay][fly_motor]") {
+  SceneTree tree;
+
+  auto root = makeNode("Root");
+  auto camera = std::make_unique<CameraNode>();
+  camera->setName("Camera");
+  camera->setYawDegrees(90.0F); // 朝 +X
+  auto motor = std::make_unique<FlyMotor>();
+  motor->setName("Fly");
+  motor->setSpeed(2.0);
+  CameraNode* const rawCamera = camera.get();
+  FlyMotor* const rawMotor = motor.get();
+  REQUIRE(camera->addChild(std::move(motor)));
+  REQUIRE(root->addChild(std::move(camera)));
+  REQUIRE(tree.setRoot(std::move(root)));
+
+  // W = direction.z -1 -> 沿视线前进（+X）
+  rawMotor->setDirection(Vec3{0.0F, 0.0F, -1.0F});
+  tree.process(1.0F);
+  CHECK(rawCamera->position().x == Catch::Approx(2.0F));
+  CHECK(rawCamera->position().z == Catch::Approx(0.0F).margin(1e-5F));
+
+  // D = direction.x 1 -> 相机右侧（朝 +X 时是 +Z）
+  rawMotor->setDirection(Vec3{1.0F, 0.0F, 0.0F});
+  tree.process(1.0F);
+  CHECK(rawCamera->position().z == Catch::Approx(2.0F).margin(1e-5F));
+
+  // E = direction.y 1 -> 世界向上
+  rawMotor->setDirection(Vec3{0.0F, 1.0F, 0.0F});
+  tree.process(1.0F);
+  CHECK(rawCamera->position().y == Catch::Approx(2.0F));
+}
+
+TEST_CASE("gameplay fly motor: non-camera parent is a no-op", "[gameplay][fly_motor]") {
+  SceneTree tree;
+
+  auto root = makeNode("Root");
+  auto body = makeNode("Body");
+  auto motor = std::make_unique<FlyMotor>();
+  motor->setName("Fly");
+  motor->setSpeed(2.0);
+  FlyMotor* const rawMotor = motor.get();
+  REQUIRE(body->addChild(std::move(motor)));
+  REQUIRE(root->addChild(std::move(body)));
+  REQUIRE(tree.setRoot(std::move(root)));
+
+  rawMotor->setDirection(Vec3{1.0F, 0.0F, 0.0F});
+  tree.process(1.0F);
+  CHECK(tree.root()->childAt(0)->position() == Vec3{});
 }

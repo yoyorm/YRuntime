@@ -2,6 +2,7 @@
 
 #include <yr/gameplay/box_collider.h>
 #include <yr/gameplay/counter.h>
+#include <yr/gameplay/fly_motor.h>
 #include <yr/gameplay/input_axis.h>
 #include <yr/gameplay/key_trigger.h>
 #include <yr/gameplay/mouse_look.h>
@@ -22,6 +23,7 @@ namespace yr::gameplay {
     obj::globalClassDB().registerClass(mouseLookClassInfo());
     obj::globalClassDB().registerClass(keyTriggerClassInfo());
     obj::globalClassDB().registerClass(moveMotorClassInfo());
+    obj::globalClassDB().registerClass(flyMotorClassInfo());
     obj::globalClassDB().registerClass(boxColliderClassInfo());
     obj::globalClassDB().registerClass(counterClassInfo());
     obj::globalClassDB().registerClass(sunSweepClassInfo());

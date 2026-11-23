@@ -4,6 +4,7 @@ add_library(yr_gameplay
     src/sun_sweep.cpp
     src/key_trigger.cpp
     src/move_motor.cpp
+    src/fly_motor.cpp
     src/box_collider.cpp
     src/counter.cpp
     src/gameplay_classes.cpp)
