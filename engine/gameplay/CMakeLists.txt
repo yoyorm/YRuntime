@@ -1,5 +1,7 @@
 add_library(yr_gameplay
     src/input_axis.cpp
+    src/mouse_look.cpp
+    src/sun_sweep.cpp
     src/key_trigger.cpp
     src/move_motor.cpp
     src/box_collider.cpp

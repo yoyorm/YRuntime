@@ -31,6 +31,12 @@ namespace yr::gameplay {
   void InputAxis::setPositiveX(std::string_view key) {
     positiveX_ = internKey(key);
   }
+  void InputAxis::setNegativeY(std::string_view key) {
+    negativeY_ = internKey(key);
+  }
+  void InputAxis::setPositiveY(std::string_view key) {
+    positiveY_ = internKey(key);
+  }
   void InputAxis::setNegativeZ(std::string_view key) {
     negativeZ_ = internKey(key);
   }
@@ -46,10 +52,13 @@ namespace yr::gameplay {
 
     const bool negativeXPressed = negativeX_.valid() && state->held(negativeX_);
     const bool positiveXPressed = positiveX_.valid() && state->held(positiveX_);
+    const bool negativeYPressed = negativeY_.valid() && state->held(negativeY_);
+    const bool positiveYPressed = positiveY_.valid() && state->held(positiveY_);
     const bool negativeZPressed = negativeZ_.valid() && state->held(negativeZ_);
     const bool positiveZPressed = positiveZ_.valid() && state->held(positiveZ_);
 
-    math::Vec3 next{(positiveXPressed ? 1.0F : 0.0F) - (negativeXPressed ? 1.0F : 0.0F), 0.0F,
+    math::Vec3 next{(positiveXPressed ? 1.0F : 0.0F) - (negativeXPressed ? 1.0F : 0.0F),
+                    (positiveYPressed ? 1.0F : 0.0F) - (negativeYPressed ? 1.0F : 0.0F),
                     (positiveZPressed ? 1.0F : 0.0F) - (negativeZPressed ? 1.0F : 0.0F)};
     if (normalize_ && next.lengthSquared() > 1.0F) {
       next = next.normalized();
@@ -91,6 +100,34 @@ namespace yr::gameplay {
              return false;
            }
            static_cast<InputAxis*>(object)->setPositiveX(*text);
+           return true;
+         }},
+        {.name = core::globalStringInterner().intern("negative_y"),
+         .type = Variant::Type::kString,
+         .flags = static_cast<std::uint32_t>(kSerialized | kEditable),
+         .getter = [](const Object* object) -> Variant {
+           return keyToVariant(static_cast<const InputAxis*>(object)->negativeY());
+         },
+         .setter = [](Object* object, const Variant& value) -> bool {
+           const auto text = value.tryAs<std::string>();
+           if (!text.has_value()) {
+             return false;
+           }
+           static_cast<InputAxis*>(object)->setNegativeY(*text);
+           return true;
+         }},
+        {.name = core::globalStringInterner().intern("positive_y"),
+         .type = Variant::Type::kString,
+         .flags = static_cast<std::uint32_t>(kSerialized | kEditable),
+         .getter = [](const Object* object) -> Variant {
+           return keyToVariant(static_cast<const InputAxis*>(object)->positiveY());
+         },
+         .setter = [](Object* object, const Variant& value) -> bool {
+           const auto text = value.tryAs<std::string>();
+           if (!text.has_value()) {
+             return false;
+           }
+           static_cast<InputAxis*>(object)->setPositiveY(*text);
            return true;
          }},
         {.name = core::globalStringInterner().intern("negative_z"),

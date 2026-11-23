@@ -1,6 +1,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <cmath>
 #include <memory>
 
 #include <yr/core/string_interner.h>
@@ -9,9 +10,13 @@
 #include <yr/gameplay/gameplay_classes.h>
 #include <yr/gameplay/input_axis.h>
 #include <yr/gameplay/key_trigger.h>
+#include <yr/gameplay/mouse_look.h>
 #include <yr/gameplay/move_motor.h>
+#include <yr/gameplay/sun_sweep.h>
 #include <yr/input/input_state.h>
 #include <yr/object/class_db.h>
+#include <yr/scene/camera_node.h>
+#include <yr/scene/light_node.h>
 #include <yr/scene/node.h>
 #include <yr/scene/packed_scene.h>
 #include <yr/scene/scene_reader.h>
@@ -24,11 +29,17 @@ namespace {
   using yr::gameplay::Counter;
   using yr::gameplay::InputAxis;
   using yr::gameplay::KeyTrigger;
+  using yr::gameplay::MouseLook;
   using yr::gameplay::MoveMotor;
+  using yr::gameplay::SunSweep;
   using yr::input::InputState;
   using yr::input::KeyEvent;
   using yr::input::KeyPhase;
+  using yr::input::MouseMoveEvent;
   using yr::math::Vec3;
+  using yr::scene::CameraNode;
+  using yr::scene::LightNode;
+  using yr::scene::LightType;
   using yr::scene::Node;
   using yr::scene::SceneTree;
 
@@ -395,4 +406,96 @@ TEST_CASE("gameplay key trigger: unknown phase is rejected", "[gameplay][key_tri
   CHECK(trigger.phase() == KeyPhase::kPressed);
   CHECK(trigger.setPhase("released"));
   CHECK(trigger.phase() == KeyPhase::kReleased);
+}
+
+TEST_CASE("gameplay mouse look: deltas rotate a camera through a connection", "[gameplay][mouse_look]") {
+  SceneTree tree;
+  InputState input;
+  tree.setInputState(&input);
+
+  auto root = makeNode("Root");
+  auto camera = std::make_unique<CameraNode>();
+  camera->setName("Camera");
+  auto look = std::make_unique<MouseLook>();
+  look->setName("Mouse");
+  look->setSensitivity(0.1F);
+  CameraNode* const rawCamera = camera.get();
+  MouseLook* const rawLook = look.get();
+  REQUIRE(camera->addChild(std::move(look)));
+  REQUIRE(root->addChild(std::move(camera)));
+  rawLook->connect(intern("look"), rawCamera->id(), intern("look"));
+  REQUIRE(tree.setRoot(std::move(root)));
+
+  input.submit(MouseMoveEvent{.x = 100.0F, .y = 50.0F, .deltaX = 100.0F, .deltaY = 50.0F});
+  tree.process(0.016F);
+
+  CHECK(rawCamera->yawDegrees() == Catch::Approx(10.0F));
+  CHECK(rawCamera->pitchDegrees() == Catch::Approx(-5.0F));
+
+  rawLook->setInvertY(true);
+  input.beginFrame(); // 模拟 InputSystem 清掉上一帧的鼠标增量
+  input.submit(MouseMoveEvent{.x = 100.0F, .y = 100.0F, .deltaX = 0.0F, .deltaY = 100.0F});
+  tree.process(0.016F);
+  CHECK(rawCamera->pitchDegrees() == Catch::Approx(5.0F));
+}
+
+TEST_CASE("gameplay input axis: y keys drive vertical movement", "[gameplay][input_axis]") {
+  SceneTree tree;
+  InputState input;
+  tree.setInputState(&input);
+
+  auto root = makeNode("Root");
+  auto axis = std::make_unique<InputAxis>();
+  axis->setName("Axis");
+  axis->setPositiveY("key_e");
+  axis->setNegativeY("key_q");
+  InputAxis* const raw = axis.get();
+  REQUIRE(root->addChild(std::move(axis)));
+  REQUIRE(tree.setRoot(std::move(root)));
+
+  input.submit(KeyEvent{intern("key_e"), KeyPhase::kPressed, 1.0F});
+  tree.process(0.016F);
+  CHECK(raw->value().y == 1.0F);
+
+  input.submit(KeyEvent{intern("key_e"), KeyPhase::kReleased, 0.0F});
+  input.submit(KeyEvent{intern("key_q"), KeyPhase::kPressed, 1.0F});
+  tree.process(0.016F);
+  CHECK(raw->value().y == -1.0F);
+}
+
+TEST_CASE("gameplay sun sweep: parent light orbits and looks at center", "[gameplay][sun_sweep]") {
+  SceneTree tree;
+
+  auto root = makeNode("Root");
+  auto sun = std::make_unique<LightNode>();
+  sun->setName("Sun");
+  sun->setType(LightType::kDirectional);
+  auto sweep = std::make_unique<SunSweep>();
+  sweep->setName("Sweep");
+  sweep->setCenter(Vec3{0.0F, 0.0F, 0.0F});
+  sweep->setRadius(10.0F);
+  sweep->setHeight(20.0F);
+  sweep->setHeightAmplitude(5.0F);
+  sweep->setSpeedDegrees(10.0F);
+  sweep->setPhaseDegrees(0.0F);
+  LightNode* const rawSun = sun.get();
+  REQUIRE(sun->addChild(std::move(sweep)));
+  REQUIRE(root->addChild(std::move(sun)));
+  REQUIRE(tree.setRoot(std::move(root)));
+
+  tree.process(9.0F); // 10 度/秒 * 9 秒 = 90 度
+
+  CHECK(rawSun->position().x == Catch::Approx(0.0F).margin(1e-3F));
+  CHECK(rawSun->position().y == Catch::Approx(25.0F)); // 20 + 5 * sin(90°)
+  CHECK(rawSun->position().z == Catch::Approx(10.0F).margin(1e-3F));
+
+  const float norm = std::sqrt(25.0F * 25.0F + 10.0F * 10.0F);
+  CHECK(rawSun->direction().x == Catch::Approx(0.0F).margin(1e-5F));
+  CHECK(rawSun->direction().y == Catch::Approx(-25.0F / norm).margin(1e-5F));
+  CHECK(rawSun->direction().z == Catch::Approx(-10.0F / norm).margin(1e-5F));
+}
+
+TEST_CASE("gameplay sun sweep: non-light parent is a no-op", "[gameplay][sun_sweep]") {
+  SunSweep sweep;
+  REQUIRE_NOTHROW(sweep.onUpdate(1.0F));
 }

@@ -19,10 +19,14 @@ namespace yr::gameplay {
     // 反射入口：键名是 .scn 里的字符串，内部驻留成 StringId。
     [[nodiscard]] core::StringId negativeX() const noexcept { return negativeX_; }
     [[nodiscard]] core::StringId positiveX() const noexcept { return positiveX_; }
+    [[nodiscard]] core::StringId negativeY() const noexcept { return negativeY_; }
+    [[nodiscard]] core::StringId positiveY() const noexcept { return positiveY_; }
     [[nodiscard]] core::StringId negativeZ() const noexcept { return negativeZ_; }
     [[nodiscard]] core::StringId positiveZ() const noexcept { return positiveZ_; }
     void setNegativeX(std::string_view key);
     void setPositiveX(std::string_view key);
+    void setNegativeY(std::string_view key);
+    void setPositiveY(std::string_view key);
     void setNegativeZ(std::string_view key);
     void setPositiveZ(std::string_view key);
 
@@ -34,6 +38,8 @@ namespace yr::gameplay {
   private:
     core::StringId negativeX_{};
     core::StringId positiveX_{};
+    core::StringId negativeY_{};
+    core::StringId positiveY_{};
     core::StringId negativeZ_{};
     core::StringId positiveZ_{};
     bool normalize_ = true;
