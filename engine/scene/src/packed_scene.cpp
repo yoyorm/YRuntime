@@ -1,6 +1,7 @@
 #include <yr/scene/packed_scene.h>
 
 #include <cstdint>
+#include <cstdio>
 #include <memory>
 #include <span>
 #include <string>
@@ -61,24 +62,36 @@ namespace yr::scene {
       mesh.indices.insert(mesh.indices.end(), {base, base + 1, base + 2, base, base + 2, base + 3});
     }
 
-    [[nodiscard]] obj::Ref<asset::Mesh> makeBoxMesh() {
+    [[nodiscard]] obj::Ref<asset::Mesh> makeBoxMesh(const math::Vec3& size) {
+      if (size.x <= 0.0F || size.y <= 0.0F || size.z <= 0.0F) {
+        return {};
+      }
+      const math::Vec3 h = size * 0.5F;
       auto mesh = obj::make_ref<asset::Mesh>();
-      mesh->setUid(asset::AssetUID::fromPath("res://builtin/box"));
-      mesh->setSourcePath("res://builtin/box");
+      char path[96];
+      std::snprintf(path, sizeof(path), "res://builtin/box/%.9gx%.9gx%.9g", static_cast<double>(size.x),
+                    static_cast<double>(size.y), static_cast<double>(size.z));
+      mesh->setUid(asset::AssetUID::fromPath(path));
+      mesh->setSourcePath(path);
       (void)mesh->markLoading();
       mesh->vertices.reserve(24);
       mesh->indices.reserve(36);
 
-      const float h = 0.5F;
-      appendFace(*mesh, math::Vec3{1.0F, 0.0F, 0.0F}, {h, -h, -h}, {h, h, -h}, {h, h, h}, {h, -h, h});
-      appendFace(*mesh, math::Vec3{-1.0F, 0.0F, 0.0F}, {-h, -h, h}, {-h, h, h}, {-h, h, -h}, {-h, -h, -h});
-      appendFace(*mesh, math::Vec3{0.0F, 1.0F, 0.0F}, {-h, h, -h}, {-h, h, h}, {h, h, h}, {h, h, -h});
-      appendFace(*mesh, math::Vec3{0.0F, -1.0F, 0.0F}, {-h, -h, h}, {-h, -h, -h}, {h, -h, -h}, {h, -h, h});
-      appendFace(*mesh, math::Vec3{0.0F, 0.0F, 1.0F}, {-h, -h, h}, {h, -h, h}, {h, h, h}, {-h, h, h});
-      appendFace(*mesh, math::Vec3{0.0F, 0.0F, -1.0F}, {h, -h, -h}, {-h, -h, -h}, {-h, h, -h}, {h, h, -h});
+      appendFace(*mesh, math::Vec3{1.0F, 0.0F, 0.0F}, {h.x, -h.y, -h.z}, {h.x, h.y, -h.z}, {h.x, h.y, h.z},
+                 {h.x, -h.y, h.z});
+      appendFace(*mesh, math::Vec3{-1.0F, 0.0F, 0.0F}, {-h.x, -h.y, h.z}, {-h.x, h.y, h.z}, {-h.x, h.y, -h.z},
+                 {-h.x, -h.y, -h.z});
+      appendFace(*mesh, math::Vec3{0.0F, 1.0F, 0.0F}, {-h.x, h.y, -h.z}, {-h.x, h.y, h.z}, {h.x, h.y, h.z},
+                 {h.x, h.y, -h.z});
+      appendFace(*mesh, math::Vec3{0.0F, -1.0F, 0.0F}, {-h.x, -h.y, h.z}, {-h.x, -h.y, -h.z}, {h.x, -h.y, -h.z},
+                 {h.x, -h.y, h.z});
+      appendFace(*mesh, math::Vec3{0.0F, 0.0F, 1.0F}, {-h.x, -h.y, h.z}, {h.x, -h.y, h.z}, {h.x, h.y, h.z},
+                 {-h.x, h.y, h.z});
+      appendFace(*mesh, math::Vec3{0.0F, 0.0F, -1.0F}, {h.x, -h.y, -h.z}, {-h.x, -h.y, -h.z}, {-h.x, h.y, -h.z},
+                 {h.x, h.y, -h.z});
 
-      mesh->boundsMin = math::Vec3{-h, -h, -h};
-      mesh->boundsMax = math::Vec3{h, h, h};
+      mesh->boundsMin = math::Vec3{-h.x, -h.y, -h.z};
+      mesh->boundsMax = math::Vec3{h.x, h.y, h.z};
       mesh->hasBounds = true;
       (void)mesh->markReady();
       return mesh;
@@ -108,10 +121,18 @@ namespace yr::scene {
         return makeMaterial(packed);
       }
       if (packed.type.view() == "BoxMesh") {
-        if (!packed.properties.empty()) {
-          return {};
+        math::Vec3 size{1.0F, 1.0F, 1.0F};
+        for (const PackedSubResourceProperty& property : packed.properties) {
+          if (property.value.isReference() || property.name.view() != "size") {
+            return {};
+          }
+          const auto parsed = property.value.value.tryAs<math::Vec3>();
+          if (!parsed.has_value()) {
+            return {};
+          }
+          size = *parsed;
         }
-        return makeBoxMesh();
+        return makeBoxMesh(size);
       }
       return {};
     }

@@ -37,7 +37,8 @@ namespace yr::scene {
   // - 值可以是普通 Variant，或 ExtResource("id") / SubResource("id")；括号内允许空格。
   // - 不存在的引用 id、自引用、sub_resource 环 → error（由 resolveReferences 报）。
   // - 属性行只属于当前 sub_resource；下一个 section 出现即结束。
-  // - 第一版支持的 type：Material（baseColorFactor）、BoxMesh（单位立方体，无属性）。
+  // - 第一版支持的 type：Material（baseColorFactor）、BoxMesh（可选 size = Vector3(x,y,z) 全尺寸，
+  //   默认单位立方体；尺寸必须为正）。
   //
   // [node]：
   //   [node name="Root" type="Node"]

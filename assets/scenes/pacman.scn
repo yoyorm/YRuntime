@@ -2,6 +2,12 @@
 
 [sub_resource type="BoxMesh" id="cube"]
 
+[sub_resource type="BoxMesh" id="pellet_mesh"]
+size = Vector3(0.4, 0.4, 0.4)
+
+[sub_resource type="BoxMesh" id="floor_mesh"]
+size = Vector3(16, 0.2, 12)
+
 [sub_resource type="Material" id="wall"]
 baseColorFactor = Vector3(0.15, 0.25, 0.8)
 
@@ -11,7 +17,15 @@ baseColorFactor = Vector3(1.0, 0.85, 0.2)
 [sub_resource type="Material" id="player"]
 baseColorFactor = Vector3(1.0, 0.55, 0.1)
 
+[sub_resource type="Material" id="floor_mat"]
+baseColorFactor = Vector3(0.10, 0.12, 0.16)
+
 [node name="Pacman" type="Node"]
+
+[node name="Floor" type="MeshInstanceNode" parent="."]
+position = Vector3(0, -0.6, 0)
+mesh = SubResource("floor_mesh")
+material = SubResource("floor_mat")
 
 [node name="Wall_x-7_z-5" type="MeshInstanceNode" parent="."]
 position = Vector3(-7, 0, -5)
@@ -714,282 +728,282 @@ solid = true
 tag = "wall"
 
 [node name="Pellet_x-6_z-4" type="MeshInstanceNode" parent="."]
-position = Vector3(-6, 0, -4)
-mesh = SubResource("cube")
+position = Vector3(-6, -0.3, -4)
+mesh = SubResource("pellet_mesh")
 material = SubResource("pellet")
 
 [node name="Sensor" type="BoxCollider" parent="Pellet_x-6_z-4"]
-half_extents = Vector3(0.5, 0.5, 0.5)
+half_extents = Vector3(0.3, 0.3, 0.3)
 trigger = true
 filter_tag = "player"
 
 [node name="Pellet_x-3_z-4" type="MeshInstanceNode" parent="."]
-position = Vector3(-3, 0, -4)
-mesh = SubResource("cube")
+position = Vector3(-3, -0.3, -4)
+mesh = SubResource("pellet_mesh")
 material = SubResource("pellet")
 
 [node name="Sensor" type="BoxCollider" parent="Pellet_x-3_z-4"]
-half_extents = Vector3(0.5, 0.5, 0.5)
+half_extents = Vector3(0.3, 0.3, 0.3)
 trigger = true
 filter_tag = "player"
 
 [node name="Pellet_x0_z-4" type="MeshInstanceNode" parent="."]
-position = Vector3(0, 0, -4)
-mesh = SubResource("cube")
+position = Vector3(0, -0.3, -4)
+mesh = SubResource("pellet_mesh")
 material = SubResource("pellet")
 
 [node name="Sensor" type="BoxCollider" parent="Pellet_x0_z-4"]
-half_extents = Vector3(0.5, 0.5, 0.5)
+half_extents = Vector3(0.3, 0.3, 0.3)
 trigger = true
 filter_tag = "player"
 
 [node name="Pellet_x3_z-4" type="MeshInstanceNode" parent="."]
-position = Vector3(3, 0, -4)
-mesh = SubResource("cube")
+position = Vector3(3, -0.3, -4)
+mesh = SubResource("pellet_mesh")
 material = SubResource("pellet")
 
 [node name="Sensor" type="BoxCollider" parent="Pellet_x3_z-4"]
-half_extents = Vector3(0.5, 0.5, 0.5)
+half_extents = Vector3(0.3, 0.3, 0.3)
 trigger = true
 filter_tag = "player"
 
 [node name="Pellet_x6_z-4" type="MeshInstanceNode" parent="."]
-position = Vector3(6, 0, -4)
-mesh = SubResource("cube")
+position = Vector3(6, -0.3, -4)
+mesh = SubResource("pellet_mesh")
 material = SubResource("pellet")
 
 [node name="Sensor" type="BoxCollider" parent="Pellet_x6_z-4"]
-half_extents = Vector3(0.5, 0.5, 0.5)
+half_extents = Vector3(0.3, 0.3, 0.3)
 trigger = true
 filter_tag = "player"
 
 [node name="Pellet_x-6_z-2" type="MeshInstanceNode" parent="."]
-position = Vector3(-6, 0, -2)
-mesh = SubResource("cube")
+position = Vector3(-6, -0.3, -2)
+mesh = SubResource("pellet_mesh")
 material = SubResource("pellet")
 
 [node name="Sensor" type="BoxCollider" parent="Pellet_x-6_z-2"]
-half_extents = Vector3(0.5, 0.5, 0.5)
+half_extents = Vector3(0.3, 0.3, 0.3)
 trigger = true
 filter_tag = "player"
 
 [node name="Pellet_x-3_z-2" type="MeshInstanceNode" parent="."]
-position = Vector3(-3, 0, -2)
-mesh = SubResource("cube")
+position = Vector3(-3, -0.3, -2)
+mesh = SubResource("pellet_mesh")
 material = SubResource("pellet")
 
 [node name="Sensor" type="BoxCollider" parent="Pellet_x-3_z-2"]
-half_extents = Vector3(0.5, 0.5, 0.5)
+half_extents = Vector3(0.3, 0.3, 0.3)
 trigger = true
 filter_tag = "player"
 
 [node name="Pellet_x0_z-2" type="MeshInstanceNode" parent="."]
-position = Vector3(0, 0, -2)
-mesh = SubResource("cube")
+position = Vector3(0, -0.3, -2)
+mesh = SubResource("pellet_mesh")
 material = SubResource("pellet")
 
 [node name="Sensor" type="BoxCollider" parent="Pellet_x0_z-2"]
-half_extents = Vector3(0.5, 0.5, 0.5)
+half_extents = Vector3(0.3, 0.3, 0.3)
 trigger = true
 filter_tag = "player"
 
 [node name="Pellet_x3_z-2" type="MeshInstanceNode" parent="."]
-position = Vector3(3, 0, -2)
-mesh = SubResource("cube")
+position = Vector3(3, -0.3, -2)
+mesh = SubResource("pellet_mesh")
 material = SubResource("pellet")
 
 [node name="Sensor" type="BoxCollider" parent="Pellet_x3_z-2"]
-half_extents = Vector3(0.5, 0.5, 0.5)
+half_extents = Vector3(0.3, 0.3, 0.3)
 trigger = true
 filter_tag = "player"
 
 [node name="Pellet_x6_z-2" type="MeshInstanceNode" parent="."]
-position = Vector3(6, 0, -2)
-mesh = SubResource("cube")
+position = Vector3(6, -0.3, -2)
+mesh = SubResource("pellet_mesh")
 material = SubResource("pellet")
 
 [node name="Sensor" type="BoxCollider" parent="Pellet_x6_z-2"]
-half_extents = Vector3(0.5, 0.5, 0.5)
+half_extents = Vector3(0.3, 0.3, 0.3)
 trigger = true
 filter_tag = "player"
 
 [node name="Pellet_x-4_z-1" type="MeshInstanceNode" parent="."]
-position = Vector3(-4, 0, -1)
-mesh = SubResource("cube")
+position = Vector3(-4, -0.3, -1)
+mesh = SubResource("pellet_mesh")
 material = SubResource("pellet")
 
 [node name="Sensor" type="BoxCollider" parent="Pellet_x-4_z-1"]
-half_extents = Vector3(0.5, 0.5, 0.5)
+half_extents = Vector3(0.3, 0.3, 0.3)
 trigger = true
 filter_tag = "player"
 
 [node name="Pellet_x0_z-1" type="MeshInstanceNode" parent="."]
-position = Vector3(0, 0, -1)
-mesh = SubResource("cube")
+position = Vector3(0, -0.3, -1)
+mesh = SubResource("pellet_mesh")
 material = SubResource("pellet")
 
 [node name="Sensor" type="BoxCollider" parent="Pellet_x0_z-1"]
-half_extents = Vector3(0.5, 0.5, 0.5)
+half_extents = Vector3(0.3, 0.3, 0.3)
 trigger = true
 filter_tag = "player"
 
 [node name="Pellet_x4_z-1" type="MeshInstanceNode" parent="."]
-position = Vector3(4, 0, -1)
-mesh = SubResource("cube")
+position = Vector3(4, -0.3, -1)
+mesh = SubResource("pellet_mesh")
 material = SubResource("pellet")
 
 [node name="Sensor" type="BoxCollider" parent="Pellet_x4_z-1"]
-half_extents = Vector3(0.5, 0.5, 0.5)
+half_extents = Vector3(0.3, 0.3, 0.3)
 trigger = true
 filter_tag = "player"
 
 [node name="Pellet_x-1_z0" type="MeshInstanceNode" parent="."]
-position = Vector3(-1, 0, 0)
-mesh = SubResource("cube")
+position = Vector3(-1, -0.3, 0)
+mesh = SubResource("pellet_mesh")
 material = SubResource("pellet")
 
 [node name="Sensor" type="BoxCollider" parent="Pellet_x-1_z0"]
-half_extents = Vector3(0.5, 0.5, 0.5)
+half_extents = Vector3(0.3, 0.3, 0.3)
 trigger = true
 filter_tag = "player"
 
 [node name="Pellet_x1_z0" type="MeshInstanceNode" parent="."]
-position = Vector3(1, 0, 0)
-mesh = SubResource("cube")
+position = Vector3(1, -0.3, 0)
+mesh = SubResource("pellet_mesh")
 material = SubResource("pellet")
 
 [node name="Sensor" type="BoxCollider" parent="Pellet_x1_z0"]
-half_extents = Vector3(0.5, 0.5, 0.5)
+half_extents = Vector3(0.3, 0.3, 0.3)
 trigger = true
 filter_tag = "player"
 
 [node name="Pellet_x-4_z1" type="MeshInstanceNode" parent="."]
-position = Vector3(-4, 0, 1)
-mesh = SubResource("cube")
+position = Vector3(-4, -0.3, 1)
+mesh = SubResource("pellet_mesh")
 material = SubResource("pellet")
 
 [node name="Sensor" type="BoxCollider" parent="Pellet_x-4_z1"]
-half_extents = Vector3(0.5, 0.5, 0.5)
+half_extents = Vector3(0.3, 0.3, 0.3)
 trigger = true
 filter_tag = "player"
 
 [node name="Pellet_x0_z1" type="MeshInstanceNode" parent="."]
-position = Vector3(0, 0, 1)
-mesh = SubResource("cube")
+position = Vector3(0, -0.3, 1)
+mesh = SubResource("pellet_mesh")
 material = SubResource("pellet")
 
 [node name="Sensor" type="BoxCollider" parent="Pellet_x0_z1"]
-half_extents = Vector3(0.5, 0.5, 0.5)
+half_extents = Vector3(0.3, 0.3, 0.3)
 trigger = true
 filter_tag = "player"
 
 [node name="Pellet_x4_z1" type="MeshInstanceNode" parent="."]
-position = Vector3(4, 0, 1)
-mesh = SubResource("cube")
+position = Vector3(4, -0.3, 1)
+mesh = SubResource("pellet_mesh")
 material = SubResource("pellet")
 
 [node name="Sensor" type="BoxCollider" parent="Pellet_x4_z1"]
-half_extents = Vector3(0.5, 0.5, 0.5)
+half_extents = Vector3(0.3, 0.3, 0.3)
 trigger = true
 filter_tag = "player"
 
 [node name="Pellet_x-6_z2" type="MeshInstanceNode" parent="."]
-position = Vector3(-6, 0, 2)
-mesh = SubResource("cube")
+position = Vector3(-6, -0.3, 2)
+mesh = SubResource("pellet_mesh")
 material = SubResource("pellet")
 
 [node name="Sensor" type="BoxCollider" parent="Pellet_x-6_z2"]
-half_extents = Vector3(0.5, 0.5, 0.5)
+half_extents = Vector3(0.3, 0.3, 0.3)
 trigger = true
 filter_tag = "player"
 
 [node name="Pellet_x-3_z2" type="MeshInstanceNode" parent="."]
-position = Vector3(-3, 0, 2)
-mesh = SubResource("cube")
+position = Vector3(-3, -0.3, 2)
+mesh = SubResource("pellet_mesh")
 material = SubResource("pellet")
 
 [node name="Sensor" type="BoxCollider" parent="Pellet_x-3_z2"]
-half_extents = Vector3(0.5, 0.5, 0.5)
+half_extents = Vector3(0.3, 0.3, 0.3)
 trigger = true
 filter_tag = "player"
 
 [node name="Pellet_x0_z2" type="MeshInstanceNode" parent="."]
-position = Vector3(0, 0, 2)
-mesh = SubResource("cube")
+position = Vector3(0, -0.3, 2)
+mesh = SubResource("pellet_mesh")
 material = SubResource("pellet")
 
 [node name="Sensor" type="BoxCollider" parent="Pellet_x0_z2"]
-half_extents = Vector3(0.5, 0.5, 0.5)
+half_extents = Vector3(0.3, 0.3, 0.3)
 trigger = true
 filter_tag = "player"
 
 [node name="Pellet_x3_z2" type="MeshInstanceNode" parent="."]
-position = Vector3(3, 0, 2)
-mesh = SubResource("cube")
+position = Vector3(3, -0.3, 2)
+mesh = SubResource("pellet_mesh")
 material = SubResource("pellet")
 
 [node name="Sensor" type="BoxCollider" parent="Pellet_x3_z2"]
-half_extents = Vector3(0.5, 0.5, 0.5)
+half_extents = Vector3(0.3, 0.3, 0.3)
 trigger = true
 filter_tag = "player"
 
 [node name="Pellet_x6_z2" type="MeshInstanceNode" parent="."]
-position = Vector3(6, 0, 2)
-mesh = SubResource("cube")
+position = Vector3(6, -0.3, 2)
+mesh = SubResource("pellet_mesh")
 material = SubResource("pellet")
 
 [node name="Sensor" type="BoxCollider" parent="Pellet_x6_z2"]
-half_extents = Vector3(0.5, 0.5, 0.5)
+half_extents = Vector3(0.3, 0.3, 0.3)
 trigger = true
 filter_tag = "player"
 
 [node name="Pellet_x-6_z4" type="MeshInstanceNode" parent="."]
-position = Vector3(-6, 0, 4)
-mesh = SubResource("cube")
+position = Vector3(-6, -0.3, 4)
+mesh = SubResource("pellet_mesh")
 material = SubResource("pellet")
 
 [node name="Sensor" type="BoxCollider" parent="Pellet_x-6_z4"]
-half_extents = Vector3(0.5, 0.5, 0.5)
+half_extents = Vector3(0.3, 0.3, 0.3)
 trigger = true
 filter_tag = "player"
 
 [node name="Pellet_x-3_z4" type="MeshInstanceNode" parent="."]
-position = Vector3(-3, 0, 4)
-mesh = SubResource("cube")
+position = Vector3(-3, -0.3, 4)
+mesh = SubResource("pellet_mesh")
 material = SubResource("pellet")
 
 [node name="Sensor" type="BoxCollider" parent="Pellet_x-3_z4"]
-half_extents = Vector3(0.5, 0.5, 0.5)
+half_extents = Vector3(0.3, 0.3, 0.3)
 trigger = true
 filter_tag = "player"
 
 [node name="Pellet_x0_z4" type="MeshInstanceNode" parent="."]
-position = Vector3(0, 0, 4)
-mesh = SubResource("cube")
+position = Vector3(0, -0.3, 4)
+mesh = SubResource("pellet_mesh")
 material = SubResource("pellet")
 
 [node name="Sensor" type="BoxCollider" parent="Pellet_x0_z4"]
-half_extents = Vector3(0.5, 0.5, 0.5)
+half_extents = Vector3(0.3, 0.3, 0.3)
 trigger = true
 filter_tag = "player"
 
 [node name="Pellet_x3_z4" type="MeshInstanceNode" parent="."]
-position = Vector3(3, 0, 4)
-mesh = SubResource("cube")
+position = Vector3(3, -0.3, 4)
+mesh = SubResource("pellet_mesh")
 material = SubResource("pellet")
 
 [node name="Sensor" type="BoxCollider" parent="Pellet_x3_z4"]
-half_extents = Vector3(0.5, 0.5, 0.5)
+half_extents = Vector3(0.3, 0.3, 0.3)
 trigger = true
 filter_tag = "player"
 
 [node name="Pellet_x6_z4" type="MeshInstanceNode" parent="."]
-position = Vector3(6, 0, 4)
-mesh = SubResource("cube")
+position = Vector3(6, -0.3, 4)
+mesh = SubResource("pellet_mesh")
 material = SubResource("pellet")
 
 [node name="Sensor" type="BoxCollider" parent="Pellet_x6_z4"]
-half_extents = Vector3(0.5, 0.5, 0.5)
+half_extents = Vector3(0.3, 0.3, 0.3)
 trigger = true
 filter_tag = "player"
 

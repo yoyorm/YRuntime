@@ -561,6 +561,56 @@ TEST_CASE("scene format: BOM / CRLF input and istream overload load", "[scene][s
   CHECK(result.scene.nodes[0].name == "Root");
 }
 
+TEST_CASE("scene format: BoxMesh size scales the builtin cube and its uid", "[scene][scene_format][instantiate]") {
+  const SceneLoadResult result = load("[scene]\n"
+                                      "[sub_resource type=\"BoxMesh\" id=\"unit\"]\n"
+                                      "[sub_resource type=\"BoxMesh\" id=\"slab\"]\n"
+                                      "size = Vector3(4, 0.5, 2)\n"
+                                      "[node name=\"Root\" type=\"Node\"]\n"
+                                      "[node name=\"Unit\" type=\"MeshInstanceNode\" parent=\".\"]\n"
+                                      "mesh = SubResource(\"unit\")\n"
+                                      "[node name=\"Slab\" type=\"MeshInstanceNode\" parent=\".\"]\n"
+                                      "mesh = SubResource(\"slab\")\n");
+  REQUIRE(result.ok());
+
+  const std::unique_ptr<Node> root = result.scene.instantiate(classes());
+  REQUIRE(root != nullptr);
+  REQUIRE(root->childCount() == 2);
+
+  const auto* const unit = dynamic_cast<const MeshInstanceNode*>(root->childAt(0));
+  const auto* const slab = dynamic_cast<const MeshInstanceNode*>(root->childAt(1));
+  REQUIRE(unit != nullptr);
+  REQUIRE(slab != nullptr);
+  REQUIRE(unit->mesh().valid());
+  REQUIRE(slab->mesh().valid());
+
+  CHECK(unit->mesh()->boundsMin == Vec3{-0.5F, -0.5F, -0.5F});
+  CHECK(unit->mesh()->boundsMax == Vec3{0.5F, 0.5F, 0.5F});
+  CHECK(slab->mesh()->boundsMin == Vec3{-2.0F, -0.25F, -1.0F});
+  CHECK(slab->mesh()->boundsMax == Vec3{2.0F, 0.25F, 1.0F});
+  CHECK(unit->mesh()->vertices.size() == 24);
+  CHECK(slab->mesh()->vertices.size() == 24);
+
+  // render extract 按 mesh uid 去重上传，不同尺寸必须拿到不同 uid。
+  CHECK(unit->mesh()->uid().value != slab->mesh()->uid().value);
+}
+
+TEST_CASE("scene format: BoxMesh with non-positive size fails instantiation",
+          "[scene][scene_format][instantiate][failure]") {
+  const SceneLoadResult result = load("[scene]\n"
+                                      "[sub_resource type=\"BoxMesh\" id=\"bad\"]\n"
+                                      "size = Vector3(1, 0, 1)\n"
+                                      "[node name=\"Root\" type=\"Node\"]\n"
+                                      "[node name=\"Bad\" type=\"MeshInstanceNode\" parent=\".\"]\n"
+                                      "mesh = SubResource(\"bad\")\n");
+  REQUIRE(result.ok());
+
+  const std::size_t before = yr::obj::globalObjectDB().aliveCount();
+  const std::unique_ptr<Node> root = result.scene.instantiate(classes());
+  CHECK(root == nullptr);
+  CHECK(yr::obj::globalObjectDB().aliveCount() == before);
+}
+
 TEST_CASE("scene format: CameraNode and LightNode properties from text", "[scene][scene_format][instantiate]") {
   const SceneLoadResult result = load("[scene]\n"
                                       "[node name=\"Root\" type=\"Node\"]\n"
