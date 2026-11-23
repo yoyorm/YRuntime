@@ -556,3 +556,19 @@ TEST_CASE("transform: re-adding to the same parent re-marks dirty and picks up a
   tree.refreshTransforms();
   CHECK(rawChild->globalTransform().transformPoint(Vec3(0.0F, 0.0F, 0.0F)) == Vec3(10.0F, 2.0F, 0.0F));
 }
+
+TEST_CASE("transform: setRoot seeds global cache before the first process", "[scene][transform][set-root]") {
+  auto root = std::make_unique<Node>();
+  auto child = std::make_unique<Node>();
+  Node* const rawRoot = root.get();
+  Node* const rawChild = child.get();
+  rawRoot->setPosition(Vec3(1.0F, 0.0F, 0.0F));
+  rawChild->setPosition(Vec3(0.0F, 2.0F, 0.0F));
+  REQUIRE(rawRoot->addChild(std::move(child)));
+
+  SceneTree tree;
+  REQUIRE(tree.setRoot(std::move(root)));
+
+  // 不手动 refresh：首个 process 之前就必须能读到真实世界坐标。
+  CHECK(rawChild->globalTransform().transformPoint(Vec3(0.0F, 0.0F, 0.0F)) == Vec3(1.0F, 2.0F, 0.0F));
+}

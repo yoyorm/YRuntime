@@ -21,6 +21,8 @@ namespace yr::scene {
     // 所有 enter 完成后再统一 ready
     root_->setTree(this);
     root_->propagateReady();
+    // 首个 process 阶段之前先种好 global 缓存：否则行为节点在首帧读到的世界坐标全是原点。
+    refreshTransforms();
     return true;
   }
 
