@@ -1,0 +1,61 @@
+# Sponza 光照基准：gltf 先加载，本场景作为子节点叠加在 gltf 根下。
+# 用法（Sponza 需要外部 asset root）：
+#   yr_render_demo --gltf res://NewSponza_Main_glTF_003.gltf \
+#                  --asset-root /path/to/main1_sponza \
+#                  --scene assets/scenes/sponza_lighting.scn
+
+[scene]
+
+[node name="SponzaLighting" type="Node"]
+
+# 自由相机：WASD 平移，Q/E 升降，鼠标转动视角。
+[node name="Camera" type="CameraNode" parent="."]
+position = Vector3(-8.807, 1.592, -0.858)
+yaw_degrees = 100.686
+pitch_degrees = 11.207
+fov_degrees = 60.0
+near_plane = 0.1
+far_plane = 300.0
+
+[node name="CameraInput" type="InputAxis" parent="Camera"]
+positive_x = "key_d"
+negative_x = "key_a"
+positive_y = "key_e"
+negative_y = "key_q"
+positive_z = "key_s"
+negative_z = "key_w"
+
+[node name="CameraMotor" type="FlyMotor" parent="Camera"]
+speed = 4.0
+continuous = true
+
+[node name="CameraMouse" type="MouseLook" parent="Camera"]
+sensitivity = 0.12
+invert_y = false
+
+# 固定点光：位置不动，只提供室内暖色补光。
+[node name="PointFill" type="LightNode" parent="."]
+type = "point"
+position = Vector3(0, 6, 0)
+color = Vector3(1.0, 0.75, 0.5)
+intensity = 12.0
+range = 40.0
+
+# 平行光：SunSweep 每帧改 position 与 direction，让光从不同角度扫进建筑。
+[node name="Sun" type="LightNode" parent="."]
+type = "directional"
+position = Vector3(0, 28, 30)
+color = Vector3(1.0, 0.96, 0.88)
+intensity = 4.0
+direction = Vector3(0, -1, -1)
+
+[node name="SunSweep" type="SunSweep" parent="Sun"]
+center = Vector3(0, 3, 0)
+radius = 30.0
+height = 45.0
+height_amplitude = 25.0
+speed_degrees = 6.0
+phase_degrees = 60.0
+
+[connection from="Camera/CameraInput" to="Camera/CameraMotor" signal="axis_changed" method="set_direction"]
+[connection from="Camera/CameraMouse" to="Camera" signal="look" method="look"]

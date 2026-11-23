@@ -1200,6 +1200,16 @@ namespace yr::render {
     }
   }
 
+  void VulkanBackend::setCursorCaptured(bool captured) {
+    if (impl_->window.has_value()) {
+      impl_->window->setCursorCaptured(captured);
+    }
+  }
+
+  bool VulkanBackend::cursorCaptured() const noexcept {
+    return impl_->window.has_value() && impl_->window->cursorCaptured();
+  }
+
   bool VulkanBackend::shouldClose() const noexcept {
     return !impl_->window.has_value() || impl_->window->shouldClose();
   }

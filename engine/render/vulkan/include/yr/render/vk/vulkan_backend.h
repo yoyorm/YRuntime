@@ -53,6 +53,10 @@ namespace yr::render {
     // 由 host 在帧阶段 1（poll_input）调用；present() 不再泵事件。
     void pollEvents();
 
+    // host 级平台控制：鼠标锁定/释放（GLFW cursor disabled/normal）。
+    void setCursorCaptured(bool captured);
+    [[nodiscard]] bool cursorCaptured() const noexcept;
+
     // host 级平台查询：窗口是否请求关闭。M7 由 DemoLoop::pollInput 消费后调 requestQuit()。
     // 不属于 RendererBackend 契约。
     [[nodiscard]] bool shouldClose() const noexcept;

@@ -21,6 +21,9 @@ namespace yr::demo {
 
     void poll(yr::input::IInputSink& sink) override;
 
+    // 切换鼠标锁定模式后调用：丢弃下一帧的绝对坐标跳变，只保留之后的相对增量。
+    void resetCursorTracking() noexcept { hasCursor_ = false; }
+
   private:
     void onKey(yr::render::Key key, yr::render::KeyAction action);
     void onMouseButton(yr::render::MouseButton button, yr::render::KeyAction action, double x, double y);

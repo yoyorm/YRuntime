@@ -22,6 +22,10 @@ namespace yr::render::vk {
     [[nodiscard]] int height() const;
     [[nodiscard]] GLFWwindow* nativeHandle() const noexcept { return window_; }
 
+    // 相对鼠标模式：锁定后指针隐藏、光标增量不受窗口边缘限制。
+    void setCursorCaptured(bool captured);
+    [[nodiscard]] bool cursorCaptured() const noexcept;
+
     void destroy();
 
   private:

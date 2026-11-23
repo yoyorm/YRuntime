@@ -72,6 +72,20 @@ namespace yr::render::vk {
     return heightPixels;
   }
 
+  void Window::setCursorCaptured(bool captured) {
+    if (window_ == nullptr) {
+      return;
+    }
+    glfwSetInputMode(window_, GLFW_CURSOR, captured ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+  }
+
+  bool Window::cursorCaptured() const noexcept {
+    if (window_ == nullptr) {
+      return false;
+    }
+    return glfwGetInputMode(window_, GLFW_CURSOR) == GLFW_CURSOR_DISABLED;
+  }
+
   void Window::destroy() {
     if (window_ == nullptr) {
       return;

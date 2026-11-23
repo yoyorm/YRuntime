@@ -22,6 +22,7 @@
 #include <yr/asset/asset_database.h>
 #include <yr/asset/gltf_loader.h>
 #include <yr/core/log.h>
+#include <yr/core/string_interner.h>
 #include <yr/core/timer.h>
 #include <yr/engine/clock.h>
 #include <yr/engine/main_loop.h>
@@ -35,6 +36,7 @@
 #include <yr/render/snapshot.h>
 #include <yr/render/snapshot_io.h>
 #include <yr/render/vk/vulkan_backend.h>
+#include <yr/scene/camera_node.h>
 #include <yr/scene/light_node.h>
 #include <yr/scene/mesh_instance_node.h>
 #include <yr/scene/node.h>
@@ -132,6 +134,11 @@ namespace {
   }
 
   // host 驱动 MainLoop：阶段 1 由 InputRouter 泵输入；关闭窗口转成 requestQuit。
+  [[nodiscard]] yr::render::CameraPod makeCameraPod(const yr::scene::CameraNode& camera);
+  [[nodiscard]] yr::render::ShadowPod computeShadow(const yr::math::Vec3& center, float radius,
+                                                    const yr::math::Vec3& lightDirection);
+  [[nodiscard]] const yr::scene::LightNode* findDirectionalLight(const yr::scene::Node& node);
+
   class DemoLoop final : public yr::engine::MainLoop {
   public:
     DemoLoop(yr::scene::SceneTree& tree, yr::evt::EventBus& events, yr::render::VulkanBackend& backend,
@@ -139,6 +146,14 @@ namespace {
         : MainLoop(tree, events), backend_(backend), dumpPath_(std::move(dumpPath)) {}
 
     [[nodiscard]] bool dumpFailed() const noexcept { return dumpFailed_; }
+
+    // 场景自带 CameraNode 时，每帧在 extract 前重算相机与（可选）移动太阳的阴影。
+    void setCameraNode(yr::scene::CameraNode* camera) noexcept { cameraNode_ = camera; }
+    void setShadowFollowSun(yr::math::Vec3 center, float radius) noexcept {
+      shadowCenter_ = center;
+      shadowRadius_ = radius;
+      followSun_ = true;
+    }
 
     [[nodiscard]] yr::core::Duration lastPump() const noexcept { return lastPump_; }
     [[nodiscard]] yr::core::Duration lastExtract() const noexcept { return lastExtract_; }
@@ -154,6 +169,14 @@ namespace {
 
     void extractRender() override {
       yr::core::ScopeTimer timer;
+      if (cameraNode_ != nullptr) {
+        setCamera(makeCameraPod(*cameraNode_));
+      }
+      if (followSun_) {
+        if (const yr::scene::LightNode* const sun = findDirectionalLight(*tree().root()); sun != nullptr) {
+          setShadow(computeShadow(shadowCenter_, shadowRadius_, sun->direction()));
+        }
+      }
       MainLoop::extractRender();
       lastExtract_ = timer.elapsed();
     }
@@ -191,6 +214,10 @@ namespace {
     }
 
   private:
+    yr::scene::CameraNode* cameraNode_ = nullptr;
+    yr::math::Vec3 shadowCenter_{};
+    float shadowRadius_ = 1.0F;
+    bool followSun_ = false;
     yr::render::VulkanBackend& backend_;
     std::string dumpPath_;
     bool dumped_ = false;
@@ -263,7 +290,7 @@ namespace {
                  "          [--async-textures] [--trace PATH] [--camera X,Y,Z] [--target X,Y,Z] [--no-shadow]\n"
                  "          [--texture-max-dim N]\n"
                  "  --gltf RES_PATH          glTF scene to load (default res://models/ToyCar/ToyCar.gltf)\n"
-                 "  --scene PATH             .scn scene to load (mutually exclusive with --gltf)\n"
+                 "  --scene PATH             .scn scene to load; with --gltf it is added under the gltf root\n"
                  "  --asset-root PATH        filesystem root for res:// (default YR_ASSET_ROOT)\n"
                  "  --stream-assets          defer both meshes and textures\n"
                  "  --skip-textures          create no textures (geometry stress test)\n"
@@ -376,8 +403,8 @@ namespace {
     if (!options.dumpSnapshot.empty() && !options.replaySnapshot.empty()) {
       return false;
     }
-    // --scene 与显式 --gltf 互斥；未指定 --gltf 时允许 --scene。
-    return options.scenePath.empty() || !options.hasGltf;
+    // --scene 与 --gltf 可以同时使用：先加载 gltf，再把 .scn 根节点挂到 gltf 根下。
+    return true;
   }
 
   // replay 路径只依赖快照与后端：不建 SceneTree / EventBus / MainLoop / ObjectDB。
@@ -546,6 +573,60 @@ namespace {
              center + yr::math::Vec3{-1.2F * radius, 0.6F * radius, -0.8F * radius}, yr::math::Vec3{0.0F, 0.0F, -1.0F});
   }
 
+  [[nodiscard]] bool hasLightNode(const yr::scene::Node& node) {
+    if (dynamic_cast<const yr::scene::LightNode*>(&node) != nullptr) {
+      return true;
+    }
+    for (std::size_t index = 0; index < node.childCount(); ++index) {
+      if (hasLightNode(*node.childAt(index))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  [[nodiscard]] yr::scene::CameraNode* findCameraNode(yr::scene::Node& node) {
+    if (auto* const camera = dynamic_cast<yr::scene::CameraNode*>(&node); camera != nullptr) {
+      return camera;
+    }
+    for (std::size_t index = 0; index < node.childCount(); ++index) {
+      if (yr::scene::CameraNode* const camera = findCameraNode(*node.childAt(index)); camera != nullptr) {
+        return camera;
+      }
+    }
+    return nullptr;
+  }
+
+  [[nodiscard]] const yr::scene::LightNode* findDirectionalLight(const yr::scene::Node& node) {
+    if (const auto* const light = dynamic_cast<const yr::scene::LightNode*>(&node);
+        light != nullptr && light->type() == yr::scene::LightType::kDirectional) {
+      return light;
+    }
+    for (std::size_t index = 0; index < node.childCount(); ++index) {
+      if (const yr::scene::LightNode* const light = findDirectionalLight(*node.childAt(index)); light != nullptr) {
+        return light;
+      }
+    }
+    return nullptr;
+  }
+
+  [[nodiscard]] yr::render::CameraPod makeCameraPod(const yr::scene::CameraNode& camera) {
+    const yr::math::Mat4 world = camera.globalTransform();
+    const yr::math::Vec3 eye{world[12], world[13], world[14]};
+    const yr::math::Vec3 target = eye + camera.forward();
+    constexpr float kAspect = 1280.0F / 720.0F;
+    constexpr float kDegToRad = std::numbers::pi_v<float> / 180.0F;
+
+    yr::render::CameraPod pod;
+    pod.eye[0] = eye.x;
+    pod.eye[1] = eye.y;
+    pod.eye[2] = eye.z;
+    pod.proj = toTransform(
+        yr::math::Mat4::perspective(camera.fovDegrees() * kDegToRad, kAspect, camera.nearPlane(), camera.farPlane()));
+    pod.view = toTransform(yr::math::Mat4::lookAt(eye, target, yr::math::Vec3{0.0F, 1.0F, 0.0F}));
+    return pod;
+  }
+
   // 围绕 AABB 拟合方向光正交阴影：eye 沿光线反向退开 2r，深度范围覆盖 4r。
   [[nodiscard]] yr::render::ShadowPod computeShadow(const yr::math::Vec3& center, float radius,
                                                     const yr::math::Vec3& lightDirection) {
@@ -603,10 +684,60 @@ int main(int argc, char** argv) {
   std::unique_ptr<yr::scene::Node> root;
   std::vector<yr::asset::AssetUID> pendingTextureUids;
   double sceneLoadMs = 0.0;
+
+  // 1) 先加载 gltf（可选）：显式 --gltf，或未给 --scene 时的默认场景。
+  const bool wantGltf = options.hasGltf || options.scenePath.empty();
+  if (wantGltf) {
+    yr::asset::GltfLoadOptions loadOptions;
+    loadOptions.deferTextures = options.asyncTextures || options.streamAssets;
+    loadOptions.deferMeshes = options.streamAssets;
+    loadOptions.skipTextures = options.skipTextures;
+    loadOptions.maxTextureDimension = options.textureMaxDim;
+
+    const yr::core::TimePoint gltfStart = std::chrono::steady_clock::now();
+    // GltfScene 仅用于构建节点树；资源缓存由 AssetDatabase 持有，节点持自己的 Ref。
+    yr::asset::GltfLoadResult loaded = assets.loadGltfScene(options.gltfPath, loadOptions);
+    const double gltfLoadMs = elapsedMs(gltfStart, std::chrono::steady_clock::now());
+    if (!loaded) {
+      YR_LOG_ERROR("render_demo", options.gltfPath + " 加载失败：" + loaded.error);
+      backend.shutdown();
+      return 1;
+    }
+
+    pendingTextureUids.reserve(loaded.pendingTextures.size());
+    for (const yr::asset::GltfTextureRequest& request : loaded.pendingTextures) {
+      pendingTextureUids.push_back(request.uid);
+    }
+
+    std::size_t nodeCount = 0;
+    std::size_t primitiveCount = 0;
+    for (const yr::asset::GltfNode& gltfRoot : loaded.scene.roots) {
+      nodeCount += countGltfNodes(gltfRoot);
+      primitiveCount += countGltfPrimitives(gltfRoot);
+    }
+    YR_LOG_INFO("render_demo", "scene_loaded path=" + options.gltfPath + " load_ms=" + formatMs(gltfLoadMs) +
+                                   " nodes=" + std::to_string(nodeCount) +
+                                   " primitives=" + std::to_string(primitiveCount));
+
+    auto gltfRoot = std::make_unique<yr::scene::Node>();
+    gltfRoot->setName("GltfScene");
+    for (const yr::asset::GltfNode& sceneRoot : loaded.scene.roots) {
+      auto child = buildGltfNode(sceneRoot);
+      if (!child || !gltfRoot->addChild(std::move(child))) {
+        YR_LOG_ERROR("render_demo", options.gltfPath + " 节点构建失败");
+        backend.shutdown();
+        return 1;
+      }
+    }
+    root = std::move(gltfRoot);
+  }
+
+  // 2) 再解析 .scn（可选）：作为子节点叠加到 gltf 根上。
   if (!options.scenePath.empty()) {
     yr::scene::register_scene_classes();
     yr::gameplay::register_gameplay_classes();
 
+    const yr::core::TimePoint scnStart = std::chrono::steady_clock::now();
     std::ifstream sceneStream(options.scenePath, std::ios::binary);
     if (!sceneStream) {
       YR_LOG_ERROR("render_demo", "scene 打开失败：" + options.scenePath);
@@ -626,57 +757,27 @@ int main(int argc, char** argv) {
       return 1;
     }
 
-    root = loaded.scene.instantiate(yr::obj::globalClassDB());
-    if (root == nullptr) {
+    std::unique_ptr<yr::scene::Node> sceneRoot = loaded.scene.instantiate(yr::obj::globalClassDB());
+    if (sceneRoot == nullptr) {
       YR_LOG_ERROR("render_demo", "scene 实例化失败：" + options.scenePath);
       backend.shutdown();
       return 1;
     }
 
-    sceneLoadMs = elapsedMs(loadStart, std::chrono::steady_clock::now());
-    YR_LOG_INFO("render_demo", "scene_loaded path=" + options.scenePath + " type=scn load_ms=" + formatMs(sceneLoadMs));
-  } else {
-    yr::asset::GltfLoadOptions loadOptions;
-    loadOptions.deferTextures = options.asyncTextures || options.streamAssets;
-    loadOptions.deferMeshes = options.streamAssets;
-    loadOptions.skipTextures = options.skipTextures;
-    loadOptions.maxTextureDimension = options.textureMaxDim;
+    const double scnLoadMs = elapsedMs(scnStart, std::chrono::steady_clock::now());
+    YR_LOG_INFO("render_demo", "scene_loaded path=" + options.scenePath + " type=scn load_ms=" + formatMs(scnLoadMs));
 
-    // GltfScene 仅用于构建节点树；资源缓存由 AssetDatabase 持有，节点持自己的 Ref。
-    yr::asset::GltfLoadResult loaded = assets.loadGltfScene(options.gltfPath, loadOptions);
-    sceneLoadMs = elapsedMs(loadStart, std::chrono::steady_clock::now());
-    if (!loaded) {
-      YR_LOG_ERROR("render_demo", options.gltfPath + " 加载失败：" + loaded.error);
+    if (root != nullptr && !root->addChild(std::move(sceneRoot))) {
+      YR_LOG_ERROR("render_demo", "scene 无法挂到 gltf 根节点下");
       backend.shutdown();
       return 1;
     }
-
-    pendingTextureUids.reserve(loaded.pendingTextures.size());
-    for (const yr::asset::GltfTextureRequest& request : loaded.pendingTextures) {
-      pendingTextureUids.push_back(request.uid);
-    }
-
-    std::size_t nodeCount = 0;
-    std::size_t primitiveCount = 0;
-    for (const yr::asset::GltfNode& gltfRoot : loaded.scene.roots) {
-      nodeCount += countGltfNodes(gltfRoot);
-      primitiveCount += countGltfPrimitives(gltfRoot);
-    }
-    YR_LOG_INFO("render_demo", "scene_loaded path=" + options.gltfPath + " load_ms=" + formatMs(sceneLoadMs) +
-                                   " nodes=" + std::to_string(nodeCount) +
-                                   " primitives=" + std::to_string(primitiveCount));
-
-    root = std::make_unique<yr::scene::Node>();
-    root->setName("GltfScene");
-    for (const yr::asset::GltfNode& gltfRoot : loaded.scene.roots) {
-      auto child = buildGltfNode(gltfRoot);
-      if (!child || !root->addChild(std::move(child))) {
-        YR_LOG_ERROR("render_demo", options.gltfPath + " 节点构建失败");
-        backend.shutdown();
-        return 1;
-      }
+    if (root == nullptr) {
+      root = std::move(sceneRoot);
     }
   }
+
+  sceneLoadMs = elapsedMs(loadStart, std::chrono::steady_clock::now());
 
   yr::scene::SceneTree tree;
   if (!tree.setRoot(std::move(root))) {
@@ -700,7 +801,12 @@ int main(int argc, char** argv) {
   YR_LOG_INFO("render_demo", "scene_bounds center=(" + formatVec3(center) + ") radius=" + formatFloat(radius));
   // 灯光只用于 extract，不参与 bounds；位置基于场景 AABB。阴影与方向光共享同一太阳方向。
   const yr::math::Vec3 sunDirection = yr::math::Vec3{0.4F, -0.8F, -0.5F}.normalized();
-  addDemoLights(*tree.root(), center, radius, sunDirection);
+  if (!hasLightNode(*tree.root())) {
+    addDemoLights(*tree.root(), center, radius, sunDirection);
+    YR_LOG_INFO("render_demo", "demo_lights=added");
+  } else {
+    YR_LOG_INFO("render_demo", "demo_lights=skipped (scene defines LightNode)");
+  }
   tree.refreshTransforms();
   // 默认用较高的俯视角看平面地图：对称正前方、约 60° 俯角、2r 机位距离；
   // 仍可用 --camera / --target 覆盖。
@@ -730,16 +836,30 @@ int main(int argc, char** argv) {
   yr::evt::EventBus events;
   yr::input::InputSystem input;
   input.setEventBus(&events);
-  input.addSource(std::make_unique<yr::demo::GlfwInputSource>(backend));
+  auto glfwSource = std::make_unique<yr::demo::GlfwInputSource>(backend);
+  yr::demo::GlfwInputSource* const glfwInput = glfwSource.get();
+  input.addSource(std::move(glfwSource));
 
   DemoLoop loop(tree, events, backend, options.dumpSnapshot);
   loop.setBackend(&backend);      // 阶段 11 调 present
   loop.setAssetDatabase(&assets); // 阶段 12 调 collectGarbage
   loop.setInputSystem(&input);
   loop.setCamera(camera);
+  // 场景自带 CameraNode 时以节点为准；显式 --camera/--target 仍优先。
+  if (yr::scene::CameraNode* const sceneCamera = findCameraNode(*tree.root());
+      sceneCamera != nullptr && !options.hasCamera && !options.hasTarget) {
+    loop.setCameraNode(sceneCamera);
+    YR_LOG_INFO("render_demo", "camera_source=scene CameraNode");
+    YR_LOG_INFO("render_demo", "input: 右键锁定鼠标 / Esc 释放；WASD 移动，Q/E 升降");
+  } else {
+    YR_LOG_INFO("render_demo", std::string("camera_source=") +
+                                   (options.hasCamera || options.hasTarget ? "cli override" : "scene AABB"));
+  }
   // 不传 shadow 时 MainLoop 默认 disabled；--no-shadow 让 Sponza 性能测试跳过阴影。
   if (!options.noShadow) {
     loop.setShadow(computeShadow(center, radius, sunDirection));
+    // 有移动太阳时每帧按当前 direction 重拟合阴影相机。
+    loop.setShadowFollowSun(center, radius);
   }
   yr::engine::Clock clock;
 
@@ -768,6 +888,22 @@ int main(int argc, char** argv) {
   while (!loop.shouldQuit()) {
     yr::core::ScopeTimer tickTimer;
     loop.tick(clock.nextDelta());
+
+    // 鼠标锁定：右键切换，Esc 释放。锁定后视角不会被窗口边缘卡住。
+    const yr::input::InputState& inputState = input.state();
+    const bool toggleCapture = inputState.pressed(yr::core::globalStringInterner().intern("mouse_right"));
+    const bool releaseCapture = inputState.pressed(yr::core::globalStringInterner().intern("key_escape"));
+    if (toggleCapture) {
+      const bool capture = !backend.cursorCaptured();
+      backend.setCursorCaptured(capture);
+      glfwInput->resetCursorTracking();
+      YR_LOG_INFO("render_demo", capture ? "cursor=captured (Esc 释放)" : "cursor=free (右键锁定)");
+    } else if (releaseCapture && backend.cursorCaptured()) {
+      backend.setCursorCaptured(false);
+      glfwInput->resetCursorTracking();
+      YR_LOG_INFO("render_demo", "cursor=free (右键锁定)");
+    }
+
     const yr::core::Duration tickDuration = tickTimer.elapsed();
     ++ticks;
 

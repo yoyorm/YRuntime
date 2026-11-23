@@ -74,6 +74,13 @@ ASSET_ROOT=/path/to/main1_sponza
   --skip-textures --no-shadow \
   --camera -8.807,1.592,-0.858 --target -3.004,2.762,0.237 \
   --frames 60
+
+# Sponza 光照基准：gltf 先加载，.scn 作为子节点叠加相机、灯光与行为节点
+./build/debug-vk/bin/yr_render_demo \
+  --asset-root "$ASSET_ROOT" \
+  --gltf res://NewSponza_Main_glTF_003.gltf \
+  --scene assets/scenes/sponza_lighting.scn \
+  --skip-textures --frames 600
 ```
 
 当前渲染使用 Cook-Torrance PBR：BaseColor / Normal / MetallicRoughness / Emissive 四贴图，
