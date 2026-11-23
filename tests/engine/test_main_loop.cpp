@@ -9,6 +9,7 @@
 #include <yr/engine/clock.h>
 #include <yr/engine/main_loop.h>
 #include <yr/event/event_bus.h>
+#include <yr/input/input_system.h>
 #include <yr/object/object_db.h>
 #include <yr/object/ref.h>
 #include <yr/render/null_backend.h>
@@ -231,6 +232,36 @@ TEST_CASE("main_loop: frameCount tracks ticks and frameIndex is 0-based", "[engi
 
   CHECK(loop.frameCount() == 3);
   CHECK(loop.frameIndex() == 2);
+}
+
+TEST_CASE("scene tree: input state pointer is non-owning and clearable", "[engine][scene_tree][input]") {
+  yr::scene::SceneTree tree;
+  yr::input::InputState state;
+
+  CHECK(tree.inputState() == nullptr);
+  tree.setInputState(&state);
+  CHECK(tree.inputState() == &state);
+  tree.setInputState(nullptr);
+  CHECK(tree.inputState() == nullptr);
+}
+
+TEST_CASE("main_loop: input system binds scene tree state and clears on destruction", "[engine][main_loop][input]") {
+  yr::scene::SceneTree tree;
+  yr::evt::EventBus bus;
+  yr::input::InputSystem input;
+
+  {
+    MainLoop loop(tree, bus);
+    loop.setInputSystem(&input);
+    CHECK(tree.inputState() == &input.state());
+  }
+  CHECK(tree.inputState() == nullptr);
+
+  MainLoop loop(tree, bus);
+  loop.setInputSystem(&input);
+  CHECK(tree.inputState() == &input.state());
+  loop.setInputSystem(nullptr);
+  CHECK(tree.inputState() == nullptr);
 }
 
 TEST_CASE("main_loop: requestQuit only sets a flag; tick still runs a full frame", "[engine][main_loop][quit]") {

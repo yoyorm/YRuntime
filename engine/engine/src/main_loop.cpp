@@ -18,6 +18,15 @@ namespace yr::engine {
     return index < kPhaseCount ? kNames[index] : "unknown";
   }
 
+  MainLoop::~MainLoop() {
+    sceneTree_.setInputState(nullptr);
+  }
+
+  void MainLoop::setInputSystem(input::InputSystem* system) noexcept {
+    inputSystem_ = system;
+    sceneTree_.setInputState(system != nullptr ? &system->state() : nullptr);
+  }
+
   MainLoop::MainLoop(scene::SceneTree& tree, evt::EventBus& events) noexcept : sceneTree_(tree), eventBus_(events) {
     stats_.setPhaseReported(Phase::kBeginFrame, true);
     stats_.setPhaseReported(Phase::kFlushEvents, true);

@@ -28,7 +28,7 @@ namespace yr::engine {
   class MainLoop {
   public:
     MainLoop(scene::SceneTree& tree, evt::EventBus& events) noexcept;
-    virtual ~MainLoop() = default;
+    virtual ~MainLoop();
 
     MainLoop(const MainLoop&) = delete;
     MainLoop& operator=(const MainLoop&) = delete;
@@ -72,7 +72,7 @@ namespace yr::engine {
 
     void setAssetDatabase(asset::AssetDatabase* database) noexcept { assetDatabase_ = database; }
 
-    void setInputSystem(input::InputSystem* system) noexcept { inputSystem_ = system; }
+    void setInputSystem(input::InputSystem* system) noexcept;
 
     // 当前帧快照，下一次 tick 被覆写
     [[nodiscard]] render::RenderSnapshot& snapshot() noexcept { return snapshot_; }

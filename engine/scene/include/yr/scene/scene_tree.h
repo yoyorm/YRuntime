@@ -9,6 +9,10 @@
 #include <yr/scene/node.h>
 #include <yr/scene/transform_store.h>
 
+namespace yr::input {
+  class InputState;
+}
+
 namespace yr::scene {
 
   // SceneTree：独占拥有 root
@@ -48,6 +52,11 @@ namespace yr::scene {
     // 诊断用：TransformStore 中的槽数（含已 detach、尚未释放的节点）
     [[nodiscard]] std::size_t transformCount() const noexcept;
 
+    // 非拥有：InputState 由 InputSystem 拥有，必须比本树的所有查询活得更久。
+    // 只允许行为节点在 onUpdate 中读取；不要在 onEnterTree/onExitTree 依赖它。
+    void setInputState(const input::InputState* state) noexcept { inputState_ = state; }
+    [[nodiscard]] const input::InputState* inputState() const noexcept { return inputState_; }
+
   private:
     friend class Node;
     void enqueueDeletion(core::ObjectID id) { pendingDeletions_.push_back(id); }
@@ -69,6 +78,9 @@ namespace yr::scene {
     TransformStore transformStorage_;
 
     std::unique_ptr<Node> root_;
+
+    // 非拥有；由 MainLoop::setInputSystem 绑定/清空。
+    const input::InputState* inputState_ = nullptr;
     std::vector<core::ObjectID> pendingDeletions_;
 
     // 防止修改重入
