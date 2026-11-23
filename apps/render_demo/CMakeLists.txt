@@ -8,6 +8,7 @@ target_link_libraries(yr_render_demo PRIVATE
     yr::engine
     yr::asset
     yr::input
+    yr::gameplay
     yr::math
     yr::core)
 

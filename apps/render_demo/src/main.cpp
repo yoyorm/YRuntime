@@ -26,6 +26,7 @@
 #include <yr/engine/clock.h>
 #include <yr/engine/main_loop.h>
 #include <yr/event/event_bus.h>
+#include <yr/gameplay/gameplay_classes.h>
 #include <yr/input/input_system.h>
 #include <yr/math/mat4.h>
 #include <yr/math/transform.h>
@@ -604,6 +605,7 @@ int main(int argc, char** argv) {
   double sceneLoadMs = 0.0;
   if (!options.scenePath.empty()) {
     yr::scene::register_scene_classes();
+    yr::gameplay::register_gameplay_classes();
 
     std::ifstream sceneStream(options.scenePath, std::ios::binary);
     if (!sceneStream) {
@@ -700,7 +702,9 @@ int main(int argc, char** argv) {
   const yr::math::Vec3 sunDirection = yr::math::Vec3{0.4F, -0.8F, -0.5F}.normalized();
   addDemoLights(*tree.root(), center, radius, sunDirection);
   tree.refreshTransforms();
-  const yr::math::Vec3 autoEye = center + yr::math::Vec3{1.2F * radius, 0.8F * radius, 1.8F * radius};
+  // 默认用较高的俯视角看平面地图：对称正前方、约 60° 俯角、2r 机位距离；
+  // 仍可用 --camera / --target 覆盖。
+  const yr::math::Vec3 autoEye = center + yr::math::Vec3{0.0F, 1.45F * radius, 0.83F * radius};
   const yr::math::Vec3 eye = options.hasCamera ? options.cameraEye : autoEye;
   yr::math::Vec3 target = options.hasTarget ? options.cameraTarget : center;
   // lookAt 依赖非零方向；显式参数重合时退回中心，仍重合再给一个固定朝向。

@@ -18,6 +18,7 @@
 #include <yr/core/timer.h>
 #include <yr/engine/engine.h>
 #include <yr/engine/frame_stats.h>
+#include <yr/gameplay/gameplay_classes.h>
 #include <yr/object/class_db.h>
 #include <yr/object/object_db.h>
 #include <yr/render/backend.h>
@@ -105,6 +106,7 @@ int main(int argc, char** argv) {
 
   if (!options.scenePath.empty()) {
     yr::scene::register_scene_classes();
+    yr::gameplay::register_gameplay_classes();
 
     std::ifstream sceneStream(options.scenePath, std::ios::binary);
     if (!sceneStream) {
